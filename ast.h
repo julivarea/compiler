@@ -2,15 +2,13 @@
 #define AST_H
 
 typedef enum Node_Type {
-    PROGRAM_NODE,
-    STATEMENT_LIST_NODE,
-    DECLARATION_NODE,
-    ASSIGN_NODE,
-    RETURN_NODE,
-    BINOP_NODE,
-    CONSTANT_NODE,
-    ID_NODE
+   ASSIGNMENT_NODE,
+   BINOP_NODE,
+   CONSTANT_NODE,
+   RETURN_NODE,
+   DEFINITION_NODE
 } Node_Type;
+
 
 typedef struct ASTNode ASTNode;
 
