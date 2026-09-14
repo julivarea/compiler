@@ -1,0 +1,3 @@
+int main() {
+    /* COMENTARIO 1 */ int x=10; /* COMENTARIO 2*/
+}

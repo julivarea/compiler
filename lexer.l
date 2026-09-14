@@ -1,8 +1,7 @@
 %{
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include "ast.h"
-#include "bison.tab.h"
 
 int yywrap(void) {
     return 1;
@@ -16,19 +15,42 @@ NUMBER      {DIGIT}+
 
 %%
 
-"main"                      { return MAIN; }
-"void"                      { return VOID; }
-"int"                       { return INT; }
-"bool"                      { return BOOL; }
-"return"                    { return RETURN; }
-"true"                      { yylval.intval = 1; return BOOL_CONST; }
-"false"                     { yylval.intval = 0; return BOOL_CONST; }
-{ID}                        { yylval.strval = strdup(yytext); return ID; }
-{NUMBER}                    { yylval.intval = atoi(yytext); return NUMBER; }
-"+"|"-"|"*"|"="             { return yytext[0]; }
-"("|")"|"{"|"}"|";"         { return yytext[0]; }
-
-[ \t\n]+                    { /* eliminar blancos */ }
-.                           { printf("Token invalido: %s\n", yytext); }
+"boolean"                       { printf("BOOLEAN: %s\n", yytext); }
+"else"                          { printf("ELSE: %s\n", yytext); }
+"if"                            { printf("IF: %s\n", yytext); }
+"int"                           { printf("INT: %s\n", yytext); }
+"return"                        { printf("RETURN: %s\n", yytext); }
+"true"|"false"                  { printf("BOOLEAN_CONST: %s\n", yytext); }
+"void"                          { printf("VOID: %s\n", yytext); }
+"while"                         { printf("WHILE: %s\n", yytext); }
+"float"                         { printf("FLOAT: %s\n", yytext); }
+{ID}                            { printf("ID: %s\n", yytext); }
+{NUMBER}                        { printf("NUMBER: %s\n", yytext); }
+"+"|"-"|"*"|"="                 { printf("OPERATOR: %s\n", yytext); }
+"("|")"|"{"|"}"|";"             { printf("DELIMITER: %s\n", yytext); }
+[ \t\r\n]+                      { /* eliminar blancos */ }
+"//".*                          { printf("SINGLE_LINE_COMMENT: %s\n", yytext); }
+"/*"([^*]|\*+[^*/])*\*+"/"      { printf("MULTI_LINE_COMMENT: %s\n", yytext); }
+.                               { printf("Token inválido: %s\n", yytext); }
 
 %%
+
+int main(int argc, char **argv) {
+    if (argc > 1) {
+        yyin = fopen(argv[1], "r");
+        if (!yyin) {
+            perror("Error al abrir archivo");
+            return 1;
+        }
+    } else {
+        yyin = stdin;
+    }
+
+    yylex();
+
+    if (argc > 1 && yyin) {
+        fclose(yyin);
+    }
+    return 0;
+}
+
