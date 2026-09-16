@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "bison.tab.h"
 
 int yywrap(void) {
     return 1;
@@ -11,49 +12,63 @@ int yywrap(void) {
 %option yylineno
 
 DIGIT       [0-9]
-ALPHA        [a-zA-Z]
-ALPHA_NUM    {ALPHA}|{DIGIT}|"_"
+ALPHA       [a-zA-Z]
+ALPHA_NUM   {ALPHA}|{DIGIT}|"_"
 ID          {ALPHA}({ALPHA_NUM})*
 NUMBER      {DIGIT}+
 FLOAT       {DIGIT}+"."{DIGIT}+
 
 %%
 
-"boolean"                       { printf("[Linea %d] BOOLEAN: %s\n", yylineno, yytext); }
-"int"                           { printf("[Linea %d] INT: %s\n", yylineno, yytext); }
-"float"                         { printf("[Linea %d] FLOAT: %s\n", yylineno, yytext); }
-"void"                          { printf("[Linea %d] VOID: %s\n", yylineno, yytext); }
-"if"                            { printf("[Linea %d] IF: %s\n", yylineno, yytext); }
-"else"                          { printf("[Linea %d] ELSE: %s\n", yylineno, yytext); }
-"while"                         { printf("[Linea %d] WHILE: %s\n", yylineno, yytext); }
-"return"                        { printf("[Linea %d] RETURN: %s\n", yylineno, yytext); }
-"main"                          { printf("[Linea %d] MAIN: %s\n", yylineno, yytext); }
+    /* KEYWORDS */
+"boolean"                       { return BOOLEAN; }
+"int"                           { return INT; }
+"float"                         { return FLOAT; }
+"void"                          { return VOID; }
+"if"                            { return IF; }
+"else"                          { return ELSE; }
+"while"                         { return WHILE; }
+"return"                        { return RETURN; }
+"main"                          { return MAIN; }
 
-"true"|"false"                  { printf("[Linea %d] BOOLEAN_CONST: %s\n", yylineno, yytext); }
-{FLOAT}                         { printf("[Linea %d] FLOAT_CONST: %s\n", yylineno, yytext); }
-{NUMBER}                        { printf("[Linea %d] NUMBER: %s\n", yylineno, yytext); }
+    /* CONSTANTES y LITERALES */
+"true"                          { yylval.intval = 1; return BOOL_CONST; }
+"false"                         { yylval.intval = 0; return BOOL_CONST; }
+{FLOAT}                         { yylval.floatval = atof(yytext); return FLOAT_CONST; }
+{NUMBER}                        { yylval.intval = atoi(yytext); return NUMBER; }
 
-{ID}                            { printf("[Linea %d] ID: %s\n", yylineno, yytext); }
+    /* IDs */
+{ID}                            { yylval.strval = strdup(yytext); return ID; }
 
-"="                             { printf("[Linea %d] ASSIGN: %s\n", yylineno, yytext); }
+    /* ASIGNACION */
+"="                             { return '='; }
 
-"+"|"-"|"*"|"/"|"%"             { printf("[Linea %d] OPERATOR: %s\n", yylineno, yytext); }
+    /* ARITMETICOS */
+"+"|"-"|"*"|"/"|"%"             { return yytext[0]; }
 
-"=="|"<"|">"                    { printf("[Linea %d] RELATIONAL_OP: %s\n", yylineno, yytext); }
+    /* RELACIONALES */
+"=="                            { return EQ; }
+"<"|">"                         { return yytext[0]; }
 
-"&&"|"||"                       { printf("[Linea %d] LOGIC_OP: %s\n", yylineno, yytext); }
-"!"                             { printf("[Linea %d] NOT: %s\n", yylineno, yytext); }
+    /* LOGICOS */
+"&&"                            { return AND; }
+"||"                            { return OR; }
+"!"                             { return NOT; }
 
-"("|")"|"{"|"}"|";"|","         { printf("[Linea %d] DELIMITER: %s\n", yylineno, yytext); }
+    /* DELIMITADORES */
+"("|")"|"{"|"}"|";"|","         { return yytext[0]; }
 
+    /* COMENTARIOS Y ESPACIOS EN BLANCO */
 [ \t\r\n]+                      { /* eliminar blancos */ }
-"//".*                          { printf("[Linea %d] SINGLE_LINE_COMMENT: %s\n", yylineno, yytext); }
-"/*"([^*]|\*+[^*/])*\*+"/"      { printf("[Linea %d] MULTI_LINE_COMMENT: %s\n", yylineno, yytext); }
+"//".*                          { /* comentario simple linea */ }
+"/*"([^*]|\*+[^*/])*\*+"/"      { /* comentario multilinea */ }
 
+    /* ERRORES LEXICOS */
 .                               { printf("[Linea %d] ERROR LEXICO: simbolo no permitido '%s'\n", yylineno, yytext); }
 
 %%
 
+#ifdef STANDALONE_LEXER
 int main(int argc, char **argv) {
     if (argc > 1) {
         yyin = fopen(argv[1], "r");
@@ -65,11 +80,15 @@ int main(int argc, char **argv) {
         yyin = stdin;
     }
 
-    yylex();
+    /* Bucle para probar el lexer de forma independiente imprimiendo lo que retorna */
+    int token;
+    while ((token = yylex())) {
+        printf("Token: %d, Lexema: %s\n", token, yytext);
+    }
 
     if (argc > 1 && yyin) {
         fclose(yyin);
     }
     return 0;
 }
-
+#endif

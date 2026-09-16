@@ -1,90 +1,46 @@
 %{
 #include <stdio.h>
 #include <stdlib.h>
-#include "ast.h"
-#include "symtab.h"      
-#include "interpreter.h" 
 
 extern int yylex(void);
 extern FILE *yyin;
 void yyerror(const char *s) {
     fprintf(stderr, "Error sintactico: %s\n", s);
 }
-
-ASTNode* root_node = NULL; // var global para atrapar la raiz
 %}
-
-%token MAIN VOID INT BOOL RETURN
 
 %union {
   int intval;
+  float floatval;
   char* strval;
-  struct ASTNode* node;
 }
 
+/* Tokens de una sola palabra clave */
+%token MAIN VOID INT FLOAT BOOLEAN IF ELSE WHILE RETURN
+
+/* Operadores relacionales y lógicos que ocupan más de un carácter */
+%token EQ AND OR NOT
+
+/* Tokens que traen un valor semántico asociado desde Flex */
 %token <strval> ID
-%token <intval> NUMBER
-%token <intval> BOOL_CONST
+%token <intval> NUMBER BOOL_CONST
+%token <floatval> FLOAT_CONST
 
-%type <node> Program Code Sentence VariableDeclaration VariableAssignment Expression Return
-%type <intval> FunctionReturnType VariableType
-
-%left '+' '-'
-%left '*'
+/* Precedencia de menor a mayor */
+%left OR           /* disyunción lógica || */
+%left AND          /* conjunción lógica && */
+%left EQ           /* igualdad == */
+%left '<' '>'      /* relacionales (menor, mayor) */
+%left '+' '-'      /* suma y resta */
+%left '*' '/' '%'  /* multiplicación, división, resto */
+%right NOT UMINUS  /* negación lógica ! y menos unario */
 
 %%
 
     Program
-    : FunctionReturnType MAIN '(' ')' '{' Code '}' {
-    $$ = create_program_node($6);
-    root_node = $$; //rescatamos el arbol
-    printf("Analisis sintáctico exitoso y AST construido. \n");
+    : error {
+    printf("ADVERTENCIA: Gramatica no definida todavia.\n");
     }
-    ;
-
-    FunctionReturnType
-    : VOID {$$ = 2;}
-    | INT {$$ = 0;}
-    | BOOL {$$ = 1;}
-    ;
-
-    Code
-    : Sentence Code {$$ = create_statement_list_node($1, $2);}
-    | /* empty, lambda */ {$$ = NULL;}
-    ;
-
-    Sentence
-    : VariableDeclaration {$$ = $1;}
-    | VariableAssignment {$$ = $1;}
-    | Return {$$ = $1;}
-    ;
-
-    VariableDeclaration
-    : VariableType ID ';' {$$ = create_declaration_node($1, $2);}
-    ;
-
-    VariableType
-    : INT {$$ = 0;}
-    | BOOL {$$ = 1;}
-    ;
-
-    VariableAssignment
-    : ID '=' Expression ';' {$$ = create_assignment_node($1, $3);}
-    ;
-
-    Expression
-    : Expression '+' Expression {$$ = create_binop_node($1, OP_ADD, $3 );} // Los nros del 1 en adelante representan el nro de elemento que hallamos en la expresion: Exp + Exp es (Exp=1, + = 2, Exp=3)
-    | Expression '-' Expression {$$ = create_binop_node($1, OP_SUB, $3);}
-    | Expression '*' Expression {$$ = create_binop_node($1, OP_MUL, $3);}
-    | '(' Expression ')' {$$ = $2;} // Ignoramos los parentesis, pues el orden de precedencia queda definido en la estructura del arbol
-    | NUMBER {$$ = create_constant_node($1);}
-    | BOOL_CONST {$$ = create_constant_node($1);}
-    | ID {$$ = create_id_node($1);}
-    ;
-
-    Return
-    : RETURN Expression ';' {$$ = create_return_node($2);}
-    | RETURN ';' {$$ = create_return_node(NULL);}
     ;
 
 %%
@@ -102,15 +58,13 @@ int main(int argc, char** argv) {
     }
 
     if (yyparse() == 0) {
-        printf("--- Iniciando Ejecucion ---\n");
-        init_symtab();
-
-        interpret(root_node);
-
-        free_symtab();
-        free_ast(root_node);
+        printf("--- Analisis sintactico sin errores formales. ---\n");
+        // Aca en el futuro podremos inicializar el interprete o symbol table
     }
 
+    if (argc > 1 && yyin) {
+        fclose(yyin);
+    }
     return 0;
 }
 #endif
