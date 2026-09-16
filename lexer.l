@@ -12,6 +12,7 @@ DIGIT       [0-9]
 CHAR        [a-zA-Z]
 ID          {CHAR}({CHAR}|{DIGIT})*
 NUMBER      {DIGIT}+
+FLOAT       {DIGIT}+"."{DIGIT}+
 
 %%
 
@@ -25,9 +26,12 @@ NUMBER      {DIGIT}+
 "while"                         { printf("WHILE: %s\n", yytext); }
 "float"                         { printf("FLOAT: %s\n", yytext); }
 {ID}                            { printf("ID: %s\n", yytext); }
+{FLOAT}                         { printf("FLOAT_CONST: %s\n", yytext); }
 {NUMBER}                        { printf("NUMBER: %s\n", yytext); }
-"+"|"-"|"*"|"="                 { printf("OPERATOR: %s\n", yytext); }
-"("|")"|"{"|"}"|";"             { printf("DELIMITER: %s\n", yytext); }
+"=="                            { printf("OPERATOR: %s\n", yytext); }
+"&&"|"||"                       { printf("OPERATOR: %s\n", yytext); }
+"+"|"-"|"*"|"/"|"%"|"="|"<"|">"|"!" { printf("OPERATOR: %s\n", yytext); }
+"("|")"|"{"|"}"|";"|","         { printf("DELIMITER: %s\n", yytext); }
 [ \t\r\n]+                      { /* eliminar blancos */ }
 "//".*                          { printf("SINGLE_LINE_COMMENT: %s\n", yytext); }
 "/*"([^*]|\*+[^*/])*\*+"/"      { printf("MULTI_LINE_COMMENT: %s\n", yytext); }
