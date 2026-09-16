@@ -2,6 +2,8 @@ boolean else if int return true false void while float
 
 WHILE Int Return whiletrue cont Cont var1 x1 aB3
 
+int test__ = 5;
+
 0 7 123 2147483647
 3.14 0.5 100.001
 
@@ -46,6 +48,8 @@ void main() {
    de varias lineas */
 /* comentario en una sola linea */
 /**/
+
+/* */ /* */
 
 $ # @ ` ?
 
