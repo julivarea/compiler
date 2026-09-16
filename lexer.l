@@ -8,6 +8,8 @@ int yywrap(void) {
 }
 %}
 
+%option yylineno
+
 DIGIT       [0-9]
 CHAR        [a-zA-Z]
 ID          {CHAR}({CHAR}|{DIGIT})*
@@ -16,26 +18,26 @@ FLOAT       {DIGIT}+"."{DIGIT}+
 
 %%
 
-"boolean"                       { printf("BOOLEAN: %s\n", yytext); }
-"else"                          { printf("ELSE: %s\n", yytext); }
-"if"                            { printf("IF: %s\n", yytext); }
-"int"                           { printf("INT: %s\n", yytext); }
-"return"                        { printf("RETURN: %s\n", yytext); }
-"true"|"false"                  { printf("BOOLEAN_CONST: %s\n", yytext); }
-"void"                          { printf("VOID: %s\n", yytext); }
-"while"                         { printf("WHILE: %s\n", yytext); }
-"float"                         { printf("FLOAT: %s\n", yytext); }
-{ID}                            { printf("ID: %s\n", yytext); }
-{FLOAT}                         { printf("FLOAT_CONST: %s\n", yytext); }
-{NUMBER}                        { printf("NUMBER: %s\n", yytext); }
-"=="                            { printf("OPERATOR: %s\n", yytext); }
-"&&"|"||"                       { printf("OPERATOR: %s\n", yytext); }
-"+"|"-"|"*"|"/"|"%"|"="|"<"|">"|"!" { printf("OPERATOR: %s\n", yytext); }
-"("|")"|"{"|"}"|";"|","         { printf("DELIMITER: %s\n", yytext); }
+"boolean"                       { printf("[Linea %d] BOOLEAN: %s\n", yylineno, yytext); }
+"else"                          { printf("[Linea %d] ELSE: %s\n", yylineno, yytext); }
+"if"                            { printf("[Linea %d] IF: %s\n", yylineno, yytext); }
+"int"                           { printf("[Linea %d] INT: %s\n", yylineno, yytext); }
+"return"                        { printf("[Linea %d] RETURN: %s\n", yylineno, yytext); }
+"true"|"false"                  { printf("[Linea %d] BOOLEAN_CONST: %s\n", yylineno, yytext); }
+"void"                          { printf("[Linea %d] VOID: %s\n", yylineno, yytext); }
+"while"                         { printf("[Linea %d] WHILE: %s\n", yylineno, yytext); }
+"float"                         { printf("[Linea %d] FLOAT: %s\n", yylineno, yytext); }
+{ID}                            { printf("[Linea %d] ID: %s\n", yylineno, yytext); }
+{FLOAT}                         { printf("[Linea %d] FLOAT_CONST: %s\n", yylineno, yytext); }
+{NUMBER}                        { printf("[Linea %d] NUMBER: %s\n", yylineno, yytext); }
+"=="                            { printf("[Linea %d] OPERATOR: %s\n", yylineno, yytext); }
+"&&"|"||"                       { printf("[Linea %d] OPERATOR: %s\n", yylineno, yytext); }
+"+"|"-"|"*"|"/"|"%"|"="|"<"|">"|"!" { printf("[Linea %d] OPERATOR: %s\n", yylineno, yytext); }
+"("|")"|"{"|"}"|";"|","         { printf("[Linea %d] DELIMITER: %s\n", yylineno, yytext); }
 [ \t\r\n]+                      { /* eliminar blancos */ }
-"//".*                          { printf("SINGLE_LINE_COMMENT: %s\n", yytext); }
-"/*"([^*]|\*+[^*/])*\*+"/"      { printf("MULTI_LINE_COMMENT: %s\n", yytext); }
-.                               { printf("Token inválido: %s\n", yytext); }
+"//".*                          { printf("[Linea %d] SINGLE_LINE_COMMENT: %s\n", yylineno, yytext); }
+"/*"([^*]|\*+[^*/])*\*+"/"      { printf("[Linea %d] MULTI_LINE_COMMENT: %s\n", yylineno, yytext); }
+.                               { printf("[Linea %d] ERROR LEXICO: simbolo no permitido '%s'\n", yylineno, yytext); }
 
 %%
 
