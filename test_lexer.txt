@@ -48,3 +48,11 @@ void main() {
 /**/
 
 $ # @ ` ?
+
+5.
+.5
+7.x
+
+/* este comentario 
+nunca se cierra 
+int nuncaSeEjecuta;
