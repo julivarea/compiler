@@ -1,3 +1,50 @@
-int main() {
-    /* COMENTARIO 1 */ int x=10; /* COMENTARIO 2*/
+boolean else if int return true false void while float
+
+WHILE Int Return whiletrue cont Cont var1 x1 aB3
+
+0 7 123 2147483647
+3.14 0.5 100.001
+
+a + b - c * d / e % f
+
+x = 5;
+x == 5;
+
+a < b
+a > b
+
+a && b
+a || b
+!a
+
+( ) { } ; ,
+
+int inc(int x, int y) {
+    float pi;
+    pi = 3.14;
+    if (x == 1 && y > 0) {
+        return inc(x, y);
+    } else {
+        while (x < 10) {
+            x = x + 1;
+        }
+    }
+    return x;
 }
+
+void main() {
+    int y;
+    y = 4;
+    // esto es un comentario de una linea
+    if (y == 1) {
+        return;
+    }
+}
+
+/* Comentario
+   multilinea
+   de varias lineas */
+/* comentario en una sola linea */
+/**/
+
+$ # @ ` ?
