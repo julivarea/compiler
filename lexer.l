@@ -29,7 +29,6 @@ FLOAT       {DIGIT}+"."{DIGIT}+
 "else"                          { return ELSE; }
 "while"                         { return WHILE; }
 "return"                        { return RETURN; }
-"main"                          { return MAIN; }
 
     /* CONSTANTES y LITERALES */
 "true"                          { yylval.intval = 1; return BOOL_CONST; }
