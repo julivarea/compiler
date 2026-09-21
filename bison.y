@@ -42,71 +42,91 @@ NodeAST *raizAST = NULL;
 %left '*' '/' '%'  /* multiplicación, división, resto */
 %right NOT UMINUS  /* negación lógica ! y menos unario */
 
-%type <node> Program VariableDeclaration Statement Expression Type
-%type <list> IdentifierList
+%type <node> Program VariableDeclaration Statement Expression Type MethodCall Block
+%type <list> IdentifierList ListArguments
 
 %%
     Program
-    : VariableDeclaration Statement { $$ = NULL; }
+    : VariableDeclarations MethodDeclarations
     ;
 
+    VariableDeclarations
+    : /* empty */
+    | VariableDeclaration VariableDeclarations
+    ;
+
+    MethodDeclarations
+    : /* empty */
+    | MethodDeclaration MethodDeclarations
+    ;
+    
     Type
-    : INT       { $$ = newNode(TYPE_NODE, newSymbol("int", NULL), NULL, NULL, NULL); $$->type = TYPE_INT; }
-    | BOOLEAN   { $$ = newNode(TYPE_NODE, newSymbol("boolean", NULL), NULL, NULL, NULL); $$->type = TYPE_BOOL; }
-    | FLOAT     { $$ = newNode(TYPE_NODE, newSymbol("float", NULL), NULL, NULL, NULL); $$->type = TYPE_FLOAT; }
+    : INT       /* { $$ = newNode(TYPE_NODE, newSymbol("int", NULL), NULL, NULL, NULL); $$->type = TYPE_INT; } */
+    | BOOLEAN   /* { $$ = newNode(TYPE_NODE, newSymbol("boolean", NULL), NULL, NULL, NULL); $$->type = TYPE_BOOL; } */
+    | FLOAT     /* { $$ = newNode(TYPE_NODE, newSymbol("float", NULL), NULL, NULL, NULL); $$->type = TYPE_FLOAT; } */
     ;
 
     VariableDeclaration
-    : Type IdentifierList ';' {
+    : Type IdentifierList ';' /* {
         NodeAST *decl = newNode(VARIABLE_DECLARATION_NODE, NULL, $1, NULL, NULL);
         attachChildren(decl, $2);
         $$ = decl;
-    }
+    } */
     ;
 
+    Statements:
+    |
+    Statement Statements
+    ;
     IdentifierList
-    : ID                { $$ = newNodeList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL); }
-    | IdentifierList ',' ID      {
+    : ID                /* { $$ = newNodeList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL); } */
+    | IdentifierList ',' ID      /* {
         NodeList *l = $1;
         while (l->next) l = l->next;
         l->next = newNodeList(newNode(ID_NODE, newSymbol($3, NULL), NULL, NULL, NULL), NULL);
         $$ = $1;
-    }
+    } */
     ;
 
     Statement
-    : ID '=' Expression ';' {
-        $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, NULL), newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL, $3);
-    }
+    : ID '=' Expression ';' /* { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, NULL), newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL, $3); } */
+    | MethodCall ';' /* {$$ = $1; } */
+    | RETURN Expression ';' /* { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); } */
+    | RETURN ';'
+    | Block /* { $$ = $1; } */
+    | WHILE Expression Block /* { $$ = newNode(WHILE_NODE, NULL, $2, NULL, $3); } */
+    | IF '(' Expression ')' Block
+    | IF '(' Expression ')' Block ELSE Block /* { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, $7); } */
+    | ';' /* { } */
     ;
-
-    Statement
-    : ID '=' Expression ';' { newNode(ASSIGNMENT_NODE, newSymbol($1, NULL), newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL, $3)};
-    | MethodCall ';' {$$ = $1; }
-    | RETURN Expression ';' { newNode(RETURN_NODE, newSymbol($2, NULL), NULL, NULL, NULL); } // save a expression reference to return
-    | Block { $$ = $1; }
-    | WHILE Expression Block { newNode(WHILE_NODE, NULL, $2, NULL, $3) };
-    | IF '(' Expression ')' Block ELSE Block { newNode(IF_ELSE_NODE, NULL, $1, $2, $3) };
-    | ';' { }
 
     MethodCall
-    : ID '(' ListArguments ')'
+    : ID '(' ')'
+    | ID '(' ListArguments ')' /* {
+        NodeAST *call = newNode(METHOD_CALL_NODE, newSymbol($1, NULL), NULL, NULL, NULL);
+        attachChildren(call, $3);
+        $$ = call;
+    } */
+    ;
 
     ListArguments
-    : Expression 
-    | Expression ',' ListArguments
+    : Expression /* { $$ = newNodeList($1, NULL); } */
+    | ListArguments ',' Expression /* {
+        NodeList *l = $1;
+        while (l->next) l = l->next;
+        l->next = newNodeList($3, NULL);
+        $$ = $1;
+    } */
     ;
 
     Expression
-    // during type checking, we verify that IdentifierList.size() == 1
-    : IdentifierList
-    | FLOAT_CONST { newLiteralNode(FLOAT_TYPE, getValueOf(FLOAT_CONST));}
-    | BOOLEAN_CONST { newLiteralNode(BOOLEAN_CONST, getValueOf(BOOLEAN_CONST));}
-    | NUMBER { newLiteralNode(NUMBER, getValueOf(NUMBER));}
-    // during type cheking, we verify that this.isFloatConst() || this.isNumberConst() -> e.g = {-0.2, -2, ...}
+    : ID
+    | MethodCall
+    | FLOAT_CONST /* { newLiteralNode(TYPE_FLOAT, NULL);} */
+    | BOOL_CONST /* { newLiteralNode(BOOL_CONST, NULL);} */
+    | NUMBER /* { newLiteralNode(NUMBER, NULL);} */
     | '-' Expression
-    // during type cheking, we verify that this.isBooleanConst()
-    | '!' Expression
+    | NOT Expression
     | '(' Expression ')'
     | Expression '+' Expression
     | Expression '-' Expression
@@ -121,10 +141,25 @@ NodeAST *raizAST = NULL;
     ;
 
     MethodDeclaration
-    : ReturnType ID '(' IdentifierList ')' Block
+    : ReturnType ID '(' ParameterList ')' Block
+    ;
 
-    ReturnType:
-      Type
+    ParameterList
+    : /* empty */
+    | Parameters
+    ;
+
+    Parameters
+    : Type ID
+    | Parameters ',' Type ID
+    ;
+
+    Block
+    : '{' VariableDeclarations Statements '}' /* { $$ = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL); } */
+    ;
+
+    ReturnType
+    : Type
     | VOID
     ;
 %%
@@ -143,7 +178,6 @@ int main(int argc, char** argv) {
 
     if (yyparse() == 0) {
         printf("--- Analisis sintactico sin errores formales. ---\n");
-        // Aca en el futuro podremos inicializar el interprete o symbol table
     }
 
     if (argc > 1 && yyin) {
