@@ -1,0 +1,510 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+
+\geometry{margin=2.5cm}
+
+% ---------- Estilo de codigo ----------
+\definecolor{codebg}{rgb}{0.97,0.97,0.97}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codeblue}{rgb}{0.0,0.0,0.6}
+\definecolor{codegreen}{rgb}{0.0,0.45,0.0}
+
+\lstdefinestyle{codigo}{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small,
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{codeblue}\bfseries,
+    numberstyle=\tiny\color{codegray},
+    numbers=left,
+    numbersep=6pt,
+    breaklines=true,
+    breakatwhitespace=false,
+    frame=single,
+    rulecolor=\color{codegray},
+    tabsize=2,
+    showstringspaces=false,
+    xleftmargin=1.2em,
+    framexleftmargin=1em
+}
+\lstset{style=codigo}
+
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\title{\textbf{Documentaci\'on T\'ecnica del Compilador C-TDS}\\
+\large Analizador L\'exico, Sint\'actico y Representaci\'on del AST}
+\author{Taller de Dise\~no de Software (Cod. 3306) --- TDS26}
+\date{Septiembre de 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+Este documento describe el estado actual del compilador de C-TDS: el analizador
+l\'exico (\texttt{lexer.l}), el analizador sint\'actico (\texttt{bison.y}) y la
+representaci\'on del \'Arbol de Sintaxis Abstracta (\texttt{ast.h} / \texttt{ast.c}).
+El objetivo no es solo describir \emph{qu\'e} hace cada archivo, sino \emph{por qu\'e}
+est\'a hecho as\'i: qu\'e parte de la letra del proyecto o de la gram\'atica del
+lenguaje motiv\'o cada decisi\'on, y qu\'e problemas concretos aparecieron (y c\'omo
+se resolvieron) al implementarlo. La \'ultima secci\'on est\'a pensada espec\'ificamente
+para que el resto del equipo pueda continuar agregando reglas a \texttt{bison.y}
+siguiendo el mismo patr\'on que las que ya est\'an resueltas.
+\end{abstract}
+
+\tableofcontents
+
+% ======================================================================
+\section{Introducci\'on}
+% ======================================================================
+
+El compilador se construye de forma incremental: primero el an\'alisis l\'exico y sint\'actico, luego el sem\'antico,
+y reci\'en despu\'es la generaci\'on de c\'odigo intermedio y objeto. Este
+documento cubre las dos primeras etapas, m\'as la estructura de datos
+(el AST) que las conecta con las etapas siguientes.
+
+El lenguaje fuente es C-TDS, especificado en el documento
+\emph{Descripci\'on del Lenguaje: C-TDS}. Todas las decisiones de dise\~no
+que no est\'an fijadas expl\'icitamente por ese documento se marcan como
+tales a lo largo de esta gu\'ia, junto con su justificaci\'on.
+
+% ======================================================================
+\section{Analizador L\'exico (\texttt{lexer.l})}
+% ======================================================================
+
+El analizador l\'exico convierte el texto fuente en una secuencia de
+\emph{tokens}. Implementa exactamente el l\'exico definido en
+\emph{Descripci\'on del Lenguaje: C-TDS}, secci\'on ``Consideraciones del
+L\'exico''.
+
+\subsection{Palabras reservadas}
+
+La letra define expl\'icitamente el conjunto cerrado de palabras
+reservadas:
+
+\begin{quote}
+\emph{``Las palabras reservadas son: boolean else false if int return
+true void while float''}
+\end{quote}
+
+Cada una se reconoce con una regla propia que retorna el token
+correspondiente (\texttt{BOOLEAN}, \texttt{ELSE}, \texttt{IF}, etc.).
+Un punto importante: \textbf{\texttt{main} no es palabra reservada}.
+Aunque todo programa v\'alido debe tener un m\'etodo \texttt{main}, esa
+es una regla \emph{sem\'antica} (regla \#3 de la secci\'on ``Reglas
+Sem\'anticas''): \emph{``Todo programa contiene la definici\'on de un
+m\'etodo llamado main''}. No es una regla l\'exica ni sint\'actica, as\'i que
+\texttt{main} matchea como un \texttt{ID} com\'un, y su existencia se
+verificar\'a m\'as adelante contra la tabla de s\'imbolos, en la etapa de
+an\'alisis sem\'antico.
+
+\subsection{Identificadores}
+
+La gram\'atica del lenguaje define:
+\[
+\langle id \rangle \rightarrow \langle alpha \rangle\, \langle alpha\_num \rangle^{*}
+\qquad
+\langle alpha\_num \rangle \rightarrow \langle alpha \rangle \mid \langle digit \rangle
+\]
+
+Es decir, un identificador es una letra seguida de cero o m\'as
+letras/d\'igitos --- \textbf{sin gui\'on bajo}. La regla actual en
+\texttt{lexer.l} es:
+
+\begin{lstlisting}[language=C]
+ALPHA_NUM   {ALPHA}|{DIGIT}|"_"
+\end{lstlisting}
+
+Este \texttt{"\_"} es una \textbf{extensi\'on} sobre la gram\'atica
+estricta. La letra permite expl\'icitamente extensiones documentadas
+(\emph{Descripci\'on del Proyecto}, secci\'on ``Documentaci\'on'', punto~2:
+\emph{``Una lista de decisiones de dise\~no, asumpciones, aclaraciones o
+extensiones realizadas en la etapa''}), as\'i que esto es v\'alido siempre
+que quede documentado como tal --- que es lo que se hace ac\'a. Si el
+equipo decide no permitir guiones bajos, basta con sacar el
+\texttt{|"\_"} de esa l\'inea.
+
+\subsection{N\'umeros: enteros y reales}
+
+La gram\'atica separa dos literales num\'ericos:
+\[
+\langle int\_literal \rangle \rightarrow \langle digit \rangle\, \langle digit \rangle^{*}
+\qquad
+\langle float\_literal \rangle \rightarrow \langle digit \rangle\, \langle digit \rangle^{*}\, \text{.}\, \langle digit \rangle\, \langle digit \rangle^{*}
+\]
+
+Notar que \emph{ambos} lados del punto exigen al menos un d\'igito. Esto
+se traduce directamente a dos definiciones separadas:
+
+\begin{lstlisting}[language=C]
+NUMBER      {DIGIT}+
+FLOAT       {DIGIT}+"."{DIGIT}+
+\end{lstlisting}
+
+con la regla de \texttt{FLOAT} ubicada \textbf{antes} que la de
+\texttt{NUMBER} en el archivo. Esto importa: flex resuelve ambig\"uedades
+por longitud de coincidencia (\emph{maximal munch}), pero ante un
+empate usa la regla que aparece primero en el archivo. Poner
+\texttt{FLOAT} primero evita cualquier duda sobre qui\'en gana ese
+posible empate.
+
+Como consecuencia directa de exigir d\'igitos a ambos lados del punto,
+entradas como \texttt{5.} o \texttt{.5} \textbf{no} son floats v\'alidos:
+se tokenizan como \texttt{NUMBER} m\'as un s\'imbolo \texttt{.} inv\'alido
+suelto. Esto se verific\'o expl\'icitamente con casos de prueba y es el
+comportamiento esperado seg\'un la gram\'atica, no un error.
+
+\subsection{Comentarios}
+
+La letra define dos formas de comentario:
+
+\begin{quote}
+\emph{``Dos tipos de comentarios son permitidos, aquellos que comienzan
+con // y terminan al final de la l\'inea (\'unicamente pueden ser de una
+l\'inea) y aquellos que est\'an delimitados por /* y */ (pueden tener
+varias l\'ineas de extensi\'on).''}
+\end{quote}
+
+Ambos se descartan sin generar token, en l\'inea con: \emph{``S\'imbolos
+que no son tokens son descartados, por ejemplo, espacios, tabulaciones,
+nuevas l\'ineas y comentarios''}.
+
+\subsection{N\'umero de l\'inea en los mensajes}
+
+Se activ\'o \texttt{\%option yylineno} y se agreg\'o \texttt{[Linea \%d]}
+a todos los mensajes de error. La letra no lo pide con esas palabras
+exactas, pero s\'i exige, en la secci\'on ``Consideraciones del L\'exico'':
+
+\begin{quote}
+\emph{``Aquellos s\'imbolos que no son permitidos en el lenguaje deben ser
+reportados, por ejemplo, \$, \#.''}
+\end{quote}
+
+Reportar un s\'imbolo inv\'alido sin decir en qu\'e l\'inea aparece es de
+poca utilidad pr\'actica en un archivo real. Adem\'as, la siguiente etapa
+(el analizador sint\'actico) necesita la l\'inea para sus propios mensajes
+de error --- \texttt{yyerror} en \texttt{bison.y} ya usa
+\texttt{yylineno}, que \texttt{lexer.l} mantiene actualizado. Es una
+decisi\'on de dise\~no, documentada como tal.
+
+\subsection{Errores l\'exicos}
+
+La regla de error (\texttt{.} como \'ultima alternativa) reporta
+\texttt{ERROR LEXICO: simbolo no permitido} en vez del gen\'erico
+\texttt{Token inv\'alido} usado en versiones anteriores, para que el
+mensaje quede alineado con la terminolog\'ia de la letra citada arriba.
+
+% ======================================================================
+\section{Analizador Sint\'actico (\texttt{bison.y})}
+% ======================================================================
+
+El analizador sint\'actico verifica que la secuencia de tokens producida
+por el lexer respete la gram\'atica de C-TDS, y construye el AST
+correspondiente a medida que reconoce cada producci\'on.
+
+\subsection{Estado actual: alcance deliberadamente reducido}
+
+\textbf{Este archivo no implementa toda la gram\'atica del lenguaje.}
+Implementa \'unicamente 4 producciones, elegidas para servir de patr\'on
+de referencia:
+
+\begin{enumerate}
+    \item \texttt{Type} --- nodo hoja, sin hijos.
+    \item \texttt{VarDecl} (con \texttt{IdList}) --- nodo con un hijo
+        fijo m\'as una cantidad variable de hijos.
+    \item \texttt{Statement} (caso asignaci\'on) --- nodo binario con
+        \texttt{left}/\texttt{right}.
+    \item \texttt{Expr} (caso \texttt{NUMBER}) --- nodo hoja con un
+        valor literal.
+\end{enumerate}
+
+El resto de la gram\'atica (\texttt{Program} real, \texttt{MethodDecl},
+\texttt{Block}, \texttt{if}/\texttt{while}, llamadas a m\'etodo, y el
+resto de los operadores de \texttt{Expr}) \textbf{no est\'a declarado
+todav\'ia}. 
+
+El s\'imbolo inicial actual es un \texttt{Program} de prueba m\'inimo
+(\texttt{VarDecl Statement}), \'util \'unicamente para poder compilar y
+probar las 4 reglas ya escritas. \textbf{No es la gram\'atica real del
+lenguaje} y se va a reemplazar cuando se implemente el \texttt{Program}
+verdadero (secci\'on~\ref{sec:program-real}).
+
+\subsection{Por qu\'e \texttt{main} no es un token}
+
+Se sac\'o deliberadamente un token \texttt{MAIN} que exist\'ia en una
+versi\'on anterior del archivo. Como se explic\'o en la secci\'on del
+lexer, la existencia de un m\'etodo \texttt{main} es una regla
+sem\'antica, no sint\'actica: \texttt{main} debe llegar al parser como un
+\texttt{ID} normal, igual que cualquier otro identificador.
+
+\subsection{Un problema real encontrado: ambig\"uedad \texttt{Type ID}}
+\label{sec:program-real}
+
+Al dise\~nar c\'omo ser\'ia el \texttt{Program} real, apareci\'o un problema
+concreto que vale la pena documentar en detalle, porque quien complete
+esta regla se va a topar con \'el si transcribe la gram\'atica de forma
+literal.
+
+La gram\'atica de \emph{Descripci\'on del Lenguaje: C-TDS} define:
+\[
+\langle program \rangle \rightarrow \langle var\_decl \rangle^{*}\; \langle method\_decl \rangle^{*}
+\]
+
+Una traducci\'on directa a Bison usar\'ia dos no-terminales separados,
+uno para la lista de \texttt{var\_decl} y otro para la lista de
+\texttt{method\_decl}. El problema es que \textbf{ambas producciones
+empiezan igual}:
+
+\[
+\langle var\_decl \rangle \rightarrow \langle type \rangle\; \langle id \rangle^{+,}\; \text{;}
+\qquad
+\langle method\_decl \rangle \rightarrow \langle type \rangle\; \langle id \rangle\; \text{(} \ldots \text{)}\; \langle block \rangle
+\]
+
+Un parser LALR(1) --- como el que genera Bison --- decide qu\'e regla
+aplicar mirando \'unicamente \emph{un} s\'imbolo por delante
+(\emph{lookahead}). Al ver \texttt{Type ID}, no hay forma de saber
+todav\'ia si lo que sigue es \texttt{;}, \texttt{,} (entonces es una
+variable) o \texttt{(} (entonces es un m\'etodo) sin seguir leyendo. Al
+declarar \texttt{VarDecl} y \texttt{MethodDecl} como listas separadas,
+Bison reporta un conflicto \emph{shift/reduce} y lo resuelve siempre a
+favor de la variable --- con el resultado de que \textbf{ning\'un
+m\'etodo con tipo de retorno distinto de \texttt{void} llega a
+parsear jam\'as}. Este bug se detect\'o probando expl\'icitamente contra
+el ejemplo de programa que trae la propia letra del lenguaje.
+
+\paragraph{Soluci\'on.} Unificar ambas producciones bajo un \'unico
+no-terminal (por ejemplo \texttt{Declaration}, con
+\texttt{DeclList} como la lista que acumula ambos casos indistintamente)
+y decidir reci\'en \emph{despu\'es} de leer el identificador si contin\'ua
+como declaraci\'on de variable o de m\'etodo. Esto no cambia el lenguaje
+reconocido --- sigue aceptando exactamente los mismos programas --- pero
+elimina la ambig\"uedad estructural. Es la soluci\'on est\'andar para
+prefijos compartidos en gram\'aticas LL/LALR.
+
+\textbf{Qui\'en implemente \texttt{Program}/\texttt{MethodDecl}/\texttt{Block}
+debe tener esto presente} y no separar \texttt{VarDecl} de
+\texttt{MethodDecl} como dos listas independientes al nivel de
+programa. (Dentro de un \texttt{Block} s\'i es seguro usar solo
+\texttt{VarDecl}, porque la gram\'atica no permite declarar m\'etodos
+dentro de un bloque.)
+
+\subsection{Precedencia de operadores}
+
+La tabla de precedencia de \texttt{bison.y} reproduce exactamente la de
+\emph{Descripci\'on del Lenguaje: C-TDS}, secci\'on ``Expresiones''
+(de menor a mayor precedencia):
+
+\begin{center}
+\begin{tabular}{ll}
+\hline
+Operadores & Asociatividad \\
+\hline
+\texttt{||} & izquierda \\
+\texttt{\&\&} & izquierda \\
+\texttt{==} & izquierda \\
+\texttt{<}\ \texttt{>} & izquierda \\
+\texttt{+}\ \texttt{-} & izquierda \\
+\texttt{*}\ \texttt{/}\ \texttt{\%} & izquierda \\
+\texttt{!}\ (negaci\'on),\ \texttt{-}\ (unario) & derecha \\
+\hline
+\end{tabular}
+\end{center}
+
+El \texttt{\%prec UMINUS} se usa (cuando se implemente la regla de menos
+unario en \texttt{Expr}) para distinguir la resta binaria del menos
+unario, que comparten el mismo s\'imbolo \texttt{-} pero tienen
+precedencias distintas.
+
+% ======================================================================
+\section{Representaci\'on del AST (\texttt{ast.h} y \texttt{ast.c})}
+% ======================================================================
+
+\subsection{Origen de la estructura: \texttt{redesign\_compilator.pdf}}
+
+El dise\~no de \texttt{NodeAST} y \texttt{Symbol} sigue el documento de
+dise\~no del equipo:
+
+\begin{lstlisting}[language=C]
+typedef struct Symbol {
+    char *id;
+    char *value;
+} Symbol;
+
+typedef struct NodeAST {
+    Symbol *symbol;
+    struct NodeAST *left;
+    struct NodeAST *right;
+    DataType type;
+    NodeType nodeType;
+} NodeAST;
+\end{lstlisting}
+
+Dos decisiones de ese documento vale la pena resaltar porque no son
+obvias a primera vista:
+
+\begin{itemize}
+    \item \textbf{El tipo no vive en \texttt{Symbol}, vive en
+        \texttt{NodeAST.type}.} Esto evita tener dos fuentes de verdad
+        distintas para el tipo de una expresi\'on --- si estuviera en
+        ambos lugares, podr\'ian desincronizarse.
+    \item \textbf{\texttt{Symbol} no es exclusivamente para variables.}
+        Tambi\'en se usa para representar operadores o resultados
+        temporales durante la resoluci\'on del AST (por ejemplo, un
+        \texttt{BINOP\_NODE} para \texttt{a + b} puede tener
+        \texttt{symbol = \{id: "+", value: "t1"\}}, donde \texttt{t1}
+        es un temporal). Esto es relevante para cuando se implemente
+        el generador de c\'odigo intermedio: los temporales de tres
+        direcciones ya tienen un lugar natural donde vivir.
+\end{itemize}
+
+\subsection{Qu\'e se agreg\'o sobre ese documento, y por qu\'e}
+
+\texttt{redesign\_compilator.pdf} ejemplific\'o la resoluci\'on de
+identificadores con un subconjunto reducido de casos (asignaci\'on,
+operaci\'on binaria, constante, retorno, definici\'on). La gram\'atica
+completa del lenguaje necesita m\'as que eso. Concretamente, sobre
+\texttt{NodeAST} se agreg\'o:
+
+\begin{lstlisting}[language=C]
+struct NodeAST **children;
+int childCount;
+\end{lstlisting}
+
+porque varias producciones de la gram\'atica tienen una cantidad
+\textbf{variable} de hijos, no fija en dos (\texttt{left}/\texttt{right}
+alcanza para nodos binarios, pero no para un programa con $N$
+declaraciones, un m\'etodo con $N$ par\'ametros, o una llamada con $N$
+argumentos). El campo \texttt{TYPE\_FLOAT} en \texttt{DataType} tambi\'en
+se agreg\'o porque el documento original solo contemplaba
+\texttt{INT}/\texttt{BOOL}/\texttt{VOID}, mientras que la letra del
+lenguaje define expl\'icitamente: \emph{``Los tipos b\'asicos en C-TDS son
+int, float y boolean''}.
+
+\textbf{Estado actual (versi\'on m\'inima):} el \texttt{enum NodeType}
+en \texttt{ast.h} solo declara los 5 valores que las 4 reglas ya
+implementadas en \texttt{bison.y} necesitan:
+\texttt{DEFINITION\_NODE}, \texttt{VAR\_DECL\_NODE}, \texttt{ID\_NODE},
+\texttt{ASSIGNMENT\_NODE} y \texttt{CONSTANT\_NODE}. A medida que se
+implementen m\'as reglas de la gram\'atica, va a hacer falta agregar
+los \texttt{NodeType} correspondientes, por ejemplo:
+\begin{itemize}[nosep]
+    \item \texttt{METHOD\_DECL\_NODE}, \texttt{BLOCK\_NODE}
+    \item \texttt{IF\_NODE}, \texttt{WHILE\_NODE}
+    \item \texttt{METHOD\_CALL\_NODE}, \texttt{UNARYOP\_NODE}, \texttt{PARAM\_NODE}
+\end{itemize}
+Se decide en el momento de implementar cada regla, no antes.
+
+\subsection{\texttt{NodeList}: por qu\'e existe y por qu\'e no es parte del AST final}
+
+Varias producciones de la gram\'atica son listas (\emph{cero o m\'as},
+\emph{uno o m\'as separados por coma}). Bison construye el resultado de
+una regla \emph{de abajo hacia arriba}: cuando se reduce
+\texttt{IdList: IdList ',' ID}, todav\'ia no existe el nodo padre
+(\texttt{VarDecl}) que va a contener esa lista como hijos. Hace falta
+alg\'un lugar transitorio donde acumular esos nodos hermanos mientras se
+van reconociendo, uno por uno, de izquierda a derecha.
+
+\texttt{NodeList} cumple exactamente ese rol: es una lista enlazada
+simple, usada \'unicamente durante la construcci\'on (dentro de las
+acciones de \texttt{bison.y}). Una vez que el nodo padre existe,
+\texttt{attachChildren} vuelca esa lista al arreglo \texttt{children[]}
+del padre y fija \texttt{childCount}. Ning\'un \texttt{NodeAST} del
+\'arbol final contiene un \texttt{NodeList}: es puramente un andamiaje de
+construcci\'on, no una estructura de datos del AST en s\'i.
+
+\subsection{Las cuatro funciones, una por una}
+
+\subsubsection{\texttt{newSymbol}}
+
+\begin{lstlisting}[language=C]
+Symbol *newSymbol(const char *id, const char *value);
+\end{lstlisting}
+
+Crea un \texttt{Symbol} reservado din\'amicamente. El detalle de
+implementaci\'on m\'as importante: \textbf{debe copiar} las cadenas
+recibidas (t\'ipicamente con \texttt{strdup}), no quedarse con el
+puntero original. La raz\'on es que \texttt{id} normalmente viene de
+\texttt{yytext} (el lexema que reconoci\'o flex), y flex \textbf{reutiliza
+el mismo buffer} en cada token siguiente. Si \texttt{Symbol} guardara
+el puntero crudo en vez de una copia, el contenido cambiar\'ia por
+debajo sin aviso apenas el lexer procese el pr\'oximo token, corrompiendo
+silenciosamente todos los \texttt{Symbol} creados hasta ese momento.
+
+\subsubsection{\texttt{newNode}}
+
+\begin{lstlisting}[language=C]
+NodeAST *newNode(NodeType nodeType, Symbol *symbol,
+                  NodeAST *left, NodeAST *right);
+\end{lstlisting}
+
+Crea un \texttt{NodeAST}, dejando \texttt{children == NULL} y
+\texttt{childCount == 0} (se completan aparte, ver
+\texttt{attachChildren}, solo en los nodos que los necesitan). El
+campo \texttt{type} se espera en un valor por defecto: el tipo
+\emph{real} de la mayor\'ia de los nodos no se conoce en el momento
+sint\'actico --- reci\'en se resuelve en el an\'alisis sem\'antico, cuando
+se puede consultar la tabla de s\'imbolos para saber, por ejemplo, con
+qu\'e tipo fue declarada una variable. Los pocos casos donde el tipo
+\emph{s\'i} se conoce de entrada (una constante entera es siempre
+\texttt{TYPE\_INT}, un \texttt{Type: int} siempre da \texttt{TYPE\_INT})
+lo fijan expl\'icitamente despu\'es de llamar a \texttt{newNode}, como se
+ve en las reglas \texttt{Type} y \texttt{Expr: NUMBER} de
+\texttt{bison.y}.
+
+\subsubsection{\texttt{newNodeList}}
+
+\begin{lstlisting}[language=C]
+NodeList *newNodeList(NodeAST *node, NodeList *next);
+\end{lstlisting}
+
+Crea (o extiende) una celda de la lista transitoria descripta arriba.
+El patr\'on de uso en \texttt{bison.y}, visible en la regla
+\texttt{IdList}, es: crear una lista de un elemento en el primer caso
+base, y en el caso recursivo recorrer hasta el final de la lista
+existente para agregar el nuevo elemento, preservando el orden textual
+en que aparecen en el c\'odigo fuente.
+
+\subsubsection{\texttt{attachChildren}}
+
+\begin{lstlisting}[language=C]
+void attachChildren(NodeAST *parent, NodeList *list);
+\end{lstlisting}
+
+Centraliza el patr\'on ``contar los elementos de la lista, reservar el
+arreglo del tama\~no exacto, copiar cada nodo en orden'' que, sin esta
+funci\'on, se repetir\'ia casi id\'entico en cada regla de la gram\'atica
+que tenga una cantidad variable de hijos. Se us\'o en \texttt{VarDecl} y
+se va a volver a usar en \texttt{MethodDecl} (para los par\'ametros),
+\texttt{MethodCall} (para los argumentos) y \texttt{Program} (para la
+lista de declaraciones), entre otras.
+
+\subsection{Por qu\'e las cuatro funciones tienen el cuerpo vac\'io}
+
+Esto es deliberado, no un olvido. Se decidi\'o definir primero la
+\textbf{interfaz completa} (qu\'e recibe cada funci\'on, qu\'e devuelve, qui\'en
+es due\~no de la memoria en cada caso --- todo documentado en los
+comentarios de \texttt{ast.h}) y reci\'en despu\'es completar la
+implementaci\'on real en \texttt{ast.c}. Esto permite que \texttt{bison.y}
+ya compile contra una interfaz estable mientras la implementaci\'on se
+sigue discutiendo o repartiendo entre el equipo, sin bloquear el
+trabajo de nadie.
+
+\end{document}

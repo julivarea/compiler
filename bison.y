@@ -1,22 +1,29 @@
 %{
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include "ast.h"
 
 extern int yylex(void);
 extern FILE *yyin;
+extern int yylineno;
 void yyerror(const char *s) {
-    fprintf(stderr, "Error sintactico: %s\n", s);
+    fprintf(stderr, "[Linea %d] Error sintactico: %s\n", yylineno, s);
 }
+
+NodeAST *raizAST = NULL;
 %}
 
 %union {
   int intval;
   float floatval;
   char* strval;
+  struct NodeAST *node;
+  struct NodeList *list;
 }
 
 /* Tokens de una sola palabra clave */
-%token MAIN VOID INT FLOAT BOOLEAN IF ELSE WHILE RETURN
+%token VOID INT FLOAT BOOLEAN IF ELSE WHILE RETURN
 
 /* Operadores relacionales y lógicos que ocupan más de un carácter */
 %token EQ AND OR NOT
@@ -35,17 +42,56 @@ void yyerror(const char *s) {
 %left '*' '/' '%'  /* multiplicación, división, resto */
 %right NOT UMINUS  /* negación lógica ! y menos unario */
 
-%%
+%type <node> Program VarDecl Statement Expr Type
+%type <list> IdList
 
+%%
     Program
-    : error {
-    printf("ADVERTENCIA: Gramatica no definida todavia.\n");
+    : VarDecl Statement { $$ = NULL; }
+    ;
+
+    Type
+    : INT       { $$ = newNode(DEFINITION_NODE, newSymbol("int", NULL), NULL, NULL); $$->type = TYPE_INT; }
+    | BOOLEAN   { $$ = newNode(DEFINITION_NODE, newSymbol("boolean", NULL), NULL, NULL); $$->type = TYPE_BOOL; }
+    | FLOAT     { $$ = newNode(DEFINITION_NODE, newSymbol("float", NULL), NULL, NULL); $$->type = TYPE_FLOAT; }
+    ;
+
+    VarDecl
+    : Type IdList ';' {
+        NodeAST *decl = newNode(VAR_DECL_NODE, NULL, $1, NULL);
+        attachChildren(decl, $2);
+        $$ = decl;
+    }
+    ;
+
+    IdList
+    : ID                { $$ = newNodeList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL), NULL); }
+    | IdList ',' ID      {
+        NodeList *l = $1;
+        while (l->next) l = l->next;
+        l->next = newNodeList(newNode(ID_NODE, newSymbol($3, NULL), NULL, NULL), NULL);
+        $$ = $1;
+    }
+    ;
+
+    Statement
+    : ID '=' Expr ';' {
+        $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, NULL), newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL), $3);
+    }
+    ;
+
+    Expr
+    : NUMBER {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%d", $1);
+        $$ = newNode(CONSTANT_NODE, newSymbol(buf, buf), NULL, NULL);
+        $$->type = TYPE_INT;
     }
     ;
 
 %%
 
-#ifndef UNITY_TESTING // notacion que ignora la compilacion del main, ya que tiene que correr el main de la suite de tests
+#ifndef UNITY_TESTING
 int main(int argc, char** argv) {
     if (argc > 1) {
         yyin = fopen(argv[1], "r");
