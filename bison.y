@@ -51,41 +51,58 @@ NodeAST *raizAST = NULL;
     ;
 
     Type
-    : INT       { $$ = newNode(TYPE_NODE, newSymbol("int", NULL), NULL, NULL); $$->type = TYPE_INT; }
-    | BOOLEAN   { $$ = newNode(TYPE_NODE, newSymbol("boolean", NULL), NULL, NULL); $$->type = TYPE_BOOL; }
-    | FLOAT     { $$ = newNode(TYPE_NODE, newSymbol("float", NULL), NULL, NULL); $$->type = TYPE_FLOAT; }
+    : INT       { $$ = newNode(TYPE_NODE, newSymbol("int", NULL), NULL, NULL, NULL); $$->type = TYPE_INT; }
+    | BOOLEAN   { $$ = newNode(TYPE_NODE, newSymbol("boolean", NULL), NULL, NULL, NULL); $$->type = TYPE_BOOL; }
+    | FLOAT     { $$ = newNode(TYPE_NODE, newSymbol("float", NULL), NULL, NULL, NULL); $$->type = TYPE_FLOAT; }
     ;
 
     VariableDeclaration
     : Type IdentifierList ';' {
-        NodeAST *decl = newNode(VARIABLE_DECLARATION_NODE, NULL, $1, NULL);
+        NodeAST *decl = newNode(VARIABLE_DECLARATION_NODE, NULL, $1, NULL, NULL);
         attachChildren(decl, $2);
         $$ = decl;
     }
     ;
 
     IdentifierList
-    : ID                { $$ = newNodeList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL), NULL); }
+    : ID                { $$ = newNodeList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL); }
     | IdentifierList ',' ID      {
         NodeList *l = $1;
         while (l->next) l = l->next;
-        l->next = newNodeList(newNode(ID_NODE, newSymbol($3, NULL), NULL, NULL), NULL);
+        l->next = newNodeList(newNode(ID_NODE, newSymbol($3, NULL), NULL, NULL, NULL), NULL);
         $$ = $1;
     }
     ;
 
     Statement
     : ID '=' Expression ';' {
-        $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, NULL), newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL), $3);
+        $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, NULL), newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL, $3);
     }
+    ;
+
+    Statement
+    : ID '=' Expression ';' { newNode(ASSIGNMENT_NODE, newSymbol($1, NULL), newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL, $3)};
+    | MethodCall ';' {$$ = $1; }
+    | RETURN Expression ';' { newNode(RETURN_NODE, newSymbol($2, NULL), NULL, NULL, NULL); } // save a expression reference to return
+    | Block { $$ = $1; }
+    | WHILE Expression Block { newNode(WHILE_NODE, NULL, $2, NULL, $3) };
+    | IF '(' Expression ')' Block ELSE Block { newNode(IF_ELSE_NODE, NULL, $1, $2, $3) };
+    | ';' { }
+
+    MethodCall
+    : ID '(' ListArguments ')'
+
+    ListArguments
+    : Expression 
+    | Expression ',' ListArguments
     ;
 
     Expression
     // during type checking, we verify that IdentifierList.size() == 1
     : IdentifierList
-    | FLOAT_CONST
-    | BOOLEAN_CONST
-    | NUMBER
+    | FLOAT_CONST { newLiteralNode(FLOAT_TYPE, getValueOf(FLOAT_CONST));}
+    | BOOLEAN_CONST { newLiteralNode(BOOLEAN_CONST, getValueOf(BOOLEAN_CONST));}
+    | NUMBER { newLiteralNode(NUMBER, getValueOf(NUMBER));}
     // during type cheking, we verify that this.isFloatConst() || this.isNumberConst() -> e.g = {-0.2, -2, ...}
     | '-' Expression
     // during type cheking, we verify that this.isBooleanConst()
@@ -98,9 +115,9 @@ NodeAST *raizAST = NULL;
     | Expression '%' Expression
     | Expression '<' Expression
     | Expression '>' Expression
-    | Expression '==' Expression
-    | Expression '&&' Expression
-    | Expression '||' Expression
+    | Expression EQ Expression
+    | Expression AND Expression
+    | Expression OR Expression
     ;
 
     MethodDeclaration

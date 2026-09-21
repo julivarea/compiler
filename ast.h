@@ -15,7 +15,8 @@ typedef enum {
     VARIABLE_DECLARATION_NODE,    /* VarDecl: <type> <id>+, ; */
     ID_NODE,          /* uso/mencion de un identificador */
     ASSIGNMENT_NODE,  /* Statement: <id> = <expr> ; */
-    CONSTANT_NODE     /* Expr: literal (por ahora, NUMBER) */
+    CONSTANT_NODE,     /* Expr: literal (por ahora, NUMBER) */
+    RETURN_NODE
 } NodeType;
 
 /* Symbol 
@@ -34,6 +35,7 @@ typedef struct Symbol {
 typedef struct NodeAST {
     Symbol *symbol;
     struct NodeAST *left;
+    struct NodeAST *mid;
     struct NodeAST *right;
     DataType type;
     NodeType nodeType;
@@ -96,7 +98,7 @@ Symbol *newSymbol(const char *id, const char *value);
  *   quedan referenciados (no copiados): el nodo padre pasa a ser
  *   responsable de esos punteros tambien.
  */
-NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *right);
+NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid, NodeAST *right);
 
 /*
  * newNodeList
@@ -139,5 +141,7 @@ NodeList *newNodeList(NodeAST *node, NodeList *next);
  *   aca o si eso queda a cargo del llamador.
  */
 void attachChildren(NodeAST *parent, NodeList *list);
+
+NodeAST *newLiteralNode(DataType type, const char *value);
 
 #endif /* AST_H */

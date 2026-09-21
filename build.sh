@@ -9,4 +9,4 @@ echo "Compilando parser e interprete..."
 gcc -I. -Ibuild ast.c symtab.c interpreter.c build/bison.tab.c build/lex.yy.c -o mi_compilador
 
 echo "Build finalizado. El ejecutable se encuentra en ./mi_compilador"
-echo "Ejemplo: ./mi_compilador prueba.c--
+echo "Ejemplo: ./mi_compilador prueba.c--"
