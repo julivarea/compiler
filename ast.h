@@ -11,8 +11,8 @@ typedef enum {
 
 /* Tipos de nodo del AST */
 typedef enum {
-    DEFINITION_NODE,  /* Type: int | boolean | float */
-    VAR_DECL_NODE,    /* VarDecl: <type> <id>+, ; */
+    TYPE_NODE,  /* Type: int | boolean | float */
+    VARIABLE_DECLARATION_NODE,    /* VarDecl: <type> <id>+, ; */
     ID_NODE,          /* uso/mencion de un identificador */
     ASSIGNMENT_NODE,  /* Statement: <id> = <expr> ; */
     CONSTANT_NODE     /* Expr: literal (por ahora, NUMBER) */
@@ -29,7 +29,7 @@ typedef struct Symbol {
 
 /* NodeAST
  * left/right para nodos binarios (ASSIGNMENT_NODE). children/childCount
- * para nodos con una cantidad variable de hijos (VAR_DECL_NODE, ver
+ * para nodos con una cantidad variable de hijos (VARIABLE_DECLARATION_NODE, ver
  * IdList en bison.y). */
 typedef struct NodeAST {
     Symbol *symbol;

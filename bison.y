@@ -42,31 +42,31 @@ NodeAST *raizAST = NULL;
 %left '*' '/' '%'  /* multiplicación, división, resto */
 %right NOT UMINUS  /* negación lógica ! y menos unario */
 
-%type <node> Program VarDecl Statement Expr Type
-%type <list> IdList
+%type <node> Program VariableDeclaration Statement Expression Type
+%type <list> IdentifierList
 
 %%
     Program
-    : VarDecl Statement { $$ = NULL; }
+    : VariableDeclaration Statement { $$ = NULL; }
     ;
 
     Type
-    : INT       { $$ = newNode(DEFINITION_NODE, newSymbol("int", NULL), NULL, NULL); $$->type = TYPE_INT; }
-    | BOOLEAN   { $$ = newNode(DEFINITION_NODE, newSymbol("boolean", NULL), NULL, NULL); $$->type = TYPE_BOOL; }
-    | FLOAT     { $$ = newNode(DEFINITION_NODE, newSymbol("float", NULL), NULL, NULL); $$->type = TYPE_FLOAT; }
+    : INT       { $$ = newNode(TYPE_NODE, newSymbol("int", NULL), NULL, NULL); $$->type = TYPE_INT; }
+    | BOOLEAN   { $$ = newNode(TYPE_NODE, newSymbol("boolean", NULL), NULL, NULL); $$->type = TYPE_BOOL; }
+    | FLOAT     { $$ = newNode(TYPE_NODE, newSymbol("float", NULL), NULL, NULL); $$->type = TYPE_FLOAT; }
     ;
 
-    VarDecl
-    : Type IdList ';' {
-        NodeAST *decl = newNode(VAR_DECL_NODE, NULL, $1, NULL);
+    VariableDeclaration
+    : Type IdentifierList ';' {
+        NodeAST *decl = newNode(VARIABLE_DECLARATION_NODE, NULL, $1, NULL);
         attachChildren(decl, $2);
         $$ = decl;
     }
     ;
 
-    IdList
+    IdentifierList
     : ID                { $$ = newNodeList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL), NULL); }
-    | IdList ',' ID      {
+    | IdentifierList ',' ID      {
         NodeList *l = $1;
         while (l->next) l = l->next;
         l->next = newNodeList(newNode(ID_NODE, newSymbol($3, NULL), NULL, NULL), NULL);
@@ -75,19 +75,34 @@ NodeAST *raizAST = NULL;
     ;
 
     Statement
-    : ID '=' Expr ';' {
+    : ID '=' Expression ';' {
         $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, NULL), newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL), $3);
     }
     ;
 
-    Expr
-    : NUMBER {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%d", $1);
-        $$ = newNode(CONSTANT_NODE, newSymbol(buf, buf), NULL, NULL);
-        $$->type = TYPE_INT;
-    }
+    Expression
+    // during type checking, we verify that IdentifierList.size() == 1
+    : IdentifierList
+    | FLOAT_CONST
+    | BOOLEAN_CONST
+    | NUMBER
+    // during type cheking, we verify that this.isFloatConst() || this.isNumberConst() -> e.g = {-0.2, -2, ...}
+    | '-' Expression
+    // during type cheking, we verify that this.isBooleanConst()
+    | '!' Expression
+    | '(' Expression ')'
     ;
+
+    /* ⟨expr⟩ → ⟨id⟩
+| ⟨method call⟩
+| ⟨literal⟩
+| ⟨expr⟩ ⟨bin op⟩ ⟨expr⟩
+| - ⟨expr⟩
+| ! ⟨expr⟩
+| ( ⟨expr⟩ )
+
+
+⟨bin op⟩ → + | - | * | / | % | < | > | == | && || || */
 
 %%
 
