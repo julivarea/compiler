@@ -91,19 +91,25 @@ NodeAST *raizAST = NULL;
     // during type cheking, we verify that this.isBooleanConst()
     | '!' Expression
     | '(' Expression ')'
+    | Expression '+' Expression
+    | Expression '-' Expression
+    | Expression '*' Expression
+    | Expression '/' Expression
+    | Expression '%' Expression
+    | Expression '<' Expression
+    | Expression '>' Expression
+    | Expression '==' Expression
+    | Expression '&&' Expression
+    | Expression '||' Expression
     ;
 
-    /* ⟨expr⟩ → ⟨id⟩
-| ⟨method call⟩
-| ⟨literal⟩
-| ⟨expr⟩ ⟨bin op⟩ ⟨expr⟩
-| - ⟨expr⟩
-| ! ⟨expr⟩
-| ( ⟨expr⟩ )
+    MethodDeclaration
+    : ReturnType ID '(' IdentifierList ')' Block
 
-
-⟨bin op⟩ → + | - | * | / | % | < | > | == | && || || */
-
+    ReturnType:
+      Type
+    | VOID
+    ;
 %%
 
 #ifndef UNITY_TESTING
