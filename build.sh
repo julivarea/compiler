@@ -6,7 +6,7 @@ bison -d bison.y -o build/bison.tab.c
 flex -o build/lex.yy.c lexer.l
 
 echo "Compilando parser e interprete..."
-gcc -I. -Ibuild ast.c symtab.c interpreter.c build/bison.tab.c build/lex.yy.c -o mi_compilador
+gcc -I. -Ibuild build/bison.tab.c build/lex.yy.c -o mi_compilador
 
 echo "Build finalizado. El ejecutable se encuentra en ./mi_compilador"
 echo "Ejemplo: ./mi_compilador prueba.c--"

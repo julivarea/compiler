@@ -47,7 +47,7 @@ NodeAST *raizAST = NULL;
 
 %%
     Program
-    : VariableDeclarations MethodDeclarations
+    : Declarations
     ;
 
     VariableDeclarations
@@ -55,9 +55,14 @@ NodeAST *raizAST = NULL;
     | VariableDeclaration VariableDeclarations
     ;
 
-    MethodDeclarations
+    Declarations
     : /* empty */
-    | MethodDeclaration MethodDeclarations
+    | Declaration Declarations
+    ;
+
+    Declaration
+    : VariableDeclaration
+    | MethodDeclaration
     ;
     
     Type
@@ -141,7 +146,8 @@ NodeAST *raizAST = NULL;
     ;
 
     MethodDeclaration
-    : ReturnType ID '(' ParameterList ')' Block
+    : Type ID '(' ParameterList ')' Block
+    | VOID ID '(' ParameterList ')' Block
     ;
 
     ParameterList
@@ -158,10 +164,7 @@ NodeAST *raizAST = NULL;
     : '{' VariableDeclarations Statements '}' /* { $$ = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL); } */
     ;
 
-    ReturnType
-    : Type
-    | VOID
-    ;
+
 %%
 
 #ifndef UNITY_TESTING
