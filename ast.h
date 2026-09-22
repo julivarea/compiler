@@ -11,12 +11,16 @@ typedef enum {
 
 /* Tipos de nodo del AST */
 typedef enum {
-    TYPE_NODE,  /* Type: int | boolean | float */
-    VARIABLE_DECLARATION_NODE,    /* VarDecl: <type> <id>+, ; */
-    ID_NODE,          /* uso/mencion de un identificador */
-    ASSIGNMENT_NODE,  /* Statement: <id> = <expr> ; */
-    CONSTANT_NODE,     /* Expr: literal (por ahora, NUMBER) */
-    RETURN_NODE
+    TYPE_NODE,
+    VARIABLE_DECLARATION_NODE,
+    ID_NODE,
+    ASSIGNMENT_NODE,
+    CONSTANT_NODE,
+    RETURN_NODE,
+    IF_ELSE_NODE,
+    WHILE_NODE,
+    BLOCK_NODE,
+    METHOD_CALL_NODE
 } NodeType;
 
 /* Symbol 
