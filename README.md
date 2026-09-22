@@ -1,50 +1,63 @@
-# Preproyecto
+# C-TDS Compiler
 
-Este preproyecto es el desarrollo de las primeras fases de un compilador para la materia de Compiladores. Implementa el análisis léxico, el análisis sintáctico, la tabla de símbolos y un intérprete que evalúa el código y genera sentencias de tres direcciones (pseudo-assembly).
+Compilador desde cero para C-TDS (TDS26), un lenguaje de programación
+imperativo simple, desarrollado como proyecto de la materia Taller de Diseño
+de Software (Cod. 3306).
 
-## Introducción
+El proyecto se aborda de forma incremental: esta primera entrega cubre el
+análisis léxico y sintáctico del lenguaje, usando Flex y Bison, junto con la
+interfaz del árbol de sintaxis abstracta (AST) que van a usar las próximas
+etapas.
 
-El compilador está compuesto por las siguientes etapas:
+## Autores
 
-- **Análisis Léxico**: Realizado con Flex, convierte el código fuente en tokens.
-- **Análisis Sintáctico**: Realizado con Bison, verifica la gramática y construye el AST.
-- **Análisis Semántico e Interpretación**: Recorre el AST validando variables contra la Tabla de Símbolos y evalúa las expresiones matemáticas.
+- Agustín Alieni
+- Fran Natale
+- Julián Varea
 
-## Estructura
+## Estado actual
 
-El código está organizado en los siguientes módulos:
+- **Análisis léxico** (`lexer.l`): reconoce todos los tokens del lenguaje
+  (palabras reservadas, identificadores, constantes numéricas y booleanas,
+  operadores, delimitadores y comentarios), con número de línea en los
+  mensajes de error.
+- **Análisis sintáctico** (`bison.y`): reconoce la gramática completa de
+  C-TDS (declaraciones de variables y métodos intercaladas, bloques,
+  condicionales, ciclos, llamadas a método, expresiones con precedencia de
+  operadores), sin conflictos shift/reduce ni reglas inalcanzables.
+- **AST** (`ast.h`, `ast.c`): por ahora solo está definida la interfaz. Las
+  firmas y la documentación de cada función están en `ast.h`; los cuerpos en
+  `ast.c` están vacíos a propósito, y las acciones semánticas de `bison.y`
+  están escritas pero comentadas, a la espera de cerrar en equipo algunas
+  decisiones de diseño antes de implementarlas.
 
-- `lexer.l`: Definición de expresiones regulares y tokens.
-- `bison.y`: Reglas gramaticales y lógica de construcción del AST.
-- `ast.c` / `ast.h`: Definición de la estructura del árbol y manejo de memoria dinámica.
-- `symtab.c` / `symtab.h`: Implementación de la tabla de símbolos para el control de variables.
-- `interpreter.c` / `interpreter.h`: Funciones de evaluación del AST y generación de código intermedio.
-- `build.sh`: Script para automatizar la compilación con gcc.
-- `test_suite.sh`: Script para correr las pruebas unitarias.
+Los detalles y las decisiones de diseño de esta etapa (el conflicto
+shift/reduce que resolvimos, por qué separamos el AST de la gramática, el
+criterio para decidir cuándo un nodo se representa en el árbol, etc.) están
+documentados en
+[`documentation/syntactic analyzer/analizador_sintactico.pdf`](documentation/syntactic%20analyzer/analizador_sintactico.pdf).
 
-## Requisitos
+## Estructura del repositorio
 
-Para compilar y ejecutar el proyecto en un entorno Linux se necesita:
-- `gcc` 
-- `flex`
-- `bison`
-
-## Compilación y Uso
-
-Para construir el ejecutable principal, simplemente ejecuta el script de compilación provisto:
-
-```bash
-./build.sh
+```
+.
+├── lexer.l                                          # Analizador léxico (Flex)
+├── bison.y                                          # Analizador sintáctico (Bison)
+├── ast.h                                            # Interfaz del AST
+├── ast.c                                            # Implementación del AST (pendiente)
+└── documentation/
+    └── syntactic analyzer/
+        └── analizador_sintactico.pdf                # Documentación de esta etapa
 ```
 
-Esto generará los archivos de C a partir de Flex/Bison y compilará todo el proyecto. El binario resultante se llamará `mi_compilador` y se guardará en la raíz del proyecto.
-
-Para ejecutar el compilador pasándole el código fuente de prueba (`prueba.c--`):
+## Compilación
 
 ```bash
-./mi_compilador prueba.c--
+to do julian varea
 ```
 
-## Decisiones y progreso actual
+## Uso
 
-Se redacto un informe en /documentation/preproject.pdf profundizando el codigo fuente y lo realizado hasta el momento  
+```bash
+to do julian varea
+```
