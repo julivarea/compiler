@@ -25,6 +25,26 @@ el AST: dejamos declarada su interfaz en \texttt{ast.h}, con los cuerpos de
 a la espera de que terminemos de cerrar en equipo algunas decisiones de
 diseño que todavía están abiertas.
 
+\section{División del trabajo}
+
+El trabajo de esta etapa se dividió en dos frentes, que avanzaron en paralelo
+y se integraron sobre el final:
+
+\begin{itemize}
+  \item \textbf{Analizador léxico}: definición y ajuste de las expresiones
+  regulares de \texttt{lexer.l} para cubrir todos los tokens de la
+  especificación, y de los mensajes de error léxico.
+  \item \textbf{Analizador sintáctico y AST}: diseño de la gramática de
+  \texttt{bison.y}, detección y resolución del conflicto shift/reduce
+  descripto en la Sección~\ref{sec:decisiones}, y diseño de la interfaz del
+  AST en \texttt{ast.h}.
+\end{itemize}
+
+Las decisiones de diseño más importantes (la resolución del conflicto
+shift/reduce y el criterio para el AST) se discutieron y acordaron en
+conjunto entre los tres integrantes antes de llevarlas al código, para no
+depender de que una sola persona las resolviera por su cuenta.
+
 \section{Analizador léxico}
 
 El lexer reconoce todos los tokens que describe la especificación del
@@ -57,19 +77,8 @@ Bison. Nos pareció imprescindible para que un mensaje de error sea útil: sin
 número de línea, encontrar dónde está el problema en un archivo fuente de
 varias decenas de líneas obliga a revisar todo el archivo a mano.
 
-\subsection{Comentarios multilínea}
-
-Reconocemos comentarios multilínea con la expresión regular
-\texttt{"/*"([\textasciicircum{}*]|\textbackslash*+[\textasciicircum{}*/])*\textbackslash*+"/"}, que exige que el
-comentario esté efectivamente cerrado con \texttt{*/}. El caso de un
-comentario multilínea que nunca se cierra (el archivo termina dentro de un
-comentario abierto) queda señalado como algo pendiente de resolver en una
-iteración posterior del lexer: hoy ese caso no genera un mensaje de error
-específico, y preferimos dejarlo así por el momento en lugar de introducir un
-estado exclusivo (\texttt{\%x}) y una regla de \texttt{<<EOF>>} sin haberlo
-discutido primero en equipo.
-
-\section{Analizador sintáctico}
+\section{Decisiones de diseño, asunciones y extensiones}
+\label{sec:decisiones}
 
 \subsection{Un conflicto shift/reduce que nos obligó a rediseñar la gramática}
 
@@ -133,15 +142,6 @@ intermedio \texttt{ReturnType} e integrar directamente \texttt{Type} y
 \texttt{VOID} en \texttt{MethodDeclaration}, para no introducir una reducción
 adicional que pudiera volver a confundir al parser en ese mismo punto.
 
-Verificamos la corrección de este cambio de dos formas. Por un lado, generamos
-la gramática con \texttt{bison -d -v} y confirmamos que el archivo de reporte
-no muestra ningún conflicto shift/reduce ni reglas inalcanzables, algo que sí
-aparecía con el diseño original. Por otro lado, compilamos el parser completo
-contra Flex y contra la interfaz de AST y lo corrimos sobre el ejemplo de la
-letra y sobre variantes propias (variables intercaladas con métodos,
-condicionales anidados, ciclos, llamadas a método con y sin argumentos):
-todos los casos válidos parsean sin errores formales.
-
 \subsection{Precedencia de operadores}
 
 Para resolver la precedencia y asociatividad de los operadores de
@@ -153,13 +153,57 @@ multiplicación/división/resto, y por último la negación lógica y el menos
 unario. Optamos por esta vía declarativa en lugar de reescribir
 \texttt{Expression} como una jerarquía explícita de no terminales por nivel
 de precedencia (una alternativa habitual cuando no se cuenta con
-declaraciones de precedencia de la herramienta). Es un punto que podríamos
-reconsiderar más adelante si en alguna etapa posterior necesitamos que la
-propia estructura del árbol refleje la precedencia de forma explícita, pero
-por ahora nos alcanza con que Bison la resuelva a partir de estas
-declaraciones.
+declaraciones de precedencia de la herramienta).
 
-\section{Diseño del AST}
+\subsection{Comentarios multilínea sin cerrar}
+
+Asumimos, por el momento, que todo comentario multilínea que se abre en el
+código fuente se cierra correctamente. El caso de un comentario multilínea
+que nunca se cierra (el archivo termina dentro de un comentario abierto)
+queda señalado como algo pendiente de resolver en una iteración posterior del
+lexer, y se detalla en la Sección~\ref{sec:problemas}.
+
+\subsection{AST: solo interfaz en esta etapa}
+
+Decidimos, como extensión al alcance mínimo pedido para esta entrega, dejar
+completamente definida y documentada la interfaz del AST (\texttt{ast.h}),
+aunque no forma parte de lo exigido para el analizador sintáctico en sí. La
+justificación de esta decisión se desarrolla en la Sección~\ref{sec:ast}.
+
+\section{Descripción de diseño y justificación}
+\label{sec:ast}
+
+\subsection{Alternativas consideradas para el conflicto shift/reduce}
+
+Antes de llegar a la unificación de \texttt{Declarations}/\texttt{Declaration}
+descripta en la Sección~\ref{sec:decisiones}, consideramos dos alternativas
+que descartamos:
+
+\begin{itemize}
+  \item \textbf{Aumentar el lookahead}: Bison genera parsers LALR(1), con un
+  solo token de adelanto; no hay forma de pedirle más lookahead sin cambiar
+  de herramienta o de clase de gramática, así que esta alternativa no era
+  viable con lex/yacc.
+  \item \textbf{Forzar el orden en la letra} (todas las variables antes que
+  los métodos): en teoría resolvía el conflicto, pero invalidaba el propio
+  ejemplo de programa que trae la especificación del lenguaje, que intercala
+  una variable y un método. La descartamos porque no es fiel al lenguaje que
+  tenemos que reconocer.
+\end{itemize}
+
+La alternativa que aplicamos (unificar ambas listas en un único no terminal
+y diferir la decisión hasta ver el token siguiente a \texttt{Type ID}) es el
+patrón estándar para este tipo de ambigüedad de prefijo compartido en
+gramáticas LL/LALR, y es la que finalmente seleccionamos porque no exige
+tocar el lenguaje ni la herramienta, solo la forma en que factorizamos la
+gramática. La verificamos de dos formas: generando la gramática con
+\texttt{bison -d -v} y confirmando que el archivo de reporte no muestra
+ningún conflicto shift/reduce ni reglas inalcanzables (algo que sí aparecía
+con el diseño original), y compilando el parser completo contra Flex y la
+interfaz de AST para correrlo sobre el ejemplo de la letra y sobre variantes
+propias (variables intercaladas con métodos, condicionales anidados, ciclos,
+llamadas a método con y sin argumentos), confirmando que todos los casos
+válidos parsean sin errores formales.
 
 \subsection{Por qué separamos el AST de \texttt{bison.y}}
 
@@ -219,7 +263,7 @@ hijos depende del programa fuente (por ejemplo, la lista de identificadores
 de una declaración de variables, o los argumentos de una llamada a método).
 El campo \texttt{type} guarda el tipo semántico del nodo (\texttt{TYPE\_INT},
 \texttt{TYPE\_BOOL}, etc.), separado de \texttt{nodeType} para no mezclar
-"qué construcción sintáctica es este nodo" con "qué tipo de dato tiene", que
+``qué construcción sintáctica es este nodo'' con ``qué tipo de dato tiene'', que
 son dos preguntas distintas y que además se resuelven en momentos distintos
 del proceso (la primera durante el parsing, la segunda recién en el análisis
 semántico).
@@ -241,20 +285,82 @@ representa la apertura de un nuevo scope y agrupa las declaraciones de
 variables y las sentencias que contiene, que sí son información real que el
 árbol necesita conservar.
 
-\section{Alcance de esta entrega}
+\section{Detalles de implementación interesantes}
 
-Lo que dejamos funcionando en esta etapa es el análisis léxico y sintáctico
-completo de C-TDS: el parser reconoce todo el lenguaje descripto en la
-especificación (declaraciones de variables y métodos intercaladas, bloques,
-condicionales, ciclos, llamadas a método, expresiones con toda la precedencia
-de operadores) sin conflictos ni reglas inalcanzables, y compila junto con el
-analizador léxico sin errores. Del AST, en esta etapa solo dejamos definida
-la interfaz (\texttt{ast.h}) y las invocaciones ya escritas pero comentadas
-dentro de \texttt{bison.y}, a modo de referencia de cómo se va a construir
-cada nodo. No es que falte terminar algo que debiera estar: es una decisión
-deliberada, porque implementar el AST implica decisiones de diseño que
-todavía tenemos que cerrar como equipo, y preferimos no tomarlas de forma
-apurada o unilateral. La próxima etapa consiste en completar los cuerpos de
+\subsection{Resolución de la ambigüedad \texttt{Type ID}}
+
+El punto más particular de esta etapa es, en términos de implementación, la
+técnica usada para resolver la ambigüedad de prefijo compartido entre
+\texttt{VariableDeclaration} y \texttt{MethodDeclaration} (ver
+Sección~\ref{sec:decisiones}). No es un algoritmo en el sentido clásico, sino
+una técnica de factorización de gramáticas: en vez de que dos producciones
+alternativas empiecen ambas por los mismos símbolos y dejen que el parser
+``adivine'' cuál es, se las fusiona en una sola producción que consume el
+prefijo común y recién más adelante, con la gramática ya en un estado neutro,
+se bifurca según el símbolo siguiente. Es el mismo principio que la
+factorización por la izquierda en gramáticas LL, aplicado acá para evitarle
+al parser LALR(1) una decisión que no puede tomar con un solo token de
+adelanto.
+
+\subsection{Listas de hijos mediante \texttt{NodeList}}
+
+Para los nodos con una cantidad variable de hijos (por ejemplo,
+\texttt{VariableDeclaration}, cuya cantidad de identificadores declarados no
+se conoce de antemano), la interfaz de \texttt{ast.h} separa dos
+responsabilidades: \texttt{NodeList} es una lista enlazada transitoria, que
+solo existe durante la construcción del árbol dentro de \texttt{bison.y} para
+ir acumulando nodos hermanos a medida que la gramática reduce reglas
+recursivas (\texttt{IdentifierList}, \texttt{VariableDeclarations},
+\texttt{Statements}); y \texttt{attachChildren} es la función encargada de
+volcar esa lista al arreglo \texttt{children[]} del nodo padre una única vez,
+dejando el AST final compuesto solo por \texttt{NodeAST}, sin rastros de la
+lista auxiliar. Elegimos este esquema en dos pasos (acumular en lista,
+después volcar a arreglo) en lugar de, por ejemplo, usar directamente un
+arreglo dinámico que se va agrandando durante el parsing, porque encaja mejor
+con la forma en que Bison arma los valores semánticos de abajo hacia arriba
+en reglas recursivas por la derecha.
+
+\section{Problemas conocidos}
+\label{sec:problemas}
+
+\subsection{Comentario multilínea sin cerrar}
+
+\textbf{Detección}: al construir casos de test para el lexer, probamos
+deliberadamente un archivo fuente donde un comentario multilínea se abre con
+\texttt{/*} y el archivo termina sin el \texttt{*/} correspondiente. La
+expresión regular actual de \texttt{lexer.l} para comentarios multilínea
+exige que el cierre exista, así que en este caso no matchea ninguna regla de
+comentario.
+
+\textbf{Caso de test}:
+\begin{verbatim}
+/* este comentario
+nunca se cierra
+int nuncaSeEjecuta;
+\end{verbatim}
+
+\textbf{Comportamiento actual}: como la regla de comentario no matchea (no
+hay \texttt{*/}), el lexer cae en las reglas siguientes y termina
+interpretando el contenido del comentario carácter por carácter, reportando
+cada símbolo dentro de él como error léxico, en lugar de señalar el problema
+real, que es que el comentario nunca se cerró.
+
+\textbf{Acción tomada}: identificamos el problema y la solución conceptual
+(introducir un estado exclusivo de Flex, por ejemplo \texttt{\%x COMMENT},
+que se entre al ver \texttt{/*} y se salga al ver \texttt{*/}, junto con una
+regla de \texttt{<<EOF>>} dentro de ese estado que reporte explícitamente
+``comentario no cerrado''), pero decidimos no aplicarla todavía en
+\texttt{lexer.l}. Queda pendiente para una iteración posterior del lexer.
+
+\subsection{Alcance de esta entrega}
+
+Del AST, en esta etapa solo dejamos definida la interfaz (\texttt{ast.h}) y
+las invocaciones ya escritas pero comentadas dentro de \texttt{bison.y}, a
+modo de referencia de cómo se va a construir cada nodo; los cuerpos de
+\texttt{ast.c} están vacíos. No es un problema en el sentido de algo que
+falle: es una decisión deliberada (ver Sección~\ref{sec:ast}), porque
+implementar el AST implica decisiones de diseño que todavía tenemos que
+cerrar como equipo. La próxima etapa consiste en completar los cuerpos de
 \texttt{ast.c} y descomentar las acciones semánticas de \texttt{bison.y} una
 vez que terminemos de acordar esos últimos detalles.
 
