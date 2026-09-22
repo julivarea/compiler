@@ -127,9 +127,9 @@ NodeAST *raizAST = NULL;
     Expression
     : ID
     | MethodCall
-    | FLOAT_CONST /* { newLiteralNode(TYPE_FLOAT, NULL);} */
-    | BOOL_CONST /* { newLiteralNode(BOOL_CONST, NULL);} */
-    | NUMBER /* { newLiteralNode(NUMBER, NULL);} */
+    | FLOAT_CONST /* { $$ = newLiteralNode(TYPE_FLOAT, NULL); } */
+    | BOOL_CONST  /* { $$ = newLiteralNode(TYPE_BOOL, NULL); } */
+    | NUMBER      /* { $$ = newLiteralNode(TYPE_INT, NULL); } */
     | '-' Expression
     | NOT Expression
     | '(' Expression ')'
