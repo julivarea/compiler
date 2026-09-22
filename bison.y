@@ -43,7 +43,7 @@ NodeAST *raizAST = NULL;
 %right NOT UMINUS  /* negación lógica ! y menos unario */
 
 %type <node> Program VariableDeclaration Statement Expression Type MethodCall Block
-%type <list> IdentifierList ListArguments
+%type <list> IdentifierList ListArguments VariableDeclarations Statements
 
 %%
     Program
@@ -51,8 +51,8 @@ NodeAST *raizAST = NULL;
     ;
 
     VariableDeclarations
-    : /* empty */
-    | VariableDeclaration VariableDeclarations
+    : /* empty */                               /* { $$ = NULL; } */
+    | VariableDeclaration VariableDeclarations  /* { $$ = newNodeList($1, $2); } */
     ;
 
     Declarations
@@ -79,10 +79,11 @@ NodeAST *raizAST = NULL;
     } */
     ;
 
-    Statements:
-    |
-    Statement Statements
+    Statements
+    : /* empty */                  /* { $$ = NULL; } */
+    | Statement Statements         /* { $$ = newNodeList($1, $2); } */
     ;
+
     IdentifierList
     : ID                /* { $$ = newNodeList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL); } */
     | IdentifierList ',' ID      /* {
@@ -161,7 +162,12 @@ NodeAST *raizAST = NULL;
     ;
 
     Block
-    : '{' VariableDeclarations Statements '}' /* { $$ = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL); } */
+    : '{' VariableDeclarations Statements '}'
+        /* {
+        NodeAST *block = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL);
+        attachChildren(block, mergeLists($2, $3));
+        $$ = block;
+} */
     ;
 
 
