@@ -17,19 +17,20 @@ etapas.
 
 ## Estado actual
 
-- **Análisis léxico** (`lexer.l`): reconoce todos los tokens del lenguaje
+- **Análisis léxico** (`src/lexer.l`): reconoce todos los tokens del lenguaje
   (palabras reservadas, identificadores, constantes numéricas y booleanas,
   operadores, delimitadores y comentarios), con número de línea en los
   mensajes de error.
-- **Análisis sintáctico** (`bison.y`): reconoce la gramática completa de
+- **Análisis sintáctico** (`src/bison.y`): reconoce la gramática completa de
   C-TDS (declaraciones de variables y métodos intercaladas, bloques,
   condicionales, ciclos, llamadas a método, expresiones con precedencia de
   operadores), sin conflictos shift/reduce ni reglas inalcanzables.
-- **AST** (`ast.h`, `ast.c`): por ahora solo está definida la interfaz. Las
-  firmas y la documentación de cada función están en `ast.h`; los cuerpos en
-  `ast.c` están vacíos a propósito, y las acciones semánticas de `bison.y`
-  están escritas pero comentadas, a la espera de cerrar en equipo algunas
-  decisiones de diseño antes de implementarlas.
+- **AST** (`src/ast.h`, `src/ast.c`): por ahora solo está definida la
+  interfaz. Las firmas y la documentación de cada función están en
+  `src/ast.h`; los cuerpos en `src/ast.c` están vacíos a propósito, y las
+  acciones semánticas de `src/bison.y` están escritas pero comentadas, a la
+  espera de cerrar en equipo algunas decisiones de diseño antes de
+  implementarlas.
 
 Los detalles y las decisiones de diseño de esta etapa (el conflicto
 shift/reduce que resolvimos, por qué separamos el AST de la gramática, el
@@ -41,13 +42,18 @@ documentados en
 
 ```
 .
-├── lexer.l                                          # Analizador léxico (Flex)
-├── bison.y                                          # Analizador sintáctico (Bison)
-├── ast.h                                            # Interfaz del AST
-├── ast.c                                            # Implementación del AST (pendiente)
+├── src/
+│   ├── lexer.l                                      # Analizador léxico (Flex)
+│   ├── bison.y                                      # Analizador sintáctico (Bison)
+│   ├── ast.h                                        # Interfaz del AST
+│   └── ast.c                                        # Implementación del AST (pendiente)
+├── tests/                                           # Tests unitarios (Unity) de lexer y parser
 ├── examples/                                        # Programas de ejemplo para probar rápido el compilador
 │   ├── programa.txt                                 # Programa válido con todas las construcciones
-│   └── programa_con_error.txt                       # Programa con un error de sintaxis
+│   ├── programa_con_error.txt                       # Programa con un error de sintaxis
+│   └── factorial.txt                                # Factorial recursivo (usado también en los tests)
+├── build.sh                                         # Compila el proyecto (ver Compilación)
+├── test_suite.sh                                    # Corre los tests (ver Tests)
 └── documentation/
     └── syntactic analyzer/
         └── analizador_sintactico.pdf                # Documentación de esta etapa
@@ -63,7 +69,7 @@ bash build.sh
 
 Genera el parser y el scanner en `build/` (`bison.tab.c`, `bison.tab.h`,
 `lex.yy.c`) y el ejecutable `./mi_compilador` en la raíz del repo. Hay que
-volver a correrlo cada vez que se modifica `lexer.l` o `bison.y`.
+volver a correrlo cada vez que se modifica `src/lexer.l` o `src/bison.y`.
 
 Los warnings de Bison del tipo `type clash on default action` son esperables:
 salen porque las acciones semánticas están comentadas hasta implementar el AST.
@@ -76,8 +82,9 @@ echo "void main(){ int x }" | ./mi_compilador  # o desde la entrada estándar
 ```
 
 En `examples/` hay programas de ejemplo para probar rápidamente el compilador:
-uno válido que usa todas las construcciones de la gramática (`programa.txt`) y
-uno con un error de sintaxis (`programa_con_error.txt`).
+uno válido que usa todas las construcciones de la gramática (`programa.txt`),
+uno con un error de sintaxis (`programa_con_error.txt`) y un factorial
+recursivo (`factorial.txt`).
 
 Si el programa es sintácticamente correcto imprime
 `--- Analisis sintactico sin errores formales. ---`. Si no, informa el error

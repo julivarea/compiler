@@ -122,7 +122,7 @@ void test_declaraciones_de_metodos(void) {
     accepts("void f(){} void f(){}"); // duplicados: semántico
 }
 
-// El programa de ejemplo test.tds, en varias líneas y con recursión
+// El programa de ejemplo examples/factorial.txt, en varias líneas y con recursión
 void test_ejemplo_factorial(void) {
     accepts(
         "int a,b;\n"
