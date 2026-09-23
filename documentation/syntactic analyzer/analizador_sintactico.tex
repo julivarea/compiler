@@ -155,6 +155,48 @@ unario. Optamos por esta vía declarativa en lugar de reescribir
 de precedencia (una alternativa habitual cuando no se cuenta con
 declaraciones de precedencia de la herramienta).
 
+\paragraph{El menos unario y \texttt{\%prec UMINUS}.} El símbolo \texttt{-}
+cumple dos roles con precedencias distintas: la resta binaria (nivel de
+\texttt{+} y \texttt{-}) y el menos unario (nivel más alto, junto con
+\texttt{!}). El lexer no puede distinguirlos, porque ambos son el mismo
+carácter, así que siempre devuelve el mismo token \texttt{'-'}. Bison, por su
+parte, le asigna a cada regla la precedencia de su último terminal, por lo que
+la regla \texttt{'-' Expression} heredaba el nivel de la resta binaria. En
+consecuencia, al ver \texttt{-a * b} el parser prefería desplazar el
+\texttt{*} y agrupaba \texttt{-(a * b)}, en lugar de \texttt{(-a) * b} como
+indica la tabla de la especificación (lo mismo con \texttt{/} y \texttt{\%}).
+
+Para corregirlo declaramos un token ficticio \texttt{UMINUS} en el nivel más
+alto, que el lexer nunca devuelve y que existe solo para ocupar ese nivel de
+precedencia, y se lo asignamos a la regla con \texttt{\%prec}:
+
+\begin{verbatim}
+%right NOT UMINUS
+...
+    | '-' Expression %prec UMINUS
+\end{verbatim}
+
+Es el mecanismo estándar de Bison para la precedencia dependiente del contexto.
+Es la única regla de la gramática que lo necesita, porque \texttt{-} es el
+único token con dos roles: la regla \texttt{NOT Expression} no lo requiere,
+ya que su último terminal es \texttt{NOT}, que ya está en el nivel más alto.
+El cambio no modifica el conjunto de programas aceptados: solo determina cómo
+se agrupan las expresiones y, por lo tanto, la forma del árbol que construirán
+las acciones semánticas. Por eso conviene resolverlo en el parser y no
+posponerlo al AST, que hereda la agrupación en el orden en que Bison reduce.
+
+\subsection{Condición del \texttt{while} entre paréntesis}
+
+En la gramática de la especificación, la sentencia \texttt{while} aparece como
+\texttt{while $\langle$expr$\rangle$ $\langle$block$\rangle$}, sin paréntesis
+alrededor de la condición, a diferencia del \texttt{if}. De acuerdo con lo
+hablado en clase, se trata de un error de la especificación, así que tomamos la
+condición del \texttt{while} entre paréntesis, igual que en el \texttt{if}:
+
+\begin{verbatim}
+    | WHILE '(' Expression ')' Block
+\end{verbatim}
+
 \subsection{Comentarios multilínea sin cerrar}
 
 Asumimos, por el momento, que todo comentario multilínea que se abre en el
@@ -319,6 +361,37 @@ después volcar a arreglo) en lugar de, por ejemplo, usar directamente un
 arreglo dinámico que se va agrandando durante el parsing, porque encaja mejor
 con la forma en que Bison arma los valores semánticos de abajo hacia arriba
 en reglas recursivas por la derecha.
+
+\section{Testing}
+\label{sec:tests}
+
+Agregamos tests unitarios para el lexer y para el parser, en la carpeta
+\texttt{tests/}, usando el framework Unity. Se corren con
+
+\begin{verbatim}
+bash test_suite.sh
+\end{verbatim}
+
+\noindent que informa una línea \texttt{[PASS]} o \texttt{[FAIL]} por test.
+Cada test tiene un comentario que indica qué verifica.
+
+En el lexer buscamos detectar tokens mal reconocidos: palabras reservadas
+confundidas con identificadores (mayúsculas o una palabra reservada pegada a
+otras letras), literales numéricos mal formados, operadores que no existen en
+C-TDS, comentarios que se cortan o no se ignoran, símbolos no permitidos y
+números de línea incorrectos.
+
+En el parser verificamos que se acepten los programas válidos según la
+gramática y que se rechacen los que tienen errores de sintaxis: falta de punto
+y coma, cuerpos sin llaves, declaraciones y firmas mal formadas, sentencias y
+expresiones inválidas, llaves o paréntesis desbalanceados. También cubren la
+intercalación de variables y métodos globales (Sección~\ref{sec:decisiones}),
+para detectar si ese cambio se rompe.
+
+Los tests solo verifican reglas léxicas y sintácticas: un programa que viola
+únicamente una regla semántica se espera aceptado. Tampoco verifican la
+precedencia de operadores, porque sin el AST el parser solo informa si acepta
+o rechaza la entrada.
 
 \section{Problemas conocidos}
 \label{sec:problemas}
