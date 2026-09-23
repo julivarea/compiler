@@ -36,7 +36,7 @@ Los detalles y las decisiones de diseño de esta etapa (el conflicto
 shift/reduce que resolvimos, por qué separamos el AST de la gramática, el
 criterio para decidir cuándo un nodo se representa en el árbol, etc.) están
 documentados en
-[`documentation/syntactic analyzer/analizador_sintactico.pdf`](documentation/syntactic%20analyzer/analizador_sintactico.pdf).
+[`docs/lexico-sintactico/analizador_sintactico.pdf`](docs/lexico-sintactico/analizador_sintactico.pdf).
 
 ## Estructura del repositorio
 
@@ -54,9 +54,12 @@ documentados en
 │   └── factorial.txt                                # Factorial recursivo (usado también en los tests)
 ├── build.sh                                         # Compila el proyecto (ver Compilación)
 ├── test_suite.sh                                    # Corre los tests (ver Tests)
-└── documentation/
-    └── syntactic analyzer/
-        └── analizador_sintactico.pdf                # Documentación de esta etapa
+└── docs/
+    ├── spec/                                         # Enunciados de la cátedra (todo el proyecto)
+    ├── notas/                                        # Documentos internos del equipo
+    └── lexico-sintactico/                            # Documentación de esta etapa
+        ├── analizador_sintactico.pdf
+        └── notas/                                    # Notas de trabajo previas al documento final
 ```
 
 ## Compilación
