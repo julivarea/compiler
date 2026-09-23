@@ -84,15 +84,19 @@ static int parse(const char *input) {
 
 static char msg[512];
 
-static void accepts(const char *input) {
+// Reciben la línea del caso para que un FAIL apunte a ella y no al helper
+static void accepts_at(int line, const char *input) {
     snprintf(msg, sizeof msg, "deberia ACEPTAR: %s", input);
-    if (parse(input) != 0) TEST_FAIL_MESSAGE(msg);
+    if (parse(input) != 0) UNITY_TEST_FAIL(line, msg);
 }
 
-static void rejects(const char *input) {
+static void rejects_at(int line, const char *input) {
     snprintf(msg, sizeof msg, "deberia RECHAZAR: %s", input);
-    if (parse(input) == 0) TEST_FAIL_MESSAGE(msg);
+    if (parse(input) == 0) UNITY_TEST_FAIL(line, msg);
 }
+
+#define accepts(input) accepts_at(__LINE__, (input))
+#define rejects(input) rejects_at(__LINE__, (input))
 
 // Programa vacío, con solo comentarios o con comentarios entre cada token
 void test_programa_vacio_y_solo_comentarios(void) {
