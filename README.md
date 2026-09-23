@@ -45,6 +45,9 @@ documentados en
 ├── bison.y                                          # Analizador sintáctico (Bison)
 ├── ast.h                                            # Interfaz del AST
 ├── ast.c                                            # Implementación del AST (pendiente)
+├── examples/                                        # Programas de ejemplo para probar rápido el compilador
+│   ├── programa.txt                                 # Programa válido con todas las construcciones
+│   └── programa_con_error.txt                       # Programa con un error de sintaxis
 └── documentation/
     └── syntactic analyzer/
         └── analizador_sintactico.pdf                # Documentación de esta etapa
@@ -52,12 +55,63 @@ documentados en
 
 ## Compilación
 
+Requisitos: `bison` (3.x), `flex` (2.6+) y `gcc`.
+
 ```bash
-to do julian varea
+bash build.sh
 ```
+
+Genera el parser y el scanner en `build/` (`bison.tab.c`, `bison.tab.h`,
+`lex.yy.c`) y el ejecutable `./mi_compilador` en la raíz del repo. Hay que
+volver a correrlo cada vez que se modifica `lexer.l` o `bison.y`.
+
+Los warnings de Bison del tipo `type clash on default action` son esperables:
+salen porque las acciones semánticas están comentadas hasta implementar el AST.
 
 ## Uso
 
 ```bash
-to do julian varea
+./mi_compilador examples/programa.txt          # analiza un archivo
+echo "void main(){ int x }" | ./mi_compilador  # o desde la entrada estándar
+```
+
+En `examples/` hay programas de ejemplo para probar rápidamente el compilador:
+uno válido que usa todas las construcciones de la gramática (`programa.txt`) y
+uno con un error de sintaxis (`programa_con_error.txt`).
+
+Si el programa es sintácticamente correcto imprime
+`--- Analisis sintactico sin errores formales. ---`. Si no, informa el error
+con su número de línea (`[Linea N] Error sintactico: ...` o
+`[Linea N] ERROR LEXICO: simbolo no permitido '...'`). El análisis se detiene
+en el primer error sintáctico.
+
+## Tests
+
+```bash
+bash test_suite.sh
+```
+
+Regenera Flex/Bison, compila y corre los tests unitarios (framework
+[Unity](https://github.com/ThrowTheSwitch/Unity), incluido en `tests/unity/`):
+
+- `tests/test_lexer.c`: tokens que devuelve `yylex()` (palabras reservadas,
+  identificadores, literales, operadores, comentarios, errores léxicos y
+  números de línea).
+- `tests/test_parser.c`: programas que `yyparse()` debe aceptar o rechazar
+  según la gramática de C-TDS.
+
+La salida muestra una línea `[PASS]`/`[FAIL]` por test. Si un test falla,
+se indica la línea del caso que falló y su programa:
+
+```
+  [FAIL] test_error_if_while_mal_formados
+         -> linea 215: deberia RECHAZAR: void main(){ while x < 3 { } }
+```
+
+El script termina con código 0 si todos los tests pasan y 1 si alguno falla o
+no compila. Para ver la salida cruda de Unity, junto con los warnings de Bison
+y los mensajes de error que imprime el compilador en los casos inválidos:
+
+```bash
+VERBOSE=1 bash test_suite.sh
 ```
