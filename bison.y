@@ -100,7 +100,7 @@ NodeAST *raizAST = NULL;
     | RETURN Expression ';' /* { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); } */
     | RETURN ';'
     | Block /* { $$ = $1; } */
-    | WHILE Expression Block /* { $$ = newNode(WHILE_NODE, NULL, $2, NULL, $3); } */
+    | WHILE '(' Expression ')' Block /* { $$ = newNode(WHILE_NODE, NULL, $3, NULL, $5); } */
     | IF '(' Expression ')' Block
     | IF '(' Expression ')' Block ELSE Block /* { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, $7); } */
     | ';' /* { } */
@@ -131,7 +131,7 @@ NodeAST *raizAST = NULL;
     | FLOAT_CONST /* { $$ = newLiteralNode(TYPE_FLOAT, NULL); } */
     | BOOL_CONST  /* { $$ = newLiteralNode(TYPE_BOOL, NULL); } */
     | NUMBER      /* { $$ = newLiteralNode(TYPE_INT, NULL); } */
-    | '-' Expression
+    | '-' Expression %prec UMINUS
     | NOT Expression
     | '(' Expression ')'
     | Expression '+' Expression
