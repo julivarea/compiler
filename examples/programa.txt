@@ -1,0 +1,59 @@
+/* Programa de ejemplo de C-TDS: usa todas las construcciones de la gramatica */
+
+int contador, limite;
+float promedio;
+boolean listo;
+
+// Metodo con retorno y parametros de los tres tipos
+int sumar(int a, int b) {
+    return a + b;
+}
+
+float mitad(float x) {
+    return x / 2.0;
+}
+
+boolean esPositivo(int n) {
+    return n > 0;
+}
+
+void reiniciar() {
+    contador = 0;
+    listo = false;
+    return;
+}
+
+int factorial(int n) {
+    if (n == 0) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+void main() {
+    int i, total;
+    boolean ok;
+
+    reiniciar();
+    limite = 10;
+    total = 0;
+    i = 0;
+
+    while (i < limite && !listo) {
+        total = sumar(total, i * 2 % 3);
+        i = i + 1;
+        if (esPositivo(total - 5) || i == 7) {
+            listo = true;
+        } else {
+            ;
+        }
+    }
+
+    {
+        int temporal;
+        temporal = -factorial(3) + (total - 1) * 2;
+    }
+
+    promedio = mitad(3.5);
+    ok = !(total == 0);
+}
