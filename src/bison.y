@@ -20,20 +20,17 @@ NodeAST *raizAST = NULL;
   char* strval;
   struct NodeAST *node;
   struct NodeList *list;
+  DataType dtype;
 }
 
-/* Tokens de una sola palabra clave */
 %token VOID INT FLOAT BOOLEAN IF ELSE WHILE RETURN
 
-/* Operadores relacionales y lógicos que ocupan más de un carácter */
 %token EQ AND OR NOT
 
-/* Tokens que traen un valor semántico asociado desde Flex */
 %token <strval> ID
 %token <intval> NUMBER BOOL_CONST
 %token <floatval> FLOAT_CONST
 
-/* Precedencia de menor a mayor */
 %left OR           /* disyunción lógica || */
 %left AND          /* conjunción lógica && */
 %left EQ           /* igualdad == */
@@ -42,35 +39,48 @@ NodeAST *raizAST = NULL;
 %left '*' '/' '%'  /* multiplicación, división, resto */
 %right NOT UMINUS  /* negación lógica ! y menos unario */
 
-%type <node> Program Statement Expression Type MethodCall Block
+%type <node> Program Statement Expression MethodCall Block
+%type <dtype> Type 
 %type <list> VariableDeclaration IdentifierList ListArguments VariableDeclarations Statements
 
 %%
     Program
-    : Declarations { $ = $1; } // wrapper de declarations
+    : Declarations { $$ = $1; } // wrapper de declarations
     ;
 
     Declarations
-    : /* empty */
-    | Declaration Declarations { $ = newNodeList($1, $2); } // wrapper de variable/method, delega la resolucion del nodo y anida lo que resta resolver
+    : /* empty */ { $$ = NULL; }
+    | Declaration Declarations { $$ = newNodeList($1, $2); } // wrapper de variable/method, delega la resolucion del nodo y anida lo que resta resolver
     ;
 
     Declaration
-    : VariableDeclaration { $ = $1; } // 
-    | MethodDeclaration { $ = $1; }
+    : VariableDeclaration { $$ = $1; } // 
+    | MethodDeclaration { $$ = $1; }
     ;
 
-
-    VariableDeclarations
-    : /* empty */                               /* { $$ = NULL; } */
-    | VariableDeclaration VariableDeclarations  /* { $$ = mergeNodeLists($1, $2); } */
-    ;
 
     VariableDeclaration
-    : Type IdentifierList ';' /* {
+    : Type IdentifierList ';' {
         $$ = flattenVariableDeclarations($1, $2);
-    } */
+    }
     ;
+
+
+    MethodDeclaration
+    : Type ID '(' ParameterList ')' Block
+    | VOID ID '(' ParameterList ')' Block
+    ;
+
+    ParameterList
+    : /* empty */
+    | Parameters
+    ;
+
+    Parameters
+    : Type ID
+    | Parameters ',' Type ID
+    ;
+
 
      IdentifierList
     : ID                /* { $$ = newNodeList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL); } */
@@ -83,10 +93,10 @@ NodeAST *raizAST = NULL;
     ;
 
     
-    Type
-    : INT       /* { $$ = newNode(TYPE_NODE, newSymbol("int", NULL), NULL, NULL, NULL); $$->type = TYPE_INT; } */
-    | BOOLEAN   /* { $$ = newNode(TYPE_NODE, newSymbol("boolean", NULL), NULL, NULL, NULL); $$->type = TYPE_BOOL; } */
-    | FLOAT     /* { $$ = newNode(TYPE_NODE, newSymbol("float", NULL), NULL, NULL, NULL); $$->type = TYPE_FLOAT; } */
+    Type 
+    : INT       { $$ = TYPE_INT; }
+    | BOOLEAN   { $$ = TYPE_BOOL; }
+    | FLOAT     { $$ = TYPE_FLOAT; }
     ;
 
 
@@ -150,21 +160,6 @@ NodeAST *raizAST = NULL;
     | Expression OR Expression
     ;
 
-    MethodDeclaration
-    : Type ID '(' ParameterList ')' Block
-    | VOID ID '(' ParameterList ')' Block
-    ;
-
-    ParameterList
-    : /* empty */
-    | Parameters
-    ;
-
-    Parameters
-    : Type ID
-    | Parameters ',' Type ID
-    ;
-
     Block
     : '{' VariableDeclarations Statements '}'
         /* {
@@ -172,6 +167,12 @@ NodeAST *raizAST = NULL;
         attachChildren(block, mergeNodeLists($2, $3));
         $$ = block;
 } */
+    ;
+
+
+    VariableDeclarations
+    : /* empty */                               /* { $$ = NULL; } */
+    | VariableDeclaration VariableDeclarations  /* { $$ = mergeNodeLists($1, $2); } */
     ;
 
 
