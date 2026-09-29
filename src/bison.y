@@ -136,34 +136,29 @@ NodeAST *raizAST = NULL;
     ;
 
     ListArguments
-    : Expression /* { $$ = initializeTemporaryList($1, NULL); } */
-    | ListArguments ',' Expression /* {
-        NodeList *l = $1;
-        while (l->next) l = l->next;
-        l->next = initializeTemporaryList($3, NULL);
-        $$ = $1;
-    } */
+    : Expression { $$ = initializeTemporaryList($1, NULL); }
+    | ListArguments ',' Expression { $$ = appendToTemporaryList($1, $3); }
     ;
 
     Expression
-    : ID
-    | MethodCall
-    | FLOAT_CONST /* { $$ = newLiteralNode(TYPE_FLOAT, NULL); } */
+    : ID { $$ = newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL); }
+    | MethodCall { $$ = $1; }
+    | FLOAT_CONST  { $$ = newLiteralNode(TYPE_FLOAT, NULL); } 
     | BOOL_CONST  /* { $$ = newLiteralNode(TYPE_BOOL, NULL); } */
     | NUMBER      /* { $$ = newLiteralNode(TYPE_INT, NULL); } */
-    | '-' Expression %prec UMINUS
-    | NOT Expression
-    | '(' Expression ')'
-    | Expression '+' Expression
-    | Expression '-' Expression
-    | Expression '*' Expression
-    | Expression '/' Expression
-    | Expression '%' Expression
-    | Expression '<' Expression
-    | Expression '>' Expression
-    | Expression EQ Expression
-    | Expression AND Expression
-    | Expression OR Expression
+    | '-' Expression %prec UMINUS { $$ = newBinaryOperatorNode(OP_NEGATIVE, $1, NULL); }
+    | NOT Expression { $$ = newBinaryOperatorNode(OP_NEGATION, $1, NULL); }
+    | '(' Expression ')' { $$ = $2; }
+    | Expression '+' Expression { $$ = newBinaryOperatorNode(OP_ADD, $1, $3); }
+    | Expression '-' Expression { $$ = newBinaryOperatorNode(OP_SUB, $1, $3); }
+    | Expression '*' Expression { $$ = newBinaryOperatorNode(OP_MUL, $1, $3); }
+    | Expression '/' Expression { $$ = newBinaryOperatorNode(OP_DIV, $1, $3); }
+    | Expression '%' Expression { $$ = newBinaryOperatorNode(OP_MOD, $1, $3); }
+    | Expression '<' Expression { $$ = newBinaryOperatorNode(OP_LT, $1, $3); }
+    | Expression '>' Expression { $$ = newBinaryOperatorNode(OP_GT, $1, $3); }
+    | Expression EQ Expression { $$ = newBinaryOperatorNode(OP_EQ, $1, $3); }
+    | Expression AND Expression { $$ = newBinaryOperatorNode(OP_AND, $1, $3); }
+    | Expression OR Expression { $$ = newBinaryOperatorNode(OP_OR, $1, $3); }
     ;
 
     Block
@@ -177,8 +172,8 @@ NodeAST *raizAST = NULL;
 
 
     VariableDeclarations
-    : /* empty */                               /* { $$ = NULL; } */
-    | VariableDeclaration VariableDeclarations  /* { $$ = mergeNodeLists($1, $2); } */
+    : /* empty */                                { $$ = NULL; } 
+    | VariableDeclaration VariableDeclarations   { $$ = mergeNodeLists($1, $2); } 
     ;
 
 

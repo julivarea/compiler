@@ -10,6 +10,21 @@ typedef enum {
 } DataType;
 
 typedef enum {
+    OP_ADD,
+    OP_NEGATIVE,
+    OP_NEGATION,
+    OP_SUB,
+    OP_MUL,
+    OP_DIV,
+    OP_MOD,
+    OP_LT,
+    OP_GT,
+    OP_EQ,
+    OP_AND,
+    OP_OR
+} OperationType;
+
+typedef enum {
     TYPE_NODE,
     VARIABLE_DECLARATION_NODE,
     ID_NODE,
@@ -18,6 +33,7 @@ typedef enum {
     RETURN_NODE,
     IF_ELSE_NODE,
     WHILE_NODE,
+    BINARYOPERATOR_NODE,
     BLOCK_NODE,
     METHOD_CALL_NODE,
     PARAMETERS_NODE,
@@ -34,6 +50,7 @@ typedef struct NodeAST {
     NodeType nodeType;
     DataType type;
     Symbol *symbol;
+    OperationType operationType;
     int line;
     struct NodeAST **children;
     int childCount;
@@ -72,6 +89,8 @@ Symbol *newSymbol(const char *id, const char *value);
  * @return Nuevo nodo creado.
  */
 NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid, NodeAST *right);
+
+NodeAST *newBinaryOperatorNode(OperationType operator, NodeAST *left, NodeAST *right);
 
 /**
  * Crea una lista enlazada transitoria para el parsing en bison.y.
