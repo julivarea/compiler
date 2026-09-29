@@ -19,7 +19,9 @@ typedef enum {
     IF_ELSE_NODE,
     WHILE_NODE,
     BLOCK_NODE,
-    METHOD_CALL_NODE
+    METHOD_CALL_NODE,
+    PARAMETERS_NODE,
+    METHOD_DECLARATION_NODE
 } NodeType;
 
 typedef struct Symbol {
@@ -47,6 +49,7 @@ typedef struct NodeAST {
 typedef struct NodeList {
     NodeAST *node;
     struct NodeList *next;
+    struct NodeList *tail; // puntero al último elemento (solo válido en el nodo cabecera)
 } NodeList;
 
 /**
@@ -77,7 +80,29 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
  * @param next Siguiente elemento en la lista.
  * @return Nueva lista de nodos.
  */
-NodeList *newNodeList(NodeAST *node, NodeList *next);
+NodeList *initializeTemporaryList(NodeAST *node, NodeList *next);
+
+/**
+ * Añade un nodo al final de una lista enlazada iterándola.
+ * Es útil para mantener el orden correcto en recursión por la izquierda.
+ *
+ * @param list Lista original.
+ * @param node Nodo a agregar al final.
+ * @return La lista actualizada (o la nueva lista si list era NULL).
+ */
+NodeList *appendToTemporaryList(NodeList *list, NodeAST *node);
+
+/**
+ * Crea un nodo para la declaracion de metodo
+ *
+ * @param returnType tipo del metodo
+ * @param methodName nombre del metodo
+ * @param parameters lista de parametros que recibe el metodo 
+ * @param body lista de sentencias que tiene el metodo
+ * @return  nodo de metodo
+ */
+NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *parameters, NodeAST *body);
+
 
 /**
  * Vuelca los nodos de NodeList al arreglo children[] de parent y libera la lista.
@@ -85,7 +110,7 @@ NodeList *newNodeList(NodeAST *node, NodeList *next);
  * @param parent Nodo padre donde se adjuntarán los hijos.
  * @param list Lista de nodos a volcar.
  */
-void attachChildren(NodeAST *parent, NodeList *list);
+void resolveTemporaryList(NodeAST *parent, NodeList *list);
 
 /**
  * Concatena dos NodeList sin reservar nueva memoria.
@@ -103,7 +128,7 @@ NodeList *mergeNodeLists(NodeList *list1, NodeList *list2);
  * @param identifiers Lista de identificadores.
  * @return Lista con declaraciones unitarias.
  */
-NodeList *flattenVariableDeclarations(DataType type, NodeList *identifiers);
+NodeList *resolveVariableDefinition(DataType type, NodeList *identifiers);
 
 /**
  * Crea un CONSTANT_NODE para un literal numérico/booleano.

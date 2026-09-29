@@ -2,7 +2,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+%}
+%code requires {
 #include "ast.h"
+}
 
 extern int yylex(void);
 extern FILE *yyin;
@@ -39,59 +42,66 @@ NodeAST *raizAST = NULL;
 %left '*' '/' '%'  /* multiplicación, división, resto */
 %right NOT UMINUS  /* negación lógica ! y menos unario */
 
-%type <node> Program Statement Expression MethodCall Block
+%type <node> Program Statement Expression MethodCall Block MethodDeclaration Declaration
 %type <dtype> Type 
-%type <list> VariableDeclaration IdentifierList ListArguments VariableDeclarations Statements
+%type <list> VariableDeclaration IdentifierList ListArguments VariableDeclarations Statements ParameterList Parameters Declarations
 
 %%
     Program
-    : Declarations { $$ = $1; } // wrapper de declarations
+    : Declarations { $$ = $1; } 
     ;
 
     Declarations
     : /* empty */ { $$ = NULL; }
-    | Declaration Declarations { $$ = newNodeList($1, $2); } // wrapper de variable/method, delega la resolucion del nodo y anida lo que resta resolver
+    | Declaration Declarations { $$ = initializeTemporaryList($1, $2); } 
     ;
 
     Declaration
-    : VariableDeclaration { $$ = $1; } // 
+    : VariableDeclaration { $$ = $1; }  
     | MethodDeclaration { $$ = $1; }
     ;
 
 
     VariableDeclaration
     : Type IdentifierList ';' {
-        $$ = flattenVariableDeclarations($1, $2);
+        $$ = resolveVariableDefinition($1, $2);
+    }
+    ;
+    MethodDeclaration
+    : Type ID '(' ParameterList ')' Block { 
+        NodeAST *parameters = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL); 
+        resolveTemporaryList(parameters, $4); 
+        $$ = newMethodDeclaration($1, $2, parameters, $6); 
+    }
+    | VOID ID '(' ParameterList ')' Block { 
+        NodeAST *parameters = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL); 
+        resolveTemporaryList(parameters, $4); 
+        $$ = newMethodDeclaration(TYPE_VOID, $2, parameters, $6); 
     }
     ;
 
-
-    MethodDeclaration
-    : Type ID '(' ParameterList ')' Block
-    | VOID ID '(' ParameterList ')' Block
-    ;
-
     ParameterList
-    : /* empty */
-    | Parameters
+    : /* empty */ { $$ = NULL; }
+    | Parameters { $$ = $1; }
     ;
 
     Parameters
-    : Type ID
-    | Parameters ',' Type ID
+    : Type ID {
+        $$ = initializeTemporaryList(newNode(VARIABLE_DECLARATION_NODE, newSymbol($2, NULL), NULL, NULL, NULL), NULL); 
+    }
+    | Parameters ',' Type ID {
+        $$ = appendToTemporaryList($1, newNode(VARIABLE_DECLARATION_NODE, newSymbol($4, NULL), NULL, NULL, NULL));
+    }
     ;
 
-
-     IdentifierList
-    : ID                /* { $$ = newNodeList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL); } */
-    | IdentifierList ',' ID      /* {
-        NodeList *l = $1;
-        while (l->next) l = l->next;
-        l->next = newNodeList(newNode(ID_NODE, newSymbol($3, NULL), NULL, NULL, NULL), NULL);
-        $$ = $1;
-    } */
+    IdentifierList
+    : ID { 
+        $$ = initializeTemporaryList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL); 
+    }
+    | IdentifierList ',' ID { 
+        $$ = appendToTemporaryList($1, newNode(ID_NODE, newSymbol($3, NULL), NULL, NULL, NULL)); 
+    }
     ;
-
     
     Type 
     : INT       { $$ = TYPE_INT; }
@@ -99,14 +109,10 @@ NodeAST *raizAST = NULL;
     | FLOAT     { $$ = TYPE_FLOAT; }
     ;
 
-
-
     Statements
     : /* empty */                  /* { $$ = NULL; } */
-    | Statement Statements         /* { $$ = newNodeList($1, $2); } */
+    | Statement Statements         /* { $$ = initializeTemporaryList($1, $2); } */
     ;
-
-   
 
     Statement
     : ID '=' Expression ';' /* { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, NULL), newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL, $3); } */
@@ -124,17 +130,17 @@ NodeAST *raizAST = NULL;
     : ID '(' ')'
     | ID '(' ListArguments ')' /* {
         NodeAST *call = newNode(METHOD_CALL_NODE, newSymbol($1, NULL), NULL, NULL, NULL);
-        attachChildren(call, $3);
+        resolveTemporaryList(call, $3);
         $$ = call;
     } */
     ;
 
     ListArguments
-    : Expression /* { $$ = newNodeList($1, NULL); } */
+    : Expression /* { $$ = initializeTemporaryList($1, NULL); } */
     | ListArguments ',' Expression /* {
         NodeList *l = $1;
         while (l->next) l = l->next;
-        l->next = newNodeList($3, NULL);
+        l->next = initializeTemporaryList($3, NULL);
         $$ = $1;
     } */
     ;
@@ -162,11 +168,11 @@ NodeAST *raizAST = NULL;
 
     Block
     : '{' VariableDeclarations Statements '}'
-        /* {
-        NodeAST *block = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL);
-        attachChildren(block, mergeNodeLists($2, $3));
-        $$ = block;
-} */
+        {
+            NodeAST *block = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL);
+            resolveTemporaryList(block, mergeNodeLists($2, $3));
+            $$ = block;
+        }
     ;
 
 

@@ -45,13 +45,30 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
     return node;
 }
 
-NodeList *newNodeList(NodeAST *node, NodeList *next) {
+NodeList *initializeTemporaryList(NodeAST *node, NodeList *next) {
     NodeList *list = malloc(sizeof(NodeList));
     if (list == NULL) return NULL;
 
     list->node = node;
     list->next = next;
 
+    list->tail = (next != NULL) ? next->tail : list;
+
+    return list;
+}
+
+NodeList *appendToTemporaryList(NodeList *list, NodeAST *node) {
+    NodeList *newNode = initializeTemporaryList(node, NULL);
+    if (list == NULL) {
+        return newNode;
+    }
+    
+    // inserción en O(1) puro usando el puntero tail
+    list->tail->next = newNode;
+    
+    // actualizamos el tail de la cabecera
+    list->tail = newNode;
+    
     return list;
 }
 
@@ -77,7 +94,7 @@ NodeAST *newLiteralNode(DataType type, const char *value)
     return node;
 }
 
-void attachChildren(NodeAST *parent, NodeList *list) {
+void resolveTemporaryList(NodeAST *parent, NodeList *list) {
     int count = 0;
     for (NodeList *current = list; current != NULL; current = current->next) {
         count++;
@@ -109,20 +126,35 @@ void attachChildren(NodeAST *parent, NodeList *list) {
     parent->childCount = count;
 }
 
+
+NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *parameters, NodeAST *body) { 
+    NodeAST *node = newNode(
+        METHOD_DECLARATION_NODE,
+        newSymbol(methodName, NULL),
+        NULL,
+        NULL,
+        NULL
+    );
+    node->type = returnType;
+    node->children = malloc(2 * sizeof(NodeAST*));
+    node->childCount = 2;
+    node->children[0] = parameters;
+    node->children[1] = body;
+    return node;
+}
+
 NodeList *mergeNodeLists(NodeList *list1, NodeList *list2) {
     if (list1 == NULL) return list2;
     if (list2 == NULL) return list1;
     
-    NodeList *current = list1;
-    while (current->next != NULL) {
-        current = current->next;
-    }
+    // Unir usando los tail pointers en O(1)
+    list1->tail->next = list2;
+    list1->tail = list2->tail;
     
-    current->next = list2;
     return list1;
 }
 
-NodeList *flattenVariableDeclarations(DataType type, NodeList *identifiers) {
+NodeList *resolveVariableDefinition(DataType type, NodeList *identifiers) {
     NodeList *declarationList = NULL;
     NodeList **tail = &declarationList;
     NodeList *currentId = identifiers;
@@ -133,11 +165,15 @@ NodeList *flattenVariableDeclarations(DataType type, NodeList *identifiers) {
         
         individualDecl->type = type;
 
-        NodeList *newCell = newNodeList(individualDecl, NULL);
+        NodeList *newCell = initializeTemporaryList(individualDecl, NULL);
         if (newCell == NULL) return declarationList;
         
         *tail = newCell;
         tail = &newCell->next;
+        
+        if (declarationList != NULL) {
+            declarationList->tail = newCell;
+        }
         
         currentId = currentId->next;
     }
