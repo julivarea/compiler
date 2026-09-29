@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "ast.h"
 #include "bison.tab.h"
 
 int yywrap(void) {
@@ -33,8 +34,8 @@ FLOAT       {DIGIT}+"."{DIGIT}+
     /* CONSTANTES y LITERALES */
 "true"                          { yylval.intval = 1; return BOOL_CONST; }
 "false"                         { yylval.intval = 0; return BOOL_CONST; }
-{FLOAT}                         { yylval.floatval = atof(yytext); return FLOAT_CONST; }
-{NUMBER}                        { yylval.intval = atoi(yytext); return NUMBER; }
+{FLOAT}                         { yylval.strval = strdup(yytext); return FLOAT_CONST; }
+{NUMBER}                        { yylval.strval = strdup(yytext); return NUMBER; }
 
     /* IDs */
 {ID}                            { yylval.strval = strdup(yytext); return ID; }

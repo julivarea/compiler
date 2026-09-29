@@ -94,6 +94,26 @@ NodeAST *newLiteralNode(DataType type, const char *value)
     return node;
 }
 
+/**
+ * Crea un nuevo nodo AST. left, mid y right se empaquetan en children.
+ *
+ * @param operator tipo del operador
+ * @param left Nodo hijo izquierdo 
+ * @param right Nodo hijo derecho (opcional).
+ * @return Nuevo nodo creado.
+ */
+NodeAST *newBinaryOperatorNode(OperationType operator, NodeAST *left, NodeAST *right){
+    NodeAST *node = newNode(
+        BINARYOPERATOR_NODE,
+        NULL,
+        left,
+        right,
+        NULL
+    );
+    node->operationType = operator;
+    return node;
+}
+
 void resolveTemporaryList(NodeAST *parent, NodeList *list) {
     int count = 0;
     for (NodeList *current = list; current != NULL; current = current->next) {

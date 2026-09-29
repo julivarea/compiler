@@ -2,10 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-%}
-%code requires {
 #include "ast.h"
-}
 
 extern int yylex(void);
 extern FILE *yyin;
@@ -16,6 +13,10 @@ void yyerror(const char *s) {
 
 NodeAST *raizAST = NULL;
 %}
+
+%code requires {
+#include "ast.h"
+}
 
 %union {
   int intval;
@@ -30,9 +31,8 @@ NodeAST *raizAST = NULL;
 
 %token EQ AND OR NOT
 
-%token <strval> ID
-%token <intval> NUMBER BOOL_CONST
-%token <floatval> FLOAT_CONST
+%token <strval> ID NUMBER FLOAT_CONST
+%token <intval> BOOL_CONST
 
 %left OR           /* disyunción lógica || */
 %left AND          /* conjunción lógica && */
@@ -143,11 +143,11 @@ NodeAST *raizAST = NULL;
     Expression
     : ID { $$ = newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL); }
     | MethodCall { $$ = $1; }
-    | FLOAT_CONST  { $$ = newLiteralNode(TYPE_FLOAT, NULL); } 
-    | BOOL_CONST  /* { $$ = newLiteralNode(TYPE_BOOL, NULL); } */
-    | NUMBER      /* { $$ = newLiteralNode(TYPE_INT, NULL); } */
-    | '-' Expression %prec UMINUS { $$ = newBinaryOperatorNode(OP_NEGATIVE, $1, NULL); }
-    | NOT Expression { $$ = newBinaryOperatorNode(OP_NEGATION, $1, NULL); }
+    | FLOAT_CONST  { $$ = newLiteralNode(TYPE_FLOAT, $1); } 
+    | BOOL_CONST   { $$ = newLiteralNode(TYPE_BOOL, $1 ? "true" : "false"); }
+    | NUMBER       { $$ = newLiteralNode(TYPE_INT, $1); }
+    | '-' Expression %prec UMINUS { $$ = newBinaryOperatorNode(OP_NEGATIVE, $2, NULL); }
+    | NOT Expression { $$ = newBinaryOperatorNode(OP_NEGATION, $2, NULL); }
     | '(' Expression ')' { $$ = $2; }
     | Expression '+' Expression { $$ = newBinaryOperatorNode(OP_ADD, $1, $3); }
     | Expression '-' Expression { $$ = newBinaryOperatorNode(OP_SUB, $1, $3); }

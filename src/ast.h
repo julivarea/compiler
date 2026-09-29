@@ -90,6 +90,14 @@ Symbol *newSymbol(const char *id, const char *value);
  */
 NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid, NodeAST *right);
 
+/**
+ * Crea un nuevo nodo AST. left, mid y right se empaquetan en children.
+ *
+ * @param operator tipo del operador
+ * @param left Nodo hijo izquierdo 
+ * @param right Nodo hijo derecho (opcional).
+ * @return Nuevo nodo creado.
+ */
 NodeAST *newBinaryOperatorNode(OperationType operator, NodeAST *left, NodeAST *right);
 
 /**
