@@ -87,19 +87,19 @@ NodeAST *raizAST = NULL;
 
     Parameters
     : Type ID {
-        $$ = initializeTemporaryList(newNode(VARIABLE_DECLARATION_NODE, newSymbol($2, NULL), NULL, NULL, NULL), NULL); 
+        $$ = initializeTemporaryList(newNode(VARIABLE_DECLARATION_NODE, newSymbol($2, NULL, ID_SYMBOL, $1, NULL), NULL, NULL, NULL), NULL); 
     }
     | Parameters ',' Type ID {
-        $$ = appendToTemporaryList($1, newNode(VARIABLE_DECLARATION_NODE, newSymbol($4, NULL), NULL, NULL, NULL));
+        $$ = appendToTemporaryList($1, newNode(VARIABLE_DECLARATION_NODE, newSymbol($4, NULL, ID_SYMBOL, $3, NULL), NULL, NULL, NULL));
     }
     ;
     
     IdentifierList
     : ID { 
-        $$ = initializeTemporaryList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL); 
+        $$ = initializeTemporaryList(newNode(ID_NODE, newSymbol($1, NULL, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL), NULL); 
     }
     | IdentifierList ',' ID { 
-        $$ = appendToTemporaryList($1, newNode(ID_NODE, newSymbol($3, NULL), NULL, NULL, NULL)); 
+        $$ = appendToTemporaryList($1, newNode(ID_NODE, newSymbol($3, NULL, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); 
     }
     ;
     
@@ -115,7 +115,7 @@ NodeAST *raizAST = NULL;
     ;
 
     Statement
-    : ID '=' Expression ';' /* { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, NULL), newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL, $3); } */
+    : ID '=' Expression ';' /* { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, NULL, ID_SYMBOL, TYPE_VOID, NULL), newNode(ID_NODE, newSymbol($1, NULL, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL), NULL, $3); } */
     | MethodCall ';' /* {$$ = $1; } */
     | RETURN Expression ';' /* { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); } */
     | RETURN ';'
@@ -129,7 +129,7 @@ NodeAST *raizAST = NULL;
     MethodCall
     : ID '(' ')'
     | ID '(' ListArguments ')' /* {
-        NodeAST *call = newNode(METHOD_CALL_NODE, newSymbol($1, NULL), NULL, NULL, NULL);
+        NodeAST *call = newNode(METHOD_CALL_NODE, newSymbol($1, NULL, METHOD_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL);
         resolveTemporaryList(call, $3);
         $$ = call;
     } */
@@ -141,7 +141,7 @@ NodeAST *raizAST = NULL;
     ;
 
     Expression
-    : ID { $$ = newNode(ID_NODE, newSymbol($1, NULL, ID_SYMBOL, NULL, NULL)) ; }
+    : ID { $$ = newNode(ID_NODE, newSymbol($1, NULL, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL) ; }
     | MethodCall { $$ = $1; }
     | FLOAT_CONST  { $$ = newLiteralNode(TYPE_FLOAT, $1); } 
     | BOOL_CONST   { $$ = newLiteralNode(TYPE_BOOL, $1 ? "true" : "false"); }

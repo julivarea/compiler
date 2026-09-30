@@ -51,9 +51,8 @@ typedef struct Symbol {
     char *id;
     char *value;
     DataType type;
-    struct NodeAST **children;
-    int childCount;
     SymbolType symbolType;
+    struct NodeAST *parameters;
 } Symbol;
 
 
@@ -89,9 +88,8 @@ typedef struct NodeList {
  *  @param symbol Tipo de simbolo
  * @param children Lista para el simbolo de tipo metodo
  * @param dataType Tipo del simbolo
- * @return Nuevo símbolo creado.
  */
-Symbol *newSymbol(const char *id, const char *value, SymbolType symbolType, NodeAST* children, DataType type);
+Symbol *newSymbol(const char *id, const char *value, SymbolType symbolType, DataType type, struct NodeAST* parameters);
 
 /**
  * Crea un nuevo nodo AST. left, mid y right se empaquetan en children.

@@ -3,12 +3,12 @@
 #include <string.h>
 #include "ast.h"
 
-Symbol *newSymbol(const char *id, const char *value, SymbolType symbolType, NodeAST* children, DataType type) {
+Symbol *newSymbol(const char *id, const char *value, SymbolType symbolType, DataType type, NodeAST *parameters) {
     Symbol *symbol = malloc(sizeof(Symbol));
     if (symbol == NULL) return NULL;
     symbol->symbolType = symbolType;
-    symbol->children = children;
-    symbol->dataType = dataType;
+    symbol->type = type;
+    symbol->parameters = parameters;
     symbol->id = (id != NULL) ? strdup(id) : NULL;
     symbol->value = (value != NULL) ? strdup(value) : NULL;
     return symbol;
@@ -76,7 +76,7 @@ NodeList *appendToTemporaryList(NodeList *list, NodeAST *node) {
 
 NodeAST *newLiteralNode(DataType type, const char *value)
 {
-    Symbol *symbol = newSymbol(NULL, value, CONSTANT_SYMBOL, NULL, type);
+    Symbol *symbol = newSymbol(NULL, value, CONSTANT_SYMBOL, type, NULL);
 
     NodeAST *node = newNode(
         CONSTANT_NODE,
@@ -152,7 +152,7 @@ void resolveTemporaryList(NodeAST *parent, NodeList *list) {
 NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *parameters, NodeAST *body) { 
     NodeAST *node = newNode(
         METHOD_DECLARATION_NODE,
-        newSymbol(methodName, NULL),
+        newSymbol(methodName, NULL, METHOD_SYMBOL, returnType, parameters),
         NULL,
         NULL,
         NULL
