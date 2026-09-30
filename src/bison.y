@@ -93,7 +93,7 @@ NodeAST *raizAST = NULL;
         $$ = appendToTemporaryList($1, newNode(VARIABLE_DECLARATION_NODE, newSymbol($4, NULL), NULL, NULL, NULL));
     }
     ;
-
+    
     IdentifierList
     : ID { 
         $$ = initializeTemporaryList(newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL), NULL); 
@@ -141,7 +141,7 @@ NodeAST *raizAST = NULL;
     ;
 
     Expression
-    : ID { $$ = newNode(ID_NODE, newSymbol($1, NULL), NULL, NULL, NULL); }
+    : ID { $$ = newNode(ID_NODE, newSymbol($1, NULL, ID_SYMBOL, NULL, NULL)) ; }
     | MethodCall { $$ = $1; }
     | FLOAT_CONST  { $$ = newLiteralNode(TYPE_FLOAT, $1); } 
     | BOOL_CONST   { $$ = newLiteralNode(TYPE_BOOL, $1 ? "true" : "false"); }

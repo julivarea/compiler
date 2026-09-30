@@ -3,10 +3,12 @@
 #include <string.h>
 #include "ast.h"
 
-Symbol *newSymbol(const char *id, const char *value) {
+Symbol *newSymbol(const char *id, const char *value, SymbolType symbolType, NodeAST* children, DataType type) {
     Symbol *symbol = malloc(sizeof(Symbol));
     if (symbol == NULL) return NULL;
-
+    symbol->symbolType = symbolType;
+    symbol->children = children;
+    symbol->dataType = dataType;
     symbol->id = (id != NULL) ? strdup(id) : NULL;
     symbol->value = (value != NULL) ? strdup(value) : NULL;
     return symbol;
@@ -21,7 +23,7 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
     node->nodeType = nodeType;
     node->symbol = symbol;
     node->type = TYPE_VOID;
-    node->line = yylineno; // Guardamos la linea actual
+    node->line = yylineno;
 
     int count = 0;
     NodeAST *temp[3];
@@ -74,7 +76,7 @@ NodeList *appendToTemporaryList(NodeList *list, NodeAST *node) {
 
 NodeAST *newLiteralNode(DataType type, const char *value)
 {
-    Symbol *symbol = newSymbol(NULL, value);
+    Symbol *symbol = newSymbol(NULL, value, CONSTANT_SYMBOL, NULL, type);
 
     NodeAST *node = newNode(
         CONSTANT_NODE,
@@ -166,8 +168,7 @@ NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *pa
 NodeList *mergeNodeLists(NodeList *list1, NodeList *list2) {
     if (list1 == NULL) return list2;
     if (list2 == NULL) return list1;
-    
-    // Unir usando los tail pointers en O(1)
+
     list1->tail->next = list2;
     list1->tail = list2->tail;
     

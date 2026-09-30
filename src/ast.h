@@ -25,24 +25,35 @@ typedef enum {
 } OperationType;
 
 typedef enum {
-    TYPE_NODE,
+    TYPE_NODE, 
     VARIABLE_DECLARATION_NODE,
-    ID_NODE,
-    ASSIGNMENT_NODE,
-    CONSTANT_NODE,
-    RETURN_NODE,
+    ID_NODE, // simbolo que guarda el valor del id
+    ASSIGNMENT_NODE, // solo sirve a la hora de parsear
+    CONSTANT_NODE, // tiene simbolo pero no tiene un id 
+    RETURN_NODE, 
     IF_ELSE_NODE,
     WHILE_NODE,
     BINARYOPERATOR_NODE,
-    BLOCK_NODE,
-    METHOD_CALL_NODE,
-    PARAMETERS_NODE,
-    METHOD_DECLARATION_NODE
+    BLOCK_NODE, // simbolo que guarda lista de sentenciasq
+    METHOD_CALL_NODE, 
+    PARAMETERS_NODE, // no hace falta simbolo
+    METHOD_DECLARATION_NODE // simbolo guarda lista de parametros y bloque
 } NodeType;
+
+typedef enum {
+    ID_SYMBOL,
+    METHOD_SYMBOL,
+    CONSTANT_SYMBOL,
+
+} SymbolType;
 
 typedef struct Symbol {
     char *id;
     char *value;
+    DataType type;
+    struct NodeAST **children;
+    int childCount;
+    SymbolType symbolType;
 } Symbol;
 
 
@@ -50,11 +61,12 @@ typedef struct NodeAST {
     NodeType nodeType;
     DataType type;
     Symbol *symbol;
-    OperationType operationType;
+    OperationType operationType; // si es binOp le guardamos un operador, y si no va NULL
     int line;
     struct NodeAST **children;
     int childCount;
 } NodeAST;
+
 
 #define GET_LEFT(node)  ((node)->childCount > 0 ? (node)->children[0] : NULL)
 #define GET_RIGHT(node) ((node)->childCount > 1 ? (node)->children[1] : NULL)
@@ -74,9 +86,12 @@ typedef struct NodeList {
  *
  * @param id Identificador del símbolo.
  * @param value Valor del símbolo.
+ *  @param symbol Tipo de simbolo
+ * @param children Lista para el simbolo de tipo metodo
+ * @param dataType Tipo del simbolo
  * @return Nuevo símbolo creado.
  */
-Symbol *newSymbol(const char *id, const char *value);
+Symbol *newSymbol(const char *id, const char *value, SymbolType symbolType, NodeAST* children, DataType type);
 
 /**
  * Crea un nuevo nodo AST. left, mid y right se empaquetan en children.
