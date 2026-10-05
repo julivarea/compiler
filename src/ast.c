@@ -74,22 +74,19 @@ NodeList *appendToTemporaryList(NodeList *list, NodeAST *node) {
     return list;
 }
 
-NodeAST *newIntLiteralNode(int value)
-{
+NodeAST *newIntLiteralNode(int value){
     Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_INT, NULL);
     symbol->value.int_val = value;
     return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
 }
 
-NodeAST *newFloatLiteralNode(float value)
-{
+NodeAST *newFloatLiteralNode(float value){
     Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_FLOAT, NULL);
     symbol->value.float_val = value;
     return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
 }
 
-NodeAST *newBoolLiteralNode(int value)
-{
+NodeAST *newBoolLiteralNode(int value){
     Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_BOOL, NULL);
     symbol->value.int_val = value;
     return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);

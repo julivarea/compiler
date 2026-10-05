@@ -39,26 +39,7 @@ typedef enum {
     PARAMETERS_NODE, // no hace falta simbolo
     METHOD_DECLARATION_NODE // simbolo guarda lista de parametros y bloque
 } NodeType;
-
-typedef enum {
-    ID_SYMBOL,
-    METHOD_SYMBOL,
-    CONSTANT_SYMBOL,
-
-} SymbolType;
-
-typedef struct Symbol {
-    char *id;
-    DataType type;
-    SymbolType symbolType;
-    struct NodeAST *parameters;
-    union {
-        int int_val;
-        float float_val;
-        char *str_val;
-    } value;
-} Symbol;
-
+#include "symbol_table.h"
 
 typedef struct NodeAST {
     NodeType nodeType;
