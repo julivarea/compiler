@@ -174,16 +174,22 @@ NodeList *mergeNodeLists(NodeList *list1, NodeList *list2) {
     return list1;
 }
 
+// en este punto tenemos una lista de simbolos sin tipo, y un tipo, por lo tanto se itera la lista, poniendole el mismo tipo a todas las variables
 NodeList *resolveVariableDefinition(DataType type, NodeList *identifiers) {
     NodeList *declarationList = NULL;
     NodeList **tail = &declarationList;
     NodeList *currentId = identifiers;
     
     while (currentId != NULL) {
-        NodeAST *individualDecl = newNode(VARIABLE_DECLARATION_NODE, NULL, currentId->node, NULL, NULL);        
+        Symbol *varSymbol = currentId->node->symbol;
+        varSymbol->type = type;
+        
+        NodeAST *individualDecl = newNode(VARIABLE_DECLARATION_NODE, varSymbol, NULL, NULL, NULL);        
         if (individualDecl == NULL) return declarationList;
         
-        individualDecl->type = type;
+        individualDecl->type = type; 
+
+        free(currentId->node);
 
         NodeList *newCell = initializeTemporaryList(individualDecl, NULL);
         if (newCell == NULL) return declarationList;
@@ -207,4 +213,95 @@ void freeSymbol(Symbol *symbol) {
     free(symbol->id);
     
     free(symbol);
+}
+
+#include <stdio.h>
+
+static const char* getDataTypeName(DataType type) {
+    switch(type) {
+        case TYPE_INT: return "INT";
+        case TYPE_BOOL: return "BOOL";
+        case TYPE_FLOAT: return "FLOAT";
+        case TYPE_VOID: return "VOID";
+        default: return "UNKNOWN";
+    }
+}
+
+static const char* getOpName(OperationType op) {
+    switch(op) {
+        case OP_ADD: return "+";
+        case OP_SUB: return "-";
+        case OP_MUL: return "*";
+        case OP_DIV: return "/";
+        case OP_MOD: return "%";
+        case OP_LT: return "<";
+        case OP_GT: return ">";
+        case OP_EQ: return "==";
+        case OP_AND: return "&&";
+        case OP_OR: return "||";
+        case OP_NEGATIVE: return "- (unario)";
+        case OP_NEGATION: return "!";
+        default: return "?";
+    }
+}
+
+void printAST(NodeAST *node, int level) {
+    if (node == NULL) return;
+    
+    // Imprimir indentación basada en el nivel
+    for (int i = 0; i < level; i++) {
+        printf("  | ");
+    }
+    
+    // Imprimir información del nodo actual
+    switch(node->nodeType) {
+        case METHOD_DECLARATION_NODE:
+            printf("Metodo: %s (Retorna %s)\n", node->symbol->id, getDataTypeName(node->type));
+            break;
+        case VARIABLE_DECLARATION_NODE:
+            printf("Declaracion Variable: %s (Tipo %s)\n", node->symbol->id, getDataTypeName(node->type));
+            break;
+        case ID_NODE:
+            printf("ID: %s\n", node->symbol->id);
+            break;
+        case CONSTANT_NODE:
+            if (node->symbol->type == TYPE_INT) 
+                printf("Constante INT: %d\n", node->symbol->value.int_val);
+            else if (node->symbol->type == TYPE_FLOAT) 
+                printf("Constante FLOAT: %f\n", node->symbol->value.float_val);
+            else if (node->symbol->type == TYPE_BOOL) 
+                printf("Constante BOOL: %s\n", node->symbol->value.int_val ? "true" : "false");
+            break;
+        case BINARYOPERATOR_NODE:
+            printf("Operacion Binaria: %s\n", getOpName(node->operationType));
+            break;
+        case ASSIGNMENT_NODE:
+            printf("Asignacion\n");
+            break;
+        case IF_ELSE_NODE:
+            printf("If-Else\n");
+            break;
+        case WHILE_NODE:
+            printf("While\n");
+            break;
+        case RETURN_NODE:
+            printf("Return\n");
+            break;
+        case METHOD_CALL_NODE:
+            printf("Llamada a Metodo: %s\n", node->symbol->id);
+            break;
+        case BLOCK_NODE:
+            printf("Bloque\n");
+            break;
+        case PARAMETERS_NODE:
+            printf("Parametros\n");
+            break;
+        default:
+            printf("Nodo Desconocido (Tipo %d)\n", node->nodeType);
+    }
+    
+    // Llamada recursiva para los hijos
+    for (int i = 0; i < node->childCount; i++) {
+        printAST(node->children[i], level + 1);
+    }
 }

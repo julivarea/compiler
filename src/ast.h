@@ -192,4 +192,6 @@ NodeAST *newBoolLiteralNode(int value);
  */
 void freeSymbol(Symbol *symbol);
 
+void printAST(NodeAST *node, int level);
+
 #endif /* AST_H */

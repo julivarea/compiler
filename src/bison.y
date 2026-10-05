@@ -88,10 +88,14 @@ NodeAST *raizAST = NULL;
 
     Parameters
     : Type ID {
-        $$ = initializeTemporaryList(newNode(VARIABLE_DECLARATION_NODE, newSymbol($2, ID_SYMBOL, $1, NULL), NULL, NULL, NULL), NULL); 
+        NodeAST *decl = newNode(VARIABLE_DECLARATION_NODE, newSymbol($2, ID_SYMBOL, $1, NULL), NULL, NULL, NULL);
+        decl->type = $1;
+        $$ = initializeTemporaryList(decl, NULL); 
     }
     | Parameters ',' Type ID {
-        $$ = appendToTemporaryList($1, newNode(VARIABLE_DECLARATION_NODE, newSymbol($4, ID_SYMBOL, $3, NULL), NULL, NULL, NULL));
+        NodeAST *decl = newNode(VARIABLE_DECLARATION_NODE, newSymbol($4, ID_SYMBOL, $3, NULL), NULL, NULL, NULL);
+        decl->type = $3;
+        $$ = appendToTemporaryList($1, decl);
     }
     ;
     
@@ -194,6 +198,8 @@ int main(int argc, char** argv) {
 
     if (yyparse() == 0) {
         printf("--- Analisis sintactico sin errores formales. ---\n");
+        printf("\n--- Arbol de Sintaxis Abstracta (AST) ---\n");
+        printAST(raizAST, 0);
     }
 
     if (argc > 1 && yyin) {
