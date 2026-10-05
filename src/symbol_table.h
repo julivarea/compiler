@@ -10,6 +10,7 @@
  * @brief Declaración adelantada de la estructura Symbol.
  */
 typedef struct Symbol Symbol;
+struct NodeAST;
 
 /**
  * @brief Define los tipos de símbolos que pueden existir en la tabla.
@@ -22,18 +23,24 @@ typedef enum {
 
 #include "ast.h"
 
-/**
- * Representa un ámbito (scope) dentro del programa.
- * 
- * Un ámbito mantiene un registro de todos los símbolos definidos 
- * dentro de él y apunta a su ámbito padre para permitir la resolución 
- * de variables en ámbitos superiores.
- */
 typedef struct Scope {
     int level;              
     struct Symbol **symbols; 
-    struct Scope *parent;    
+    int symbol_count;
+    int symbol_capacity;
+    
+    struct Scope *parent; 
+    struct Scope **childrens;  
+    int children_count;
+    int children_capacity;
 } Scope;
+
+Scope* createScope(int level, Scope *parent);
+void appendSymbol(Scope *scope, struct Symbol *symbol);
+void appendChildScope(Scope *parent, Scope *child);
+Scope* solveAST(struct NodeAST *root, Scope *parent);
+struct Symbol* solveVariable(Scope *scope, const char *id);
+
 
 /**
  * Representa un símbolo en la tabla de símbolos.

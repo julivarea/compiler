@@ -1,18 +1,8 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "ast.h"
-
-Symbol *newSymbol(const char *id, SymbolType symbolType, DataType type, NodeAST *parameters) {
-    Symbol *symbol = malloc(sizeof(Symbol));
-    if (symbol == NULL) return NULL;
-    symbol->symbolType = symbolType;
-    symbol->type = type;
-    symbol->parameters = parameters;
-    symbol->id = (id != NULL) ? strdup(id) : NULL;
-    
-    return symbol;
-}
 
 extern int yylineno; 
 
@@ -204,15 +194,6 @@ NodeList *resolveVariableDefinition(DataType type, NodeList *identifiers) {
     return declarationList;
 }
 
-void freeSymbol(Symbol *symbol) {
-    if (symbol == NULL) return;
-
-    free(symbol->id);
-    
-    free(symbol);
-}
-
-#include <stdio.h>
 
 static const char* getDataTypeName(DataType type) {
     switch(type) {
