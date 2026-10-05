@@ -34,8 +34,8 @@ FLOAT       {DIGIT}+"."{DIGIT}+
     /* CONSTANTES y LITERALES */
 "true"                          { yylval.intval = 1; return BOOL_CONST; }
 "false"                         { yylval.intval = 0; return BOOL_CONST; }
-{FLOAT}                         { yylval.strval = strdup(yytext); return FLOAT_CONST; }
-{NUMBER}                        { yylval.strval = strdup(yytext); return NUMBER; }
+{FLOAT}                         { yylval.floatval = atof(yytext); return FLOAT_CONST; }
+{NUMBER}                        { yylval.intval = atoi(yytext); return NUMBER; }
 
     /* IDs */
 {ID}                            { yylval.strval = strdup(yytext); return ID; }

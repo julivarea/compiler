@@ -49,10 +49,14 @@ typedef enum {
 
 typedef struct Symbol {
     char *id;
-    char *value;
     DataType type;
     SymbolType symbolType;
     struct NodeAST *parameters;
+    union {
+        int int_val;
+        float float_val;
+        char *str_val;
+    } value;
 } Symbol;
 
 
@@ -89,7 +93,7 @@ typedef struct NodeList {
  * @param children Lista para el simbolo de tipo metodo
  * @param dataType Tipo del simbolo
  */
-Symbol *newSymbol(const char *id, const char *value, SymbolType symbolType, DataType type, struct NodeAST* parameters);
+Symbol *newSymbol(const char *id, SymbolType symbolType, DataType type, struct NodeAST* parameters);
 
 /**
  * Crea un nuevo nodo AST. left, mid y right se empaquetan en children.
@@ -177,7 +181,9 @@ NodeList *resolveVariableDefinition(DataType type, NodeList *identifiers);
  * @param value Valor de la constante como cadena de texto.
  * @return Nuevo nodo constante creado.
  */
-NodeAST *newLiteralNode(DataType type, const char *value);
+NodeAST *newIntLiteralNode(int value);
+NodeAST *newFloatLiteralNode(float value);
+NodeAST *newBoolLiteralNode(int value);
 
 /**
  * Libera un Symbol y sus cadenas internas.

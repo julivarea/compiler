@@ -35,3 +35,11 @@ La estructura `Symbol` asocia metadatos de texto a los nodos, gestionándose en 
 ## 5. Operadores y Rastreo de Código Fuente
 - **Tipos de Operaciones:** El enumerado `OperationType` define las operaciones aritméticas, lógicas, relacionales y unarias soportadas. Se inyectan en los nodos binarios mediante `newBinaryOperatorNode`.
 - **Rastreo de Líneas (`yylineno`):** La función constructora base `newNode` captura automáticamente la línea actual de código desde la variable global `yylineno` de Flex/Bison. Este valor se persiste en `node->line`, garantizando precisión al reportar errores semánticos.
+
+## 6 . Uso de union para los valores
+
+Cuando aparezca una constante, creamos una union para guardar el valor segun corresponda, 
+si viene un numero, guardamos en value_number
+si viene un string, guardamos en value_string
+si viene un float, guardamos en value_float
+Asi evitar conversiones en etapas posteriores y a simplificarlo a la hora de interpretar el codigo

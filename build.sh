@@ -6,7 +6,7 @@ bison -d src/bison.y -o build/bison.tab.c
 flex -o build/lex.yy.c src/lexer.l
 
 echo "Compilando parser e interprete..."
-gcc -Isrc -Ibuild build/bison.tab.c build/lex.yy.c -o mi_compilador
+gcc -Isrc -Ibuild build/bison.tab.c build/lex.yy.c src/ast.c -o mi_compilador
 
 echo "Build finalizado. El ejecutable se encuentra en ./mi_compilador"
 echo "Ejemplo: ./mi_compilador examples/programa.txt"

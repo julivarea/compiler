@@ -3,14 +3,14 @@
 #include <string.h>
 #include "ast.h"
 
-Symbol *newSymbol(const char *id, const char *value, SymbolType symbolType, DataType type, NodeAST *parameters) {
+Symbol *newSymbol(const char *id, SymbolType symbolType, DataType type, NodeAST *parameters) {
     Symbol *symbol = malloc(sizeof(Symbol));
     if (symbol == NULL) return NULL;
     symbol->symbolType = symbolType;
     symbol->type = type;
     symbol->parameters = parameters;
     symbol->id = (id != NULL) ? strdup(id) : NULL;
-    symbol->value = (value != NULL) ? strdup(value) : NULL;
+    
     return symbol;
 }
 
@@ -74,26 +74,25 @@ NodeList *appendToTemporaryList(NodeList *list, NodeAST *node) {
     return list;
 }
 
-NodeAST *newLiteralNode(DataType type, const char *value)
+NodeAST *newIntLiteralNode(int value)
 {
-    Symbol *symbol = newSymbol(NULL, value, CONSTANT_SYMBOL, type, NULL);
+    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_INT, NULL);
+    symbol->value.int_val = value;
+    return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
+}
 
-    NodeAST *node = newNode(
-        CONSTANT_NODE,
-        symbol,
-        NULL,
-        NULL,
-        NULL
-    );
+NodeAST *newFloatLiteralNode(float value)
+{
+    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_FLOAT, NULL);
+    symbol->value.float_val = value;
+    return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
+}
 
-    if (node == NULL) {
-        freeSymbol(symbol);
-        return NULL;
-    }
-
-    node->type = type;
-
-    return node;
+NodeAST *newBoolLiteralNode(int value)
+{
+    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_BOOL, NULL);
+    symbol->value.int_val = value;
+    return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
 }
 
 /**
@@ -152,7 +151,7 @@ void resolveTemporaryList(NodeAST *parent, NodeList *list) {
 NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *parameters, NodeAST *body) { 
     NodeAST *node = newNode(
         METHOD_DECLARATION_NODE,
-        newSymbol(methodName, NULL, METHOD_SYMBOL, returnType, parameters),
+        newSymbol(methodName, METHOD_SYMBOL, returnType, parameters),
         NULL,
         NULL,
         NULL
@@ -206,6 +205,6 @@ void freeSymbol(Symbol *symbol) {
     if (symbol == NULL) return;
 
     free(symbol->id);
-    free(symbol->value);
+    
     free(symbol);
 }

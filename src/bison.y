@@ -31,8 +31,9 @@ NodeAST *raizAST = NULL;
 
 %token EQ AND OR NOT
 
-%token <strval> ID NUMBER FLOAT_CONST
-%token <intval> BOOL_CONST
+%token <strval> ID
+%token <intval> NUMBER BOOL_CONST
+%token <floatval> FLOAT_CONST
 
 %left OR           /* disyunción lógica || */
 %left AND          /* conjunción lógica && */
@@ -42,23 +43,23 @@ NodeAST *raizAST = NULL;
 %left '*' '/' '%'  /* multiplicación, división, resto */
 %right NOT UMINUS  /* negación lógica ! y menos unario */
 
-%type <node> Program Statement Expression MethodCall Block MethodDeclaration Declaration
+%type <node> Program Statement Expression MethodCall Block MethodDeclaration
 %type <dtype> Type 
-%type <list> VariableDeclaration IdentifierList ListArguments VariableDeclarations Statements ParameterList Parameters Declarations
+%type <list> VariableDeclaration IdentifierList ListArguments VariableDeclarations Statements ParameterList Parameters Declarations Declaration
 
 %%
     Program
-    : Declarations { $$ = $1; } 
+    : Declarations { $$ = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL); resolveTemporaryList($$, $1); raizAST = $$; }
     ;
 
     Declarations
     : /* empty */ { $$ = NULL; }
-    | Declaration Declarations { $$ = initializeTemporaryList($1, $2); } 
+    | Declaration Declarations { $$ = mergeNodeLists($1, $2); } 
     ;
 
     Declaration
     : VariableDeclaration { $$ = $1; }  
-    | MethodDeclaration { $$ = $1; }
+    | MethodDeclaration { $$ = initializeTemporaryList($1, NULL); }
     ;
 
 
@@ -87,19 +88,19 @@ NodeAST *raizAST = NULL;
 
     Parameters
     : Type ID {
-        $$ = initializeTemporaryList(newNode(VARIABLE_DECLARATION_NODE, newSymbol($2, NULL, ID_SYMBOL, $1, NULL), NULL, NULL, NULL), NULL); 
+        $$ = initializeTemporaryList(newNode(VARIABLE_DECLARATION_NODE, newSymbol($2, ID_SYMBOL, $1, NULL), NULL, NULL, NULL), NULL); 
     }
     | Parameters ',' Type ID {
-        $$ = appendToTemporaryList($1, newNode(VARIABLE_DECLARATION_NODE, newSymbol($4, NULL, ID_SYMBOL, $3, NULL), NULL, NULL, NULL));
+        $$ = appendToTemporaryList($1, newNode(VARIABLE_DECLARATION_NODE, newSymbol($4, ID_SYMBOL, $3, NULL), NULL, NULL, NULL));
     }
     ;
     
     IdentifierList
     : ID { 
-        $$ = initializeTemporaryList(newNode(ID_NODE, newSymbol($1, NULL, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL), NULL); 
+        $$ = initializeTemporaryList(newNode(ID_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL), NULL); 
     }
     | IdentifierList ',' ID { 
-        $$ = appendToTemporaryList($1, newNode(ID_NODE, newSymbol($3, NULL, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); 
+        $$ = appendToTemporaryList($1, newNode(ID_NODE, newSymbol($3, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); 
     }
     ;
     
@@ -110,29 +111,29 @@ NodeAST *raizAST = NULL;
     ;
 
     Statements
-    : /* empty */                  /* { $$ = NULL; } */
-    | Statement Statements         /* { $$ = initializeTemporaryList($1, $2); } */
+    : /* empty */                  { $$ = NULL; }
+    | Statement Statements         { $$ = initializeTemporaryList($1, $2); }
     ;
 
     Statement
-    : ID '=' Expression ';' /* { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, NULL, ID_SYMBOL, TYPE_VOID, NULL), newNode(ID_NODE, newSymbol($1, NULL, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL), NULL, $3); } */
-    | MethodCall ';' /* {$$ = $1; } */
-    | RETURN Expression ';' /* { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); } */
-    | RETURN ';'
-    | Block /* { $$ = $1; } */
-    | WHILE '(' Expression ')' Block /* { $$ = newNode(WHILE_NODE, NULL, $3, NULL, $5); } */
-    | IF '(' Expression ')' Block
-    | IF '(' Expression ')' Block ELSE Block /* { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, $7); } */
-    | ';' /* { } */
+    : ID '=' Expression ';' { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), newNode(ID_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL), NULL, $3); }
+    | MethodCall ';' {$$ = $1; }
+    | RETURN Expression ';' { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); }
+    | RETURN ';' { $$ = newNode(RETURN_NODE, NULL, NULL, NULL, NULL); }
+    | Block { $$ = $1; }
+    | WHILE '(' Expression ')' Block { $$ = newNode(WHILE_NODE, NULL, $3, NULL, $5); }
+    | IF '(' Expression ')' Block { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, NULL); }
+    | IF '(' Expression ')' Block ELSE Block { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, $7); }
+    | ';' { $$ = NULL; }
     ;
 
     MethodCall
-    : ID '(' ')'
-    | ID '(' ListArguments ')' /* {
-        NodeAST *call = newNode(METHOD_CALL_NODE, newSymbol($1, NULL, METHOD_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL);
+    : ID '(' ')' { $$ = newNode(METHOD_CALL_NODE, newSymbol($1, METHOD_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL); }
+    | ID '(' ListArguments ')' {
+        NodeAST *call = newNode(METHOD_CALL_NODE, newSymbol($1, METHOD_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL);
         resolveTemporaryList(call, $3);
         $$ = call;
-    } */
+    }
     ;
 
     ListArguments
@@ -141,11 +142,11 @@ NodeAST *raizAST = NULL;
     ;
 
     Expression
-    : ID { $$ = newNode(ID_NODE, newSymbol($1, NULL, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL) ; }
+    : ID { $$ = newNode(ID_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL) ; }
     | MethodCall { $$ = $1; }
-    | FLOAT_CONST  { $$ = newLiteralNode(TYPE_FLOAT, $1); } 
-    | BOOL_CONST   { $$ = newLiteralNode(TYPE_BOOL, $1 ? "true" : "false"); }
-    | NUMBER       { $$ = newLiteralNode(TYPE_INT, $1); }
+    | FLOAT_CONST  { $$ = newFloatLiteralNode($1); } 
+    | BOOL_CONST   { $$ = newBoolLiteralNode($1); }
+    | NUMBER       { $$ = newIntLiteralNode($1); }
     | '-' Expression %prec UMINUS { $$ = newBinaryOperatorNode(OP_NEGATIVE, $2, NULL); }
     | NOT Expression { $$ = newBinaryOperatorNode(OP_NEGATION, $2, NULL); }
     | '(' Expression ')' { $$ = $2; }
