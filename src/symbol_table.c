@@ -50,6 +50,7 @@ void appendSymbol(Scope *scope, Symbol *symbol) {
     scope->symbols[scope->symbol_count++] = symbol;
 }
 
+
 void appendChildScope(Scope *parent, Scope *child) {
     if (!parent || !child) return;
     
@@ -62,6 +63,21 @@ void appendChildScope(Scope *parent, Scope *child) {
 
 Scope* solveAST(NodeAST *root, Scope *parent);
 
+#include "error_handler.h"
+
+Symbol* solveVariableCurrentScope(Scope *scope, const char *id) {
+    if (scope == NULL || id == NULL) return NULL;
+
+    for (int i = 0; i < scope->symbol_count; i++) {
+        Symbol *current_symbol = scope->symbols[i];
+        
+        if (current_symbol->id != NULL && strcmp(current_symbol->id, id) == 0) {
+            return current_symbol;
+        }
+    }
+    return NULL;
+}
+
 void populateScope(NodeAST *node, Scope *current_scope) {
     if (!node) return;
     
@@ -71,7 +87,31 @@ void populateScope(NodeAST *node, Scope *current_scope) {
     } 
     else if (node->nodeType == VARIABLE_DECLARATION_NODE) {
         if (node->symbol) {
-            appendSymbol(current_scope, node->symbol);
+            Symbol *existing = solveVariableCurrentScope(current_scope, node->symbol->id);
+            if (existing != NULL) {
+                semanticError(node->line, "La variable '%s' ya fue declarada previamente en este ambito.", node->symbol->id);
+            } else {
+                appendSymbol(current_scope, node->symbol);
+            }
+        }
+    } 
+    else if (node->nodeType == ASSIGNMENT_NODE) {
+        if (node->symbol) {
+            Symbol *resolvedSymbol = solveVariable(current_scope, node->symbol->id);
+            if (!resolvedSymbol) {
+                semanticError(node->line, "Asignacion a variable no declarada '%s'.", node->symbol->id);
+            }
+        }
+            if (node->childCount > 1 && node->children[1] != NULL) {
+            populateScope(node->children[1], current_scope);
+        }
+    } 
+    else if (node->nodeType == ID_NODE) {
+        if (node->symbol) {
+            Symbol *resolvedSymbol = solveVariable(current_scope, node->symbol->id);
+            if (!resolvedSymbol) {
+                semanticError(node->line, "Uso de variable no declarada '%s'.", node->symbol->id);
+            }
         }
     } 
     else {
@@ -97,7 +137,7 @@ Scope* solveAST(NodeAST *root, Scope *parent) {
 
 Symbol* solveVariable(Scope *scope, const char *id) {
     if (scope == NULL || id == NULL) {
-        return NULL; 
+        return NULL; // exception for not defined variable
     }
 
     for (int i = 0; i < scope->symbol_count; i++) {

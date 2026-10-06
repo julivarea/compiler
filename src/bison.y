@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ast.h"
+#include "error_handler.h"
 
 extern int yylex(void);
 extern FILE *yyin;
@@ -199,7 +200,15 @@ int main(int argc, char** argv) {
     if (yyparse() == 0) {
         printf("--- Analisis sintactico sin errores formales. ---\n");
         printf("\n--- Arbol de Sintaxis Abstracta (AST) ---\n");
-        printAST(raizAST, 0);
+        Scope *root = solveAST(raizAST, NULL);
+        
+        if (semantic_errors > 0) {
+            fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores semanticos.\033[0m\n", semantic_errors);
+            return 1;
+        } else {
+            printAST(raizAST, 0);
+            printf("\n--- Analisis semantico completado sin errores. ---\n");
+        }
     }
 
     if (argc > 1 && yyin) {

@@ -51,7 +51,7 @@ typedef struct NodeAST {
     int childCount;
 } NodeAST;
 
-
+#define GET_EXPRESSION(node)  ((node)->childCount > 0 ? (node)->children[0] : NULL)
 #define GET_LEFT(node)  ((node)->childCount > 0 ? (node)->children[0] : NULL)
 #define GET_RIGHT(node) ((node)->childCount > 1 ? (node)->children[1] : NULL)
 

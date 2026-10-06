@@ -18,7 +18,8 @@ struct NodeAST;
 typedef enum {
     ID_SYMBOL,       
     METHOD_SYMBOL,  
-    CONSTANT_SYMBOL, 
+    CONSTANT_SYMBOL,
+    DECLARATION_SYMBOL 
 } SymbolType;
 
 #include "ast.h"
