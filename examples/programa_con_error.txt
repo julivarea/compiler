@@ -1,7 +1,7 @@
 int x;
-
+boolean y;
 void main() {
     x = 1;
-    y = 2;
+    y = true + x;
     x = 3;
 }

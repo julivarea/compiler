@@ -61,11 +61,12 @@ void appendChildScope(Scope *parent, Scope *child) {
     parent->childrens[parent->children_count++] = child;
 }
 
-Scope* solveAST(NodeAST *root, Scope *parent);
+Scope* analyzeSemantics(NodeAST *root, Scope *parent);
 
 #include "error_handler.h"
 
-Symbol* solveVariableCurrentScope(Scope *scope, const char *id) {
+// verifica que una variable no sea definida dos veces en un mismo scope
+Symbol* lookupVariableCurrentScope(Scope *scope, const char *id) {
     if (scope == NULL || id == NULL) return NULL;
 
     for (int i = 0; i < scope->symbol_count; i++) {
@@ -77,17 +78,18 @@ Symbol* solveVariableCurrentScope(Scope *scope, const char *id) {
     }
     return NULL;
 }
-
-void populateScope(NodeAST *node, Scope *current_scope) {
+// en caso de que el bloque tenga otro bloque dentro, lo agrega en la lista de hijos
+// en caso de que sea una sentencia como declaracion, asignacion, valida que sea correcto semanticamente
+void analyzeNodeSemantics(NodeAST *node, Scope *current_scope) {
     if (!node) return;
     
     if (node->nodeType == BLOCK_NODE || node->nodeType == METHOD_DECLARATION_NODE) {
-        Scope *child_scope = solveAST(node, current_scope);
+        Scope *child_scope = analyzeSemantics(node, current_scope);
         appendChildScope(current_scope, child_scope);
     } 
     else if (node->nodeType == VARIABLE_DECLARATION_NODE) {
         if (node->symbol) {
-            Symbol *existing = solveVariableCurrentScope(current_scope, node->symbol->id);
+            Symbol *existing = lookupVariableCurrentScope(current_scope, node->symbol->id);
             if (existing != NULL) {
                 semanticError(node->line, "La variable '%s' ya fue declarada previamente en este ambito.", node->symbol->id);
             } else {
@@ -97,18 +99,18 @@ void populateScope(NodeAST *node, Scope *current_scope) {
     } 
     else if (node->nodeType == ASSIGNMENT_NODE) {
         if (node->symbol) {
-            Symbol *resolvedSymbol = solveVariable(current_scope, node->symbol->id);
+            Symbol *resolvedSymbol = lookupVariable(current_scope, node->symbol->id);
             if (!resolvedSymbol) {
                 semanticError(node->line, "Asignacion a variable no declarada '%s'.", node->symbol->id);
             }
         }
             if (node->childCount > 1 && node->children[1] != NULL) {
-            populateScope(node->children[1], current_scope);
+            analyzeNodeSemantics(node->children[1], current_scope);
         }
     } 
     else if (node->nodeType == ID_NODE) {
         if (node->symbol) {
-            Symbol *resolvedSymbol = solveVariable(current_scope, node->symbol->id);
+            Symbol *resolvedSymbol = lookupVariable(current_scope, node->symbol->id);
             if (!resolvedSymbol) {
                 semanticError(node->line, "Uso de variable no declarada '%s'.", node->symbol->id);
             }
@@ -116,12 +118,12 @@ void populateScope(NodeAST *node, Scope *current_scope) {
     } 
     else {
         for (int i = 0; i < node->childCount; i++) {
-            populateScope(node->children[i], current_scope);
+            analyzeNodeSemantics(node->children[i], current_scope);
         }
     }
 }
-
-Scope* solveAST(NodeAST *root, Scope *parent) {
+// se encarga de por cada bloque que aparece, crea un nuevo scope / tabla de simbolos para ese scope
+Scope* analyzeSemantics(NodeAST *root, Scope *parent) {
     if (!root) return NULL;
     
     int level = parent ? parent->level + 1 : 0;
@@ -129,13 +131,13 @@ Scope* solveAST(NodeAST *root, Scope *parent) {
     Scope *current_scope = createScope(level, parent);
     
     for (int i = 0; i < root->childCount; i++) {
-        populateScope(root->children[i], current_scope);
+        analyzeNodeSemantics(root->children[i], current_scope);
     }
     
     return current_scope;
 }
-
-Symbol* solveVariable(Scope *scope, const char *id) {
+// busca las variables en un scope determinado
+Symbol* lookupVariable(Scope *scope, const char *id) {
     if (scope == NULL || id == NULL) {
         return NULL; // exception for not defined variable
     }
@@ -147,5 +149,5 @@ Symbol* solveVariable(Scope *scope, const char *id) {
             return current_symbol;
         }
     }
-    return solveVariable(scope->parent, id);
+    return lookupVariable(scope->parent, id);
 }

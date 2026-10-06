@@ -39,8 +39,8 @@ typedef struct Scope {
 Scope* createScope(int level, Scope *parent);
 void appendSymbol(Scope *scope, struct Symbol *symbol);
 void appendChildScope(Scope *parent, Scope *child);
-Scope* solveAST(struct NodeAST *root, Scope *parent);
-struct Symbol* solveVariable(Scope *scope, const char *id);
+Scope* analyzeSemantics(struct NodeAST *root, Scope *parent);
+struct Symbol* lookupVariable(Scope *scope, const char *id);
 
 
 /**

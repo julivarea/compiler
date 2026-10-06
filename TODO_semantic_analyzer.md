@@ -1,13 +1,13 @@
-# TODO List: Semantic Analyzer e Integración
+# TODO List: Semantic Analyzer
 
-- [ ] Validar declaraciones duplicadas en un mismo ámbito (Scope).
-- [ ] Validar el uso de identificadores no declarados previamente (variables o métodos).
-- [ ] Realizar chequeo de tipos (Type Checking) en operaciones aritméticas, lógicas y relacionales.
-- [ ] Realizar chequeo de compatibilidad de tipos en sentencias de asignación.
-- [ ] Validar llamadas a métodos (cantidad exacta de argumentos).
-- [ ] Validar llamadas a métodos (compatibilidad de tipos en cada argumento).
-- [ ] Verificar que las sentencias `return` devuelvan el tipo definido en la firma del método correspondiente.
-- [ ] Crear el recorrido completo de verificación semántica sobre el AST.
-- [ ] Integrar el paso de análisis semántico en el pipeline principal (después de construir el AST y la tabla de símbolos).
-- [ ] Implementar un sistema de recolección y reporte de errores semánticos (idealmente con número de línea/columna).
-- [ ] Escribir pruebas unitarias (o casos de prueba de integración) que fallen intencionalmente por errores semánticos.
+De acuerdo a la nueva definición, el análisis semántico se limita exclusivamente a:
+
+- [X] Validar que las variables que estamos llamando estén válidas (no usar identificadores no declarados, no re-declarar en el mismo scope).
+- [ ] Validar que los tipos estén definidos (existencia de tipos).
+- [ ] Validar que los tipos de las expresiones en una asignación/definición coincidan o sean compatibles con la variable.
+
+Tareas transversales:
+- [X] Crear el recorrido completo de verificación semántica sobre el AST.
+- [X] Integrar el paso de análisis semántico en el pipeline principal.
+- [X] Implementar un sistema de recolección y reporte de errores semánticos.
+- [ ] Escribir pruebas unitarias que fallen intencionalmente por errores semánticos basados en estas tres reglas.
