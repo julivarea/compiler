@@ -29,7 +29,7 @@ typedef struct Scope {
     struct Symbol **symbols; 
     int symbol_count;
     int symbol_capacity;
-    
+    DataType returnType;
     struct Scope *parent; 
     struct Scope **childrens;  
     int children_count;
