@@ -76,3 +76,29 @@ Cuando leemos (`ID_NODE`) o escribimos (`ASSIGNMENT_NODE`) una variable, el comp
 
 ---
 
+
+## Análisis de Tipos (Type Checking)
+
+Durante el recorrido del AST, además de la resolución de variables, se realiza el análisis de tipos de las expresiones matemáticas y llamadas a métodos.
+
+El punto de entrada para evaluar el tipo de una expresión es la función `analyzeExpression()`. 
+
+### Validación de Expresiones y Asignaciones
+Los nodos como las asignaciones (`ASSIGNMENT_NODE`), sentencias de retorno (`RETURN_NODE`), y expresiones condicionales, utilizan `analyzeExpression()` sobre sus sub-expresiones para determinar el `DataType` resultante (ej: `TYPE_INT`, `TYPE_BOOL`, o `TYPE_FLOAT`). 
+
+En el caso de una asignación, el tipo devuelto por la expresión se contrasta contra el tipo estático de la variable destino utilizando la función `isAssignable()`. De no ser compatibles, se dispara un `semanticError` indicando que los tipos no coinciden.
+
+### Operaciones Binarias
+Para evaluar los árboles de operaciones matemáticas (`BINARYOPERATOR_NODE`), `analyzeBinaryOperator` llama recursivamente a `analyzeExpression` sobre los operandos izquierdo y derecho. Luego delega en `resolveBinaryOperation` para inferir el tipo resultante según el operador:
+- Operaciones aritméticas (`+`, `-`, `*`, `/`) con operandos enteros devuelven `TYPE_INT`.
+- Operaciones aritméticas con flotantes devuelven `TYPE_FLOAT`.
+- Operaciones lógicas y de comparación devuelven `TYPE_BOOL`.
+- Cualquier mezcla incompatible (ej: `bool + int`) retorna `TYPE_ERROR`.
+
+Al detectarse un `TYPE_ERROR`, el compilador arroja un `semanticError("Tipos incompatibles en la operacion binaria.")` en la línea correspondiente.
+
+### Llamadas a Métodos
+Para los `METHOD_CALL_NODE`, el analizador de tipos valida que:
+1. La cantidad de argumentos invocados coincida exactamente con la cantidad de parámetros de la firma del método.
+2. Cada argumento suministrado (que se evalúa con `analyzeExpression`) pase el chequeo de compatibilidad de tipos (`isAssignable()`) respecto a su parámetro esperado. 
+Finalmente, la expresión en su conjunto toma como tipo resultante el `type` declarado del método.
