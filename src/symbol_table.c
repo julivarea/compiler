@@ -127,7 +127,28 @@ void analyzeAssignmentNode(NodeAST *node, Scope *current_scope) {
 }
 
 void analyzeReturnNode(NodeAST *node, Scope *current_scope){
-    // if(!solveTypeOfExpression(node) == current_scope->returnType) semanticError(node->line, "Tipo de expresion incompatible con el metodo")
+    NodeAST *expression = GET_EXPRESSION(node);
+    DataType expectedType = current_scope->returnType;
+
+    if (expression == NULL) {
+        // return; sin expresion: solo es valido si el metodo es void
+        if (expectedType != TYPE_VOID) {
+            semanticError(node->line, "El metodo espera un valor de retorno de tipo %s, pero no se especifico ninguno.", getDataTypeName(expectedType));
+        }
+        return;
+    }
+
+    // return <expr>; con expresion: el metodo tiene que ser no-void
+    if (expectedType == TYPE_VOID) {
+        semanticError(node->line, "El metodo es void y no deberia retornar un valor.");
+        return;
+    }
+
+    DataType actualType = analyzeExpression(expression, current_scope);
+
+    if (actualType != TYPE_ERROR && !isAssignable(expectedType, actualType)) {
+        semanticError(node->line, "El tipo de retorno no coincide: se esperaba %s pero se obtuvo %s.", getDataTypeName(expectedType), getDataTypeName(actualType));
+    }
 }
 
 int isAssignable(DataType expected, DataType actual) {
