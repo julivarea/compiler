@@ -65,6 +65,7 @@ void appendChildScope(Scope *parent, Scope *child) {
 Scope* analyzeSemantics(NodeAST *root, Scope *parent, DataType returnType);
 void analyzeNodeSemantics(NodeAST *node, Scope *current_scope);
 DataType analyzeExpression(NodeAST *node, Scope *scope);
+DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression);
 int isAssignable(DataType expected, DataType actual);
 
 #include "error_handler.h"
@@ -174,7 +175,7 @@ DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
 
 DataType analyzeExpression(NodeAST *node, Scope *scope);
 
-DataType analyzeMethodCall(NodeAST *node, Scope *scope) {
+DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
 
     Symbol *method = lookupVariable(
         scope,
@@ -183,6 +184,11 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope) {
 
     if (method == NULL) {
         semanticError(node->line, "Método no declarado: %s", node->symbol->id);
+        return TYPE_ERROR;
+    }
+
+    if (isExpression && method->type == TYPE_VOID) {
+        semanticError(node->line, "El metodo '%s' es void y no puede usarse como expresion.", node->symbol->id);
         return TYPE_ERROR;
     }
 
@@ -323,7 +329,7 @@ DataType analyzeExpression(NodeAST *node, Scope *scope) {
             return node->type;
 
         case METHOD_CALL_NODE:
-            return analyzeMethodCall(node, scope);
+            return analyzeMethodCall(node, scope, 1); // 1 porque viene de Expression
 
         case BINARYOPERATOR_NODE:
             return analyzeBinaryOperator(node, scope);
@@ -358,6 +364,10 @@ void analyzeNodeSemantics(NodeAST *node, Scope *current_scope) {
             analyzeMethodNode(node, current_scope, node->type);
             break;
             
+        case METHOD_CALL_NODE:
+            analyzeMethodCall(node, current_scope, 0); // 0 porque viene de Statement
+            break;
+
         case VARIABLE_DECLARATION_NODE:
             analyzeVariableDeclarationNode(node, current_scope);
             break;
