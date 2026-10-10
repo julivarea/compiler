@@ -409,3 +409,15 @@ Symbol* lookupVariable(Scope *scope, const char *id) {
     }
     return lookupVariable(scope->parent, id);
 }
+
+void analyzeWhileNode(NodeAST *node, Scope *current_scope) {
+    NodeAST *condition = GET_CONDITION(node);
+    DataType conditionType = analyzeExpression(condition, current_scope);
+
+    if (conditionType != TYPE_ERROR && conditionType != TYPE_BOOL) {
+        semanticError(node->line, "La condicion del while debe ser de tipo BOOL, pero es %s.", getDataTypeName(conditionType));
+    }
+
+    NodeAST *body = GET_IF_BLOCK(node);
+    analyzeNodeSemantics(body, current_scope);
+}
