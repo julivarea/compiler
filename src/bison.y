@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
     if (yyparse() == 0) {
         printf("--- Analisis sintactico sin errores formales. ---\n");
         printf("\n--- Arbol de Sintaxis Abstracta (AST) ---\n");
-        Scope *root = analyzeSemantics(raizAST, NULL);
+        Scope *root = analyzeSemantics(raizAST, NULL, TYPE_VOID);
         
         if (semantic_errors > 0) {
             fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores semanticos.\033[0m\n", semantic_errors);
