@@ -36,10 +36,10 @@ typedef struct Scope {
     int children_capacity;
 } Scope;
 
-Scope* createScope(int level, Scope *parent);
+Scope* createScope(int level, Scope *parent, DataType returnType);
 void appendSymbol(Scope *scope, struct Symbol *symbol);
 void appendChildScope(Scope *parent, Scope *child);
-Scope* analyzeSemantics(struct NodeAST *root, Scope *parent);
+Scope* analyzeSemantics(struct NodeAST *root, Scope *parent, DataType returnType);
 struct Symbol* lookupVariable(Scope *scope, const char *id);
 
 
