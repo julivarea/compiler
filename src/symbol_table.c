@@ -380,7 +380,7 @@ void analyzeNodeSemantics(NodeAST *node, Scope *current_scope) {
         case WHILE_NODE:
             analyzeWhileNode(node, current_scope);
             break;
-            
+
         default:
             for (int i = 0; i < node->childCount; i++) {
                 analyzeNodeSemantics(node->children[i], current_scope);
@@ -444,5 +444,26 @@ void analyzeIfElseNode(NodeAST *node, Scope *current_scope) {
     NodeAST *elseBlock = GET_ELSE_BLOCK(node);
     if (elseBlock != NULL) {
         analyzeNodeSemantics(elseBlock, current_scope);
+    }
+}
+
+void checkMainMethodExists(Scope *globalScope) {
+    Symbol *mainSymbol = lookupVariableCurrentScope(globalScope, "main");
+
+    if (mainSymbol == NULL) {
+        semanticError(0, "El programa no contiene la definicion del metodo 'main'.");
+        return;
+    }
+
+    if (mainSymbol->symbolType != METHOD_SYMBOL) {
+        semanticError(0, "'main' debe ser un metodo, no una variable.");
+        return;
+    }
+
+    NodeAST *parametersNode = mainSymbol->parameters;
+    int paramCount = parametersNode ? parametersNode->childCount : 0;
+
+    if (paramCount != 0) {
+        semanticError(0, "El metodo 'main' no debe tener parametros.");
     }
 }

@@ -41,6 +41,7 @@ void appendSymbol(Scope *scope, struct Symbol *symbol);
 void appendChildScope(Scope *parent, Scope *child);
 Scope* analyzeSemantics(struct NodeAST *root, Scope *parent, DataType returnType);
 struct Symbol* lookupVariable(Scope *scope, const char *id);
+void checkMainMethodExists(Scope *globalScope);
 
 
 /**

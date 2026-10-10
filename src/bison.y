@@ -201,6 +201,7 @@ int main(int argc, char** argv) {
         printf("--- Analisis sintactico sin errores formales. ---\n");
         printf("\n--- Arbol de Sintaxis Abstracta (AST) ---\n");
         Scope *root = analyzeSemantics(raizAST, NULL, TYPE_VOID);
+        checkMainMethodExists(root);
         
         if (semantic_errors > 0) {
             fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores semanticos.\033[0m\n", semantic_errors);
