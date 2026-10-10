@@ -421,3 +421,20 @@ void analyzeWhileNode(NodeAST *node, Scope *current_scope) {
     NodeAST *body = GET_IF_BLOCK(node);
     analyzeNodeSemantics(body, current_scope);
 }
+
+void analyzeIfElseNode(NodeAST *node, Scope *current_scope) {
+    NodeAST *condition = GET_CONDITION(node);
+    DataType conditionType = analyzeExpression(condition, current_scope);
+
+    if (conditionType != TYPE_ERROR && conditionType != TYPE_BOOL) {
+        semanticError(node->line, "La condicion del if debe ser de tipo BOOL, pero es %s.", getDataTypeName(conditionType));
+    }
+
+    NodeAST *ifBlock = GET_IF_BLOCK(node);
+    analyzeNodeSemantics(ifBlock, current_scope);
+
+    NodeAST *elseBlock = GET_ELSE_BLOCK(node);
+    if (elseBlock != NULL) {
+        analyzeNodeSemantics(elseBlock, current_scope);
+    }
+}
