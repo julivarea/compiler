@@ -384,6 +384,7 @@ void analyzeNodeSemantics(NodeAST *node, Scope *current_scope) {
 
         case RETURN_NODE:
             analyzeReturnNode(node, current_scope);
+            break;
  
         case IF_ELSE_NODE:
             analyzeIfElseNode(node, current_scope);
