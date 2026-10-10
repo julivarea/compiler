@@ -372,6 +372,14 @@ void analyzeNodeSemantics(NodeAST *node, Scope *current_scope) {
 
         case RETURN_NODE:
             analyzeReturnNode(node, current_scope);
+
+        case IF_ELSE_NODE:
+            analyzeIfElseNode(node, current_scope);
+            break;
+
+        case WHILE_NODE:
+            analyzeWhileNode(node, current_scope);
+            break;
             
         default:
             for (int i = 0; i < node->childCount; i++) {
