@@ -235,7 +235,9 @@ DataType resolveBinaryOperation(
             if (left == TYPE_INT && right == TYPE_INT)
                 return TYPE_INT;
 
-            if (left == TYPE_FLOAT && right == TYPE_FLOAT)
+            if ((left == TYPE_FLOAT || left == TYPE_INT) &&
+                (right == TYPE_FLOAT || right == TYPE_INT) &&
+                (left == TYPE_FLOAT || right == TYPE_FLOAT))
                 return TYPE_FLOAT;
 
             return TYPE_ERROR;
