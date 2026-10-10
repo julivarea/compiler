@@ -195,12 +195,13 @@ NodeList *resolveVariableDefinition(DataType type, NodeList *identifiers) {
 }
 
 
-static const char* getDataTypeName(DataType type) {
+const char* getDataTypeName(DataType type) {
     switch(type) {
         case TYPE_INT: return "INT";
         case TYPE_BOOL: return "BOOL";
         case TYPE_FLOAT: return "FLOAT";
         case TYPE_VOID: return "VOID";
+        case TYPE_ERROR: return "ERROR";
         default: return "UNKNOWN";
     }
 }

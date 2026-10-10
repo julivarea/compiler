@@ -6,7 +6,8 @@ typedef enum {
     TYPE_INT,
     TYPE_BOOL,
     TYPE_FLOAT,
-    TYPE_VOID
+    TYPE_VOID,
+    TYPE_ERROR
 } DataType;
 
 typedef enum {
@@ -172,6 +173,8 @@ NodeAST *newBoolLiteralNode(int value);
  * @param symbol Símbolo a liberar.
  */
 void freeSymbol(Symbol *symbol);
+
+const char* getDataTypeName(DataType type);
 
 void printAST(NodeAST *node, int level);
 
