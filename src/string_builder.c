@@ -31,7 +31,6 @@ void buildString(const char *s) {
 void buildStringf(const char *fmt, ...) {
     if (!fmt) return;
 
-    /* 1. Calcular cuántos bytes necesita el texto formateado */
     va_list ap;
     va_start(ap, fmt);
     va_list ap_copy;
@@ -40,10 +39,8 @@ void buildStringf(const char *fmt, ...) {
     va_end(ap_copy);
     if (len < 0) { va_end(ap); return; }
 
-    /* 2. Asegurar capacidad en el buffer compartido */
     sb_ensure_capacity((size_t)len);
 
-    /* 3. Escribir directamente en el buffer */
     vsnprintf(code_buffer + code_len, code_cap - code_len, fmt, ap);
     code_len += (size_t)len;
     code_buffer[code_len] = '\0';

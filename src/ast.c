@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "ast.h"
+#include "symbol_table.h"
 
 extern int yylineno; 
 
@@ -279,7 +280,6 @@ void printAST(NodeAST *node, int level) {
             printf("Nodo Desconocido (Tipo %d)\n", node->nodeType);
     }
     
-    // Llamada recursiva para los hijos
     for (int i = 0; i < node->childCount; i++) {
         printAST(node->children[i], level + 1);
     }

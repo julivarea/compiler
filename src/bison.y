@@ -3,8 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ast.h"
+#include "symbol_table.h"
+#include "semantic_analyzer.h"
 #include "error_handler.h"
 #include "string_builder.h"
+#include "intermediate_code.h"
 extern int yylex(void);
 extern FILE *yyin;
 extern int yylineno;
@@ -220,7 +223,8 @@ int main(int argc, char** argv) {
             printf("\n--- Arbol de Sintaxis Abstracta (AST) ---\n");
             printAST(raizAST, 0);
             printf("\n--- Analisis semantico completado sin errores. ---\n");
-            printf("\n--- String Builder Buffer ---\n%s", getBuiltString());
+            generateIntermediateCode(raizAST);
+            printf("\n--- String Builder Buffer (TAC) ---\n%s", getBuiltString());
         }
     }
 

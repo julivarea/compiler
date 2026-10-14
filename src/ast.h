@@ -1,29 +1,8 @@
 #ifndef AST_H
 #define AST_H
 
-/* Tipos semanticos */
-typedef enum {
-    TYPE_INT,
-    TYPE_BOOL,
-    TYPE_FLOAT,
-    TYPE_VOID,
-    TYPE_ERROR
-} DataType;
-
-typedef enum {
-    OP_ADD,
-    OP_NEGATIVE,
-    OP_NEGATION,
-    OP_SUB,
-    OP_MUL,
-    OP_DIV,
-    OP_MOD,
-    OP_LT,
-    OP_GT,
-    OP_EQ,
-    OP_AND,
-    OP_OR
-} OperationType;
+#include "types.h"
+#include "symbol_table.h"
 
 typedef enum {
     TYPE_NODE, 
@@ -40,7 +19,6 @@ typedef enum {
     PARAMETERS_NODE, // no hace falta simbolo
     METHOD_DECLARATION_NODE // simbolo guarda lista de parametros y bloque
 } NodeType;
-#include "symbol_table.h"
 
 typedef struct NodeAST {
     NodeType nodeType;
@@ -65,17 +43,6 @@ typedef struct NodeList {
     struct NodeList *next;
     struct NodeList *tail; // puntero al último elemento (solo válido en el nodo cabecera)
 } NodeList;
-
-/**
- * Crea un Symbol reservado dinámicamente copiando id y value.
- *
- * @param id Identificador del símbolo.
- * @param value Valor del símbolo.
- *  @param symbol Tipo de simbolo
- * @param children Lista para el simbolo de tipo metodo
- * @param dataType Tipo del simbolo
- */
-Symbol *newSymbol(const char *id, SymbolType symbolType, DataType type, struct NodeAST* parameters);
 
 /**
  * Crea un nuevo nodo AST. left, mid y right se empaquetan en children.
@@ -166,15 +133,6 @@ NodeList *resolveVariableDefinition(DataType type, NodeList *identifiers);
 NodeAST *newIntLiteralNode(int value);
 NodeAST *newFloatLiteralNode(float value);
 NodeAST *newBoolLiteralNode(int value);
-
-/**
- * Libera un Symbol y sus cadenas internas.
- *
- * @param symbol Símbolo a liberar.
- */
-void freeSymbol(Symbol *symbol);
-
-const char* getDataTypeName(DataType type);
 
 void printAST(NodeAST *node, int level);
 const char* getDataTypeName(DataType type);

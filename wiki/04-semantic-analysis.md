@@ -27,8 +27,10 @@ classDiagram
 ## Archivos Fuente Relevantes
 | Archivo | Descripción |
 |---------|-------------|
-| `src/symbol_table.h` | Estructuras `Scope` y `Symbol`. |
-| `src/symbol_table.c` | Lógica de creación de scopes, inserción y búsqueda de variables. |
+| `src/types.h` | Definición de `DataType` y `OperationType`. |
+| `src/symbol_table.h` / `.c` | Estructuras `Scope` y `Symbol`. Lógica de creación de scopes, inserción y búsqueda de variables. |
+| `src/type_checker.h` / `.c` | Deducción de tipos, compatibilidad (`isAssignable`) y comprobación de expresiones y llamadas. |
+| `src/semantic_analyzer.h` / `.c` | Recorrido del AST (`analyzeSemantics`), validación de sentencias (`if`, `while`, `return`) y método `main`. |
 
 ---
 

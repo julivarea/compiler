@@ -1,3 +1,7 @@
 int duplicar(int n){
-   return m * 2;
+   return n + 2 * 3 / 5;
+}
+void main(){
+   int res;
+   res = duplicar(2);
 }
