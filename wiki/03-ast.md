@@ -96,6 +96,16 @@ Cada nodo dentro del AST es una instancia de `NodeAST`, pero la forma en que se 
   - `children[0]`: Expresión condicional.
   - `children[1]`: Cuerpo del bucle (generalmente un `BLOCK_NODE`).
 
+#### `RETURN_NODE`
+- **Propósito:** Representa una sentencia de retorno (`return expr;` o `return;`).
+- **Mapeo de Hijos:**
+  - `children[0]`: Expresión evaluada a retornar (`GET_EXPRESSION(node)`). En sentencias de retorno vacías (`return;`), no tiene hijos (`childCount = 0`, `children = NULL`).
+- **Carga (Payload):** Ninguna (`symbol = NULL`).
+- **Acción Semántica:**
+  - Verifica que la sentencia se encuentre dentro del cuerpo de una función (`current_function != NULL`).
+  - Si no tiene expresión (`return;`), valida que el tipo esperado de la función sea `TYPE_VOID`.
+  - Si tiene expresión, valida que la función no sea `TYPE_VOID` y comprueba la compatibilidad de tipos entre la expresión y el tipo de retorno esperado del método (`current_scope->returnType`).
+
 ### Métodos y Funciones
 
 #### `METHOD_DECLARATION_NODE`

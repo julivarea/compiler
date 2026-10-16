@@ -119,7 +119,11 @@ void generateStatementCode(NodeAST *node) {
             break;
 
         case RETURN_NODE:
-            
+            if(GET_EXPRESSION(node) == NULL){
+                buildStringf("ret");
+            } else {
+                buildStringf("ret %s\n", generateExpressionCode(GET_EXPRESSION(node)).place);
+            }
             break;
 
         case IF_ELSE_NODE:
