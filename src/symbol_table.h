@@ -62,6 +62,7 @@ struct Symbol {
     } value;
 };
 
+
 /**
  * @brief Crea e inicializa un nuevo símbolo.
  */

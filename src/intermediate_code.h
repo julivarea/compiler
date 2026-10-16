@@ -10,7 +10,7 @@
  */
 typedef struct {
     char place[32];
-} ExprResult;
+} Expression;
 
 /**
  * @brief Genera un nuevo nombre de variable temporal único (t0, t1, t2...).
@@ -37,7 +37,7 @@ const char* getOperatorSymbol(OperationType op);
  * @param node Nodo de la expresión (ID_NODE, CONSTANT_NODE, BINARYOPERATOR_NODE, METHOD_CALL_NODE).
  * @return ExprResult con el 'place' donde reside el resultado.
  */
-ExprResult generateExpressionCode(NodeAST *node);
+Expression generateExpressionCode(NodeAST *node);
 
 /**
  * @brief Genera código de tres direcciones (TAC) para una sentencia.

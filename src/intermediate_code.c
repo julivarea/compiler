@@ -41,8 +41,8 @@ const char* getOperatorSymbol(OperationType op) {
     }
 }
 
-ExprResult generateExpressionCode(NodeAST *node) {
-    ExprResult result;
+Expression generateExpressionCode(NodeAST *node) {
+    Expression result;
     result.place[0] = '\0';
 
     if (node == NULL) {
@@ -51,14 +51,25 @@ ExprResult generateExpressionCode(NodeAST *node) {
 
     switch (node->nodeType) {
         case ID_NODE:
-            // TODO: Copiar el identificador de la variable a result.place
-            // if (node->symbol && node->symbol->id) {
-            //     snprintf(result.place, sizeof(result.place), "%s", node->symbol->id);
-            // }
             break;
 
         case CONSTANT_NODE:
-            // TODO: Copiar el valor constante a result.place
+            if (node->symbol != NULL) {
+                switch (node->symbol->type) {
+                    case TYPE_INT: 
+                        snprintf(result.place, sizeof(result.place), "%d", node->symbol->value.int_val);
+                        break;
+                    case TYPE_BOOL:
+                        snprintf(result.place, sizeof(result.place), "%s", node->symbol->value.int_val ? "true" : "false");
+                        break;
+                    case TYPE_FLOAT:
+                        snprintf(result.place, sizeof(result.place), "%f", node->symbol->value.float_val);
+                        break;
+                    default:
+                        result.place[0] = '\0';
+                        break;
+                }
+            }
             break;
 
         case BINARYOPERATOR_NODE:
@@ -70,10 +81,13 @@ ExprResult generateExpressionCode(NodeAST *node) {
             break;
 
         case METHOD_CALL_NODE:
-            for(int i = 0; i < node->paramCount; i++){
-                buildStringf("param %s\n", node->parameters[i]->symbol->id);
+            for (int i = 0; i < node->childCount; i++) {
+                Expression arg = generateExpressionCode(node->children[i]);
+                buildStringf("param %s\n", arg.place);
             }
-            buildStringf("call %s , %d\n", node->symbol->id, node->paramCount);
+            if (node->symbol && node->symbol->id) {
+                buildStringf("%s = call %s, %d\n", result.place, node->symbol->id, node->childCount);
+            }
             break;
 
         default:
@@ -90,14 +104,18 @@ void generateStatementCode(NodeAST *node) {
 
     switch (node->nodeType) {
         case METHOD_DECLARATION_NODE:
-            // TODO: Emitir etiqueta de inicio de método (ej: buildStringf("%s:\n", node->symbol->id))
-            // y procesar el cuerpo del método
+            if (node->symbol && node->symbol->id) {
+                buildStringf("%s:\n", node->symbol->id);
+            }
+            if (node->childCount > 1 && node->children[1] != NULL) {
+                generateStatementCode(node->children[1]);
+            }
             break;
 
         case ASSIGNMENT_NODE:
-            // TODO: Generar la expresión derecha y luego emitir la asignación
-            // ExprResult expr = generateExpressionCode(node->children[1]);
-            // buildStringf("%s = %s\n", node->symbol->id, expr.place);
+             if (node->symbol && node->symbol->id) {
+                buildStringf("%s = %s\n", node->symbol->id, generateExpressionCode(GET_RIGHT(node)).place);
+            }
             break;
 
         case RETURN_NODE:

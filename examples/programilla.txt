@@ -1,0 +1,8 @@
+int test_x(){
+    int x;
+    x = 5;
+}
+
+void main(){
+
+}
