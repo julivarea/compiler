@@ -51,6 +51,7 @@ Expression generateExpressionCode(NodeAST *node) {
 
     switch (node->nodeType) {
         case ID_NODE:
+            strcpy(result.place, node->symbol->id);
             break;
 
         case CONSTANT_NODE:
@@ -72,13 +73,19 @@ Expression generateExpressionCode(NodeAST *node) {
             }
             break;
 
-        case BINARYOPERATOR_NODE:
-            // TODO: 
-            // 1. Generar código para GET_LEFT(node) -> ExprResult left
-            // 2. Si no es unario, generar código para GET_RIGHT(node) -> ExprResult right
-            // 3. Obtener un nuevo temporal con newTemp() y copiarlo a result.place
-            // 4. Emitir instrucción con buildStringf("%s = %s %s %s\n", ...)
+        case BINARYOPERATOR_NODE: {
+            Expression leftExpression = generateExpressionCode(GET_LEFT(node));
+            char* temporalBinaryOperator = newTemp();
+            strcpy(result.place, temporalBinaryOperator);
+
+            if (node->operationType == OP_NEGATIVE || node->operationType == OP_NEGATION) {
+                buildStringf("%s = %s%s\n", result.place, getOperatorSymbol(node->operationType), leftExpression.place);
+            } else {
+                Expression rightExpression = generateExpressionCode(GET_RIGHT(node));
+                buildStringf("%s = %s %s %s\n", result.place, leftExpression.place, getOperatorSymbol(node->operationType), rightExpression.place);
+            }
             break;
+        }
 
         case METHOD_CALL_NODE:
             for (int i = 0; i < node->childCount; i++) {
