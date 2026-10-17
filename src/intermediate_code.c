@@ -138,7 +138,14 @@ void generateStatementCode(NodeAST *node) {
             break;
 
         case WHILE_NODE:
-            // TODO: Manejo de etiquetas L_start y L_end con saltos condicionales y goto
+            char* startOfWhile = newLabel();
+            char* endOfWhile = newLabel();
+            buildStringf("%s : \n", startOfWhile);
+            char* conditionOfWhile = newTemp();
+            Expression conditionExpression = generateExpressionCode(GET_CONDITION(node));
+            buildStringf("if %s false goto %s \n", conditionExpression.place, endOfWhile);
+            generateStatementCode(GET_WHILE_BLOCK(node));
+            buildStringf("goto %s\n", startOfWhile);
             break;
 
         case BLOCK_NODE:

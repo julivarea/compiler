@@ -5,8 +5,12 @@ int test_x(){
 
 int main(){
  int x;
+ boolean cond;
  int y;
  x = 1 + 1 + 1;
  y = x + 1;
+ while(cond){
+    x = x + 1;
+ }
  return x;
 }

@@ -37,6 +37,7 @@ typedef struct NodeAST {
 #define GET_CONDITION(node)  ((node)->childCount > 0 ? (node)->children[0] : NULL)
 #define GET_IF_BLOCK(node)   ((node)->childCount > 1 ? (node)->children[1] : NULL)
 #define GET_ELSE_BLOCK(node) ((node)->childCount > 2 ? (node)->children[2] : NULL)
+#define GET_WHILE_BLOCK(node) ((node)->childCount > 1 ? (node)->children[1] : NULL)
 
 typedef struct NodeList {
     NodeAST *node;
