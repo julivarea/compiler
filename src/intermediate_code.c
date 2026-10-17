@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "intermediate_code.h"
 #include "string_builder.h"
@@ -18,9 +19,9 @@ char* newTemp(void) {
 }
 
 char* newLabel(void) {
-    static char buffer[32];
+    char buffer[32];
     snprintf(buffer, sizeof(buffer), "L%d", label_count++);
-    return buffer;
+    return strdup(buffer);
 }
 
 const char* getOperatorSymbol(OperationType op) {
@@ -134,19 +135,37 @@ void generateStatementCode(NodeAST *node) {
             break;
 
         case IF_ELSE_NODE:
-            // TODO: Manejo de etiquetas L_else y L_end con saltos condicionales
+            char* startIf = newLabel();
+            char* elseIf = newLabel();
+            char* endIf = newLabel();
+            buildStringf("%s:\n", startIf);
+            Expression conditionExpression = generateExpressionCode(GET_CONDITION(node));
+            buildStringf("if %s false goto %s\n", conditionExpression.place, elseIf);
+            // falta generar una etiqueta para los bloques
+            generateStatementCode(GET_IF_BLOCK(node));
+            buildStringf("goto %s\n", endIf);
+            if(GET_ELSE_BLOCK(node) != NULL){
+            buildString("%s:\n, elseIf");
+            generateStatementCode(GET_ELSE_BLOCK(node));
+            buildStringf("goto %s\n", endIf);
+            }
+            buildStringf("%s:\n",endIf);
             break;
 
-        case WHILE_NODE:
+        case WHILE_NODE: {
             char* startOfWhile = newLabel();
             char* endOfWhile = newLabel();
-            buildStringf("%s : \n", startOfWhile);
-            char* conditionOfWhile = newTemp();
+            buildStringf("%s:\n", startOfWhile);
+
             Expression conditionExpression = generateExpressionCode(GET_CONDITION(node));
-            buildStringf("if %s false goto %s \n", conditionExpression.place, endOfWhile);
+            buildStringf("if %s false goto %s\n", conditionExpression.place, endOfWhile);
+
             generateStatementCode(GET_WHILE_BLOCK(node));
+
             buildStringf("goto %s\n", startOfWhile);
+            buildStringf("%s:\n", endOfWhile);
             break;
+        }
 
         case BLOCK_NODE:
             for (int i = 0; i < node->childCount; i++) {
