@@ -1,51 +1,35 @@
 # C-TDS Compiler
 
-Compilador desde cero para C-TDS (TDS26), un lenguaje de programación
-imperativo simple, desarrollado como proyecto de la materia Taller de Diseño
-de Software (Cod. 3306).
+Compilador desarrollado como proyecto de la materia Taller de Diseño de Software (Cod. 3306)
 
-El proyecto se aborda de forma incremental: cada entrega agrega una fase al
-compilador. Hoy está cerrado el front-end hasta el análisis semántico (léxico y
-sintáctico con Flex y Bison, construcción del AST, tabla de símbolos y las
-reglas semánticas del lenguaje). La próxima etapa es la generación de código
-intermedio (TAC); el objetivo final es emitir assembly x86-64.
+El proyecto se aborda de forma incremental: cada entrega agrega una fase al compilador.
+ Hoy estan funcionales las siguientes fases: Análisis léxico y sintáctico, construcción del AST, tabla de símbolos con scopes anidados y validación semántica, y la generación de código intermedio.
+ La próxima etapa es la emisión de código assembly x86-64.
 
 ## Autores
 
 - Agustín Alieni
-- Fran Natale
+- Francisco Natale
 - Julián Varea
 
 ## Estado actual
 
-- **Análisis léxico** (`src/lexer.l`): reconoce todos los tokens del lenguaje
-  (palabras reservadas, identificadores, constantes numéricas y booleanas,
-  operadores, delimitadores y comentarios), con número de línea en los
-  mensajes de error.
-- **Análisis sintáctico** (`src/bison.y`): reconoce la gramática completa de
-  C-TDS (declaraciones de variables y métodos intercaladas, bloques,
-  condicionales, ciclos, llamadas a método, expresiones con precedencia de
-  operadores), sin conflictos shift/reduce ni reglas inalcanzables.
-- **AST** (`src/ast.h`, `src/ast.c`): implementado. Las acciones semánticas de
-  `src/bison.y` construyen el árbol durante el parseo y `printAST` lo imprime
-  indentado. Las firmas y la documentación de cada nodo están en `src/ast.h`.
-- **Tabla de símbolos y análisis semántico** (`src/symbol_table.c`,
-  `src/error_handler.c`): un recorrido sobre el AST que arma un árbol de scopes
-  anidados (global, método, bloque) y valida las reglas del lenguaje:
-  identificadores declarados antes de usarse y sin redeclarar en el mismo
-  scope, compatibilidad de tipos en asignaciones y operaciones (con coerción
-  `int` → `float`), condiciones de `if`/`while` de tipo `boolean`, tipo de
-  retorno de cada método, métodos `void` que no pueden usarse como expresión,
-  cantidad y tipo de argumentos en cada llamada, y existencia de `main` sin
-  parámetros. Cada error se reporta con su línea y la compilación se aborta si
-  hubo al menos uno.
+- **Análisis léxico**: reconoce todos los tokens validos del lenguaje
+- **Análisis sintáctico**: reconoce la gramática completa del compilador
+- **AST**:  Las acciones semánticas de bison construyen el árbol durante el parseo. 
+- **Tabla de símbolos y ámbitos**:
+  gestión de la jerarquía de `Scope`s (global, funciones, bloques), soporte de
+  shadowing y asignación de identificadores únicos (`UID`) para cada entidad declarada.
+- **Chequeo de tipos**:
+  inferencia de tipos de expresiones, compatibilidad en asignaciones,
+  coerción de `int` a `float`, y validación de llamadas a métodos.
+- **Análisis semántico**:
+  recorrido sobre el AST que valida identificadores no declarados o duplicados en el mismo ámbito, 
+  condiciones booleanas en `if`/`while`, consistencia en retornos (`return;` vs `return expr;`), firmas de métodos y la presencia del método `main()`.
+- **Código intermedio (TAC)**:
+  transforma el AST validado en instrucciones lineales de tres direcciones
 
-Las decisiones de diseño están documentadas en
-[`lexico-sintactico/analizador_sintactico.pdf`](lexico-sintactico/analizador_sintactico.pdf)
-(el conflicto shift/reduce que resolvimos, por qué separamos el AST de la
-gramática, cuándo un nodo se representa en el árbol),
-[`arbol_AST/decisiones_diseno_ast.md`](arbol_AST/decisiones_diseno_ast.md)
-y [`analisis-semantico.md`](analisis-semantico.md). En la [Wiki de Onboarding](wiki/00-index.md) hay
+En la [Wiki de Onboarding](wiki/00-index.md) hay
 una versión navegable estructurada paso a paso.
 
 ## Estructura del repositorio
@@ -53,54 +37,65 @@ una versión navegable estructurada paso a paso.
 ```
 .
 ├── src/
-│   ├── lexer.l                                      # Analizador léxico (Flex)
-│   ├── bison.y                                      # Analizador sintáctico (Bison) + main() del compilador
-│   ├── ast.h / ast.c                                # Interfaz e implementación del AST
-│   ├── symbol_table.h / symbol_table.c              # Tabla de símbolos, scopes y análisis semántico
-│   └── error_handler.h / error_handler.c            # Reporte y conteo de errores léxicos y semánticos
-├── tests/                                           # Tests unitarios (Unity) de lexer y parser
-├── examples/                                        # Programas de ejemplo para probar rápido el compilador
-│   ├── programa.txt                                 # Programa válido con todas las construcciones
-│   ├── programa_con_error.txt                       # Programa con un error semántico (tipos incompatibles)
-│   └── factorial.txt                                # Factorial recursivo (usado también en los tests)
-├── build.sh                                         # Compila el proyecto (ver Compilación)
-├── test_suite.sh                                    # Corre los tests (ver Tests)
-├── CLAUDE.md                                        # Contexto del proyecto para asistentes de IA
-├── mkdocs.yml                                       # Configuración del portal de documentación
-└── documentacion/                                   # Portal web y documentación centralizada
-    ├── index.md                                     # Portada de la documentación
-    ├── wiki/                                        # Wiki interactiva de onboarding (una página por etapa)
-    ├── spec/                                        # Enunciados de la cátedra (todo el proyecto)
-    ├── notas/                                       # Documentos internos del equipo
-    ├── analisis-semantico.md                         # Documentación de la etapa semántica
-    ├── arbol_AST/                                    # Decisiones de diseño del AST
-    └── lexico-sintactico/                           # Documentación de la primera etapa
-        ├── analizador_sintactico.pdf
-        └── notas/                                    # Notas de trabajo previas al documento final
+│   ├── lexer.l                                      # analizador léxico
+│   ├── bison.y                                      # analizador sintáctico
+│   ├── ast.h / ast.c                                # interfaz e implementación del AST
+│   ├── types.h                                      # enumerados 
+│   ├── symbol_table.h / symbol_table.c              # gestión de scopes y symbols
+│   ├── type_checker.h / type_checker.c              # inferencia, chequeo y compatibilidad de tipos
+│   ├── semantic_analyzer.h / semantic_analyzer.c    # recorrido semántico y validaciones del lenguaje
+│   ├── intermediate_code.h / intermediate_code.c    # generador de código de tres direcciones
+│   ├── string_builder.h / string_builder.c          # buffer dinámico de cadenas para la salida TAC
+│   └── error_handler.h / error_handler.c            # reporte y conteo de errores léxicos y semánticos
+├── tests/                                           # tests unitarios de lexer y parser
+├── build/                                           # archivos de compilacion
+├── build.sh                                         # compilar proyecto
+├── test_suite.sh                                    # correr tests
 ```
-
-Los archivos generados (`build/`, `mi_compilador`) no se editan a mano: salen
-de `build.sh`.
 
 ## Compilación
 
-Requisitos: `bison` (3.x), `flex` (2.6+) y `gcc`.
+### Prerrequisitos
+
+- **`gcc`** (soporte C99 o superior)
+- **`bison`** (versión 3.x)
+- **`flex`** (versión 2.6 o superior)
+
+Para verificar que las herramientas estén instaladas:
+```bash
+bison --version && flex --version && gcc --version
+```
+
+### Proceso de compilación
+
+Para compilar el proyecto completo:
 
 ```bash
 bash build.sh
 ```
 
-Hace tres cosas, en orden: corre `bison` sobre `src/bison.y` y `flex` sobre
-`src/lexer.l` para generar el parser y el scanner en `build/` (`bison.tab.c`,
-`bison.tab.h`, `lex.yy.c`), y después compila esos dos archivos generados junto
-con todos los `.c` de `src/` en el ejecutable `./mi_compilador`, en la raíz del
-repo.
+El script `build.sh` ejecuta las siguientes operaciones en orden:
 
-Hay que volver a correrlo cada vez que se modifica cualquier cosa de `src/`.
-Hoy la build sale sin warnings: si aparece alguno, es de un cambio nuevo.
+1. **Crea el directorio de salida:** Crea la carpeta `build/` si aún no existe.
+2. **Genera el parser sintáctico:** Corre `bison -d src/bison.y -o build/bison.tab.c`, generando el analizador sintáctico y el archivo de cabecera con los tokens (`build/bison.tab.h`).
+3. **Genera el scanner léxico:** Corre `flex -o build/lex.yy.c src/lexer.l`, generando el analizador léxico a partir de las expresiones regulares de tokens.
+4. **Compila y enlaza:** Invoca `gcc` con las rutas de inclusión `-Isrc -Ibuild`, compilando los dos archivos generados junto con todos los módulos de `src/`:
+   - `src/ast.c` (Árbol de Sintaxis Abstracta)
+   - `src/symbol_table.c` (Gestión de ámbitos y tabla de símbolos)
+   - `src/type_checker.c` (Inferencia, reglas de tipos y coerción)
+   - `src/semantic_analyzer.c` (Recorrido y validaciones semánticas)
+   - `src/error_handler.c` (Formateo y reporte de errores)
+   - `src/string_builder.c` (Buffer dinámico para código intermedio)
+   - `src/intermediate_code.c` (Generador de Código de Tres Direcciones - TAC)
+5. **Genera el binario final:** Produce el ejecutable `./mi_compilador` en la raíz del repositorio.
 
-Si se agrega un `.c` nuevo a `src/`, hay que sumarlo a mano a la línea de `gcc`
-de `build.sh` **y** a las de `test_suite.sh`.
+### Consideraciones y mantenimiento
+
+- **Recompilación necesaria:** Debe volverse a correr `bash build.sh` tras cualquier cambio realizado en los archivos de `src/`.
+- **Cero warnings:** Actualmente la compilación no emite ninguna advertencia (*warnings*). Si aparece alguna, debe corregirse antes de continuar.
+- **Incorporación de nuevos módulos:** Si se agrega un nuevo archivo `.c` a `src/`, debe agregarse manualmente a la lista de archivos de la llamada a `gcc` en `build.sh`, y a `test_suite.sh` si los tests unitarios lo requieren.
+- **Archivos generados:** El ejecutable `./mi_compilador` y el contenido de `build/` son artefactos generados automáticamente y no se editan a mano.
+
 
 ## Uso
 
@@ -109,51 +104,23 @@ de `build.sh` **y** a las de `test_suite.sh`.
 echo "void main(){ int x }" | ./mi_compilador  # o desde la entrada estándar
 ```
 
-En `examples/` hay programas de ejemplo para probar rápidamente el compilador:
-uno válido que usa todas las construcciones de la gramática (`programa.txt`),
-uno con un error semántico (`programa_con_error.txt`, asigna `true + x` a un
-`boolean`) y un factorial recursivo (`factorial.txt`).
+Sobre el archivo de entrada se ejecutan las siguientes fases en orden:
 
-Sobre el archivo de entrada corren cuatro fases, en este orden:
+1. **Análisis Léxico:** Escanea los tokens del lenguaje, descarta comentarios y espacios, y rastrea números de línea.
+2. **Análisis Sintáctico:** Valida la gramática LALR(1) del programa y detiene la compilación ante el primer error formal.
+3. **Construcción del AST:** Genera la representación intermedia en memoria durante las reducciones sintácticas.
+4. **Análisis Semántico:** Recorre el AST para verificar declaraciones, resolución de ámbitos, compatibilidad de tipos en operaciones y asignaciones, condiciones de control, retornos y la presencia del método `main`. A diferencia de la etapa sintáctica, reporta todos los errores semánticos encontrados antes de abortar.
+5. **Generación de Código Intermedio (TAC):** Si el programa no tiene errores léxicos, sintácticos ni semánticos, emite las instrucciones de Código de Tres Direcciones linealizadas.
 
-1. **Léxico** (`yylex`). Los símbolos no permitidos se reportan y se descartan;
-   como el parseo puede terminar bien igual sobre lo que queda, los errores
-   léxicos se cuentan aparte y abortan la compilación.
-2. **Sintáctico** (`yyparse`), que **corta en el primer error**
-   (`[Linea N] Error sintactico: ...`). Si no hay ninguno, imprime
-   `--- Analisis sintactico sin errores formales. ---`.
-3. **Construcción del AST**, hecha por las acciones semánticas durante el
-   parseo. El árbol completo queda en la global `raizAST`.
-4. **Análisis semántico** (`analyzeSemantics` + `checkMainMethodExists`), que
-   recorre el AST, arma la tabla de símbolos y valida las reglas del lenguaje.
-   A diferencia del sintáctico, **no corta en el primer error**: reporta todos
-   los que encuentra, cada uno con su línea, y al final
-   `Compilacion abortada: se encontraron N errores semanticos.`
-5. **Impresión del AST**, solo si no hubo ningún error, seguida de
-   `--- Analisis semantico completado sin errores. ---`.
+El compilador finaliza con código de salida `0` si el programa es válido, o `1` si se detecta cualquier error.
 
-O sea: ver el árbol impreso es la señal de que el programa pasó todas las fases.
-Los errores salen por `stderr` y el resto por `stdout`, así que si se redirige
-una sola de las dos el orden de las líneas se mezcla.
 
-En el árbol, cada identificador aparece como `nombre #uid (Tipo T)`. El `uid`
-identifica a la entidad declarada, así que dos variables distintas con el mismo
-nombre (ocultamiento de scopes) se distinguen a simple vista.
-
-Un programa válido termina con código de salida 0, y cualquier error (léxico,
-sintáctico o semántico) con 1.
 
 ## Tests
 
 ```bash
 bash test_suite.sh
 ```
-
-No usa `./mi_compilador`: regenera Flex/Bison y compila los fuentes de `src/`
-dentro de un ejecutable de test por archivo de tests (en `build/`), con
-`-DUNITY_TESTING` para que el `main()` de `src/bison.y` quede afuera y el que
-corra sea el de los tests. Framework
-[Unity](https://github.com/ThrowTheSwitch/Unity), incluido en `tests/unity/`.
 
 - `tests/test_lexer.c`: tokens que devuelve `yylex()` (palabras reservadas,
   identificadores, literales, operadores, comentarios, errores léxicos y

@@ -36,10 +36,17 @@ La estructura `Symbol` asocia metadatos de texto a los nodos, gestionándose en 
 - **Tipos de Operaciones:** El enumerado `OperationType` define las operaciones aritméticas, lógicas, relacionales y unarias soportadas. Se inyectan en los nodos binarios mediante `newBinaryOperatorNode`.
 - **Rastreo de Líneas (`yylineno`):** La función constructora base `newNode` captura automáticamente la línea actual de código desde la variable global `yylineno` de Flex/Bison. Este valor se persiste en `node->line`, garantizando precisión al reportar errores semánticos.
 
-## 6 . Uso de union para los valores
+## 6. Uso de `union` para los valores de constantes
 
-Cuando aparezca una constante, creamos una union para guardar el valor segun corresponda, 
-si viene un numero, guardamos en value_number
-si viene un string, guardamos en value_string
-si viene un float, guardamos en value_float
-Asi evitar conversiones en etapas posteriores y a simplificarlo a la hora de interpretar el codigo
+Para evitar conversiones redundantes de texto a número en fases posteriores (análisis semántico y generación de código intermedio), la estructura `Symbol` almacena directamente el valor tipado dentro de un campo `union`:
+
+```c
+union {
+    int int_val;      // Literales enteros y booleanos (0 o 1)
+    float float_val;  // Literales de punto flotante
+    char *str_val;    // Literales de cadena (si aplica)
+} value;
+```
+
+De esta forma, nodos como `CONSTANT_NODE` disponen de su representación nativa inmediatamente tras el análisis léxico y sintáctico sin requerir `atoi` o `atof` en las pasadas siguientes.
+
