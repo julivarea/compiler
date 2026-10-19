@@ -26,7 +26,7 @@ Este documento reúne el estado actual, las discrepancias encontradas frente a l
   - **Problema:** Actualmente se exige igualdad estricta `left == right`, rechazando comparaciones válidas como `3 < 4.5`.
   - **Acción:** Permitir comparación relacional entre `int` y `float` aplicando coerción/promoción (Regla 10 y 14).
 
-- [ ] **Restricción del operador módulo (`%`) a enteros**
+- [X] **Restricción del operador módulo (`%`) a enteros**
   - **Ubicación:** `src/type_checker.c` (`resolveBinaryOperation`).
   - **Problema:** `OP_MOD` está agrupado con las operaciones aritméticas generales y permite `float % float -> float`.
   - **Acción:** La especificación define que `%` solo computa el resto entre números enteros (`TYPE_INT`).

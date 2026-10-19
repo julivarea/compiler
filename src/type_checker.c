@@ -8,6 +8,18 @@ int isAssignable(DataType expected, DataType actual) {
     if (expected == TYPE_FLOAT && actual == TYPE_INT) return 1;
     return 0;
 }
+static int isNumeric(DataType type) {
+    return type == TYPE_INT || type == TYPE_FLOAT;
+}
+
+static DataType resolveNumericOperation(DataType left, DataType right) {
+    if (!isNumeric(left) || !isNumeric(right))
+        return TYPE_ERROR;
+
+    return (left == TYPE_FLOAT || right == TYPE_FLOAT)
+        ? TYPE_FLOAT
+        : TYPE_INT;
+}
 
 DataType resolveBinaryOperation(
     OperationType operator,
@@ -19,23 +31,24 @@ DataType resolveBinaryOperation(
         case OP_SUB:
         case OP_MUL:
         case OP_DIV:
+            return resolveNumericOperation(left, right);
+
         case OP_MOD:
-            if (left == TYPE_INT && right == TYPE_INT)
+            if (isNumeric(left) && isNumeric(right))
                 return TYPE_INT;
-
-            if ((left == TYPE_FLOAT || left == TYPE_INT) &&
-                (right == TYPE_FLOAT || right == TYPE_INT) &&
-                (left == TYPE_FLOAT || right == TYPE_FLOAT))
-                return TYPE_FLOAT;
-
             return TYPE_ERROR;
 
         case OP_LT:
         case OP_GT:
+            if (isNumeric(left) && isNumeric(right))
+                return TYPE_BOOL;
+            return TYPE_ERROR;
+
         case OP_EQ:
-            if (left == right || (left == TYPE_FLOAT || left == TYPE_INT) &&
-                (right == TYPE_FLOAT || right == TYPE_INT) &&
-                (left == TYPE_FLOAT || right == TYPE_FLOAT))
+            if (left == right)
+                return TYPE_BOOL;
+
+            if (isNumeric(left) && isNumeric(right))
                 return TYPE_BOOL;
 
             return TYPE_ERROR;
@@ -44,22 +57,16 @@ DataType resolveBinaryOperation(
         case OP_OR:
             if (left == TYPE_BOOL && right == TYPE_BOOL)
                 return TYPE_BOOL;
-
             return TYPE_ERROR;
 
         case OP_NEGATIVE:
-            if (left == TYPE_INT)
-                return TYPE_INT;
-
-            if (left == TYPE_FLOAT)
-                return TYPE_FLOAT;
-
+            if (left == TYPE_INT || left == TYPE_FLOAT)
+                return left;
             return TYPE_ERROR;
 
         case OP_NEGATION:
             if (left == TYPE_BOOL)
                 return TYPE_BOOL;
-
             return TYPE_ERROR;
 
         default:
