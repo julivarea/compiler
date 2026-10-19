@@ -1,8 +1,12 @@
-# Árbol de Sintaxis Abstracta (AST) y Tipología de Nodos
+# Árbol de Sintaxis Abstracta (AST) y Modelado de Nodos
 
-**TL;DR:** El Árbol de Sintaxis Abstracta (AST) representa la estructura sintáctica jerárquica del código fuente. El árbol se construye utilizando una estructura universal `NodeAST` cuyo comportamiento específico, mapeo de hijos y datos contenidos cambian radicalmente dependiendo de su `nodeType`.
+El Árbol de Sintaxis Abstracta (AST) es la estructura central de comunicación entre el front-end sintáctico, la validación semántica y la generación de código intermedio. Descompone el programa en una representación jerárquica limpia, descartando elementos auxiliares de la sintaxis concreta (paréntesis, llaves, puntos y comas) y conservando únicamente los elementos con significado semántico.
 
-## Diagrama de Arquitectura
+---
+
+## 1. Estructura Universal de Nodos (`NodeAST`)
+
+En lugar de definir estructuras separadas por cada construcción gramatical, el compilador implementa un modelo de nodo universal (`NodeAST` en [src/ast.h](file:///home/francisco/compiler/src/ast.h#L23-L31)). Cada nodo adapta el uso de sus campos y el arreglo de hijos de acuerdo a su tipo (`nodeType`):
 
 ```mermaid
 classDiagram
@@ -15,116 +19,151 @@ classDiagram
         +NodeAST** children
         +int childCount
     }
-    
+
     class Symbol {
         +char* id
         +DataType type
+        +SymbolType symbolType
         +union value
+        +NodeAST* parameters
     }
 
-    NodeAST "1" *-- "many" NodeAST : hijos
-    NodeAST "1" o-- "1" Symbol : hace referencia a
+    NodeAST "1" *-- "many" NodeAST : children
+    NodeAST "1" o-- "0..1" Symbol : symbol
 ```
 
-## Archivos Fuente Relevantes
+### Campos Principales
+- **`nodeType`:** Valor del enumerado `NodeType` que identifica la clase de construcción (12 tipos activos).
+- **`type`:** Tipo de dato semántico asociado (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL`, `TYPE_VOID`, `TYPE_ERROR`).
+- **`symbol`:** Puntero a la estructura `Symbol` con metadatos asociados (nombre de identificador, firma de función o valor constante).
+- **`operationType`:** En nodos de operadores, almacena la operación concreta (`OP_ADD`, `OP_SUB`, `OP_EQ`, `OP_AND`, etc.). En los demás nodos permanece en valor neutro.
+- **`line`:** Número de línea de origen en el código fuente, capturado automáticamente desde la variable global `yylineno` de Flex durante la invocación de `newNode()`.
+- **`children` y `childCount`:** Arreglo dinámico de punteros a hijos y cantidad de hijos empaquetados.
 
-| Componente | Rol | Ubicación |
-|------------|-----|-----------|
-| `NodeType` | Enumeración de los 13 tipos de nodos. | `src/ast.h:L27-L41` |
-| `NodeAST` | Definición de la estructura principal del árbol. | `src/ast.h:L44-L52` |
-| Constructores | `newNode`, `newBinaryOperatorNode`, `newMethodDeclaration` | `src/ast.c:L38-L130` |
+### Macros de Acceso Rápido
+Para evitar accesos crudos por índice en las etapas semánticas y de código intermedio, se definen macros de lectura directa:
+
+```c
+#define GET_EXPRESSION(node)   ((node)->childCount > 0 ? (node)->children[0] : NULL)
+#define GET_LEFT(node)         ((node)->childCount > 0 ? (node)->children[0] : NULL)
+#define GET_RIGHT(node)        ((node)->childCount > 1 ? (node)->children[1] : NULL)
+#define GET_CONDITION(node)    ((node)->childCount > 0 ? (node)->children[0] : NULL)
+#define GET_IF_BLOCK(node)     ((node)->childCount > 1 ? (node)->children[1] : NULL)
+#define GET_ELSE_BLOCK(node)   ((node)->childCount > 2 ? (node)->children[2] : NULL)
+#define GET_WHILE_BLOCK(node)  ((node)->childCount > 1 ? (node)->children[1] : NULL)
+```
 
 ---
 
-## Topología Detallada de Nodos
+## 2. Modelado Detallado de Cada Tipo de Nodo
 
-Cada nodo dentro del AST es una instancia de `NodeAST`, pero la forma en que se utilizan sus campos varía enormemente.
+El compilador estructura el árbol mediante 12 tipos de nodos activos en el enumerado `NodeType` (el antiguo `TYPE_NODE` fue deprecado al hacer que las reglas de tipo en Bison retornen directamente `DataType` sin instanciar nodos):
 
-### Declaraciones e Identificadores
+### A. Declaraciones e Identificadores
 
 #### `VARIABLE_DECLARATION_NODE`
-- **Propósito:** Representa la definición de una nueva variable (ej: `int x;`).
-- **Hijos:** Ninguno (`childCount = 0`).
-- **Carga (Payload):** El campo `symbol` apunta a un `Symbol` recién asignado que contiene el `id` y `type` de la variable.
-- **Acción Semántica:** Se verifica contra el ámbito actual para evitar re-declaraciones.
+- **Propósito:** Representa la declaración de una variable (ej: `int x;`).
+- **Aridad:** Sin hijos (`childCount = 0`, `children = NULL`).
+- **Carga (*Payload*):** El campo `symbol` apunta a un `Symbol` que contiene el identificador (`id`) y el tipo de dato (`type`).
+- **Construcción y Aplanamiento:** Cuando se declaran múltiples variables en una misma línea (ej: `int a, b, c;`), la función `resolveVariableDefinition` genera un `VARIABLE_DECLARATION_NODE` independiente y aplanado para cada identificador, facilitando el recorrido semántico posterior.
+- **Acción Semántica:** Se inserta en la tabla de símbolos del ámbito actual, validando que no exista una colisión de nombres en ese mismo nivel.
 
 #### `ID_NODE`
-- **Propósito:** Representa el uso de una variable existente en una expresión (ej: `x + 1`).
-- **Hijos:** Ninguno.
-- **Carga:** El campo `symbol` guarda el nombre del identificador (`id`).
-- **Acción Semántica:** Verificado por `lookupVariable` para asegurar que ha sido declarado en el ámbito actual o en los padres (`src/symbol_table.c:L109`).
+- **Propósito:** Representa la referencia o uso de una variable dentro de una expresión o asignación (ej: `x + 1`).
+- **Aridad:** Sin hijos (`childCount = 0`).
+- **Carga:** Su campo `symbol` almacena el nombre del identificador a buscar.
+- **Acción Semántica:** El analizador semántico busca el símbolo mediante `lookupVariable`, resolviendo su tipo y asegurando que haya sido declarado previamente en el ámbito actual o en algún ámbito ancestro.
 
 #### `CONSTANT_NODE`
-- **Propósito:** Representa valores literales (ej: `42`, `3.14`, `true`).
-- **Hijos:** Ninguno.
-- **Carga:** El campo `symbol` guarda el valor literal específico dentro de la `union` (`int_val`, `float_val`, etc.) pero tiene un `id` igual a `NULL`. Se crea a través de helpers como `newIntLiteralNode` (`src/ast.c:L170`).
+- **Propósito:** Representa literales numéricos o booleanos (ej: `42`, `3.14`, `true`, `false`).
+- **Aridad:** Sin hijos (`childCount = 0`).
+- **Carga:** El campo `symbol` contiene el tipo de dato (`TYPE_INT`, `TYPE_FLOAT` o `TYPE_BOOL`) y guarda directamente el valor primitivo en el campo `union value` (`int_val` o `float_val`), con `id = NULL`.
+- **Constructores dedicados:** `newIntLiteralNode`, `newFloatLiteralNode` y `newBoolLiteralNode`. Evita conversiones redundantes de cadenas a números en etapas posteriores.
 
-### Operadores y Expresiones
-
-#### `ASSIGNMENT_NODE`
-- **Propósito:** Representa la asignación de un valor a una variable (ej: `x = 5;`).
-- **Mapeo de Hijos:**
-  - `children[0]`: `ID_NODE` representando la variable destino.
-  - `children[1]`: La expresión siendo evaluada y asignada.
-- **Carga:** Contiene el `symbol` de la variable destino para una rápida resolución de ámbito.
-- **Nota:** El constructor sintáctico en `bison.y` exige exactamente esta posición para sus hijos.
-
-#### `BINARYOPERATOR_NODE`
-- **Propósito:** Operaciones lógicas y matemáticas (`+`, `-`, `&&`, `<`).
-- **Mapeo de Hijos:**
-  - `children[0]`: Operando izquierdo (`GET_LEFT(node)`).
-  - `children[1]`: Operando derecho (`GET_RIGHT(node)`).
-- **Carga:** El campo `operationType` dicta la operación específica (`OP_ADD`, `OP_MUL`, etc.) definida en `src/ast.h:L12`.
-
-### Control de Flujo
-
-#### `BLOCK_NODE`
-- **Propósito:** Representa un bloque de código delimitado por llaves `{ ... }`.
-- **Mapeo de Hijos:** `children[0...n]` almacena una cantidad arbitraria de nodos de sentencias.
-- **Acción Semántica:** Obliga al analizador semántico a invocar `analyzeSemantics` de forma recursiva para generar un nuevo sub-ámbito (`Scope`) (`src/symbol_table.c:L85`).
-
-#### `IF_ELSE_NODE`
-- **Propósito:** Bifurcación condicional.
-- **Mapeo de Hijos:** 
-  - `children[0]`: Expresión condicional (`GET_CONDITION(node)`).
-  - `children[1]`: Bloque `IF`.
-  - `children[2]`: Bloque `ELSE` (Opcional, puede ser `NULL`).
-
-#### `WHILE_NODE`
-- **Propósito:** Estructura de bucle.
-- **Mapeo de Hijos:**
-  - `children[0]`: Expresión condicional.
-  - `children[1]`: Cuerpo del bucle (generalmente un `BLOCK_NODE`).
-
-#### `RETURN_NODE`
-- **Propósito:** Representa una sentencia de retorno (`return expr;` o `return;`).
-- **Mapeo de Hijos:**
-  - `children[0]`: Expresión evaluada a retornar (`GET_EXPRESSION(node)`). En sentencias de retorno vacías (`return;`), no tiene hijos (`childCount = 0`, `children = NULL`).
-- **Carga (Payload):** Ninguna (`symbol = NULL`).
-- **Acción Semántica:**
-  - Verifica que la sentencia se encuentre dentro del cuerpo de una función (`current_function != NULL`).
-  - Si no tiene expresión (`return;`), valida que el tipo esperado de la función sea `TYPE_VOID`.
-  - Si tiene expresión, valida que la función no sea `TYPE_VOID` y comprueba la compatibilidad de tipos entre la expresión y el tipo de retorno esperado del método (`current_scope->returnType`).
-
-### Métodos y Funciones
-
-#### `METHOD_DECLARATION_NODE`
-- **Propósito:** Define una nueva función.
-- **Mapeo de Hijos:**
-  - `children[0]`: El cuerpo del método (`BLOCK_NODE`).
-- **Carga:** El campo `symbol` se utiliza intensamente aquí: almacena el tipo de retorno, el nombre de la función (`id`), y usa `symbol->parameters` para apuntar a un AST enlazado de parámetros.
-- **Acción Semántica:** Crea un nuevo `Scope` durante el análisis semántico.
-
-#### `METHOD_CALL_NODE`
-- **Propósito:** Invoca una función previamente declarada.
-- **Mapeo de Hijos:** `children[0...n]` representan los argumentos evaluados pasados a la función.
-- **Carga:** El campo `symbol` guarda el nombre de la función llamada.
-
-#### `PARAMETERS_NODE`
-- **Propósito:** Un nodo de organización pura para almacenar definiciones de parámetros dentro del símbolo de un `METHOD_DECLARATION_NODE`.
-- **Mapeo de Hijos:** `children[0...n]` almacenan los parámetros individuales `VARIABLE_DECLARATION_NODE`.
 
 ---
 
-## Deuda Técnica y Limitaciones
-- **`[NEEDS INVESTIGATION]` Desasignación de Nodos:** Aunque `freeSymbol` está implementado, parece faltar o estar incompleta una función `freeAST` recursiva para atravesar y liberar limpiamente todos los arrays de `NodeAST` y punteros de hijos asignados dinámicamente, lo cual podría provocar fugas de memoria (memory leaks) en compilaciones grandes.
+### B. Expresiones y Operaciones
+
+#### `ASSIGNMENT_NODE`
+- **Propósito:** Representa la asignación de una expresión a una variable (ej: `x = a + 2;`).
+- **Mapeo de Hijos:** Aridad fija de 2:
+  - `children[0]`: Nodo `ID_NODE` que representa la variable destino.
+  - `children[1]`: Expresión evaluada cuyo resultado se asignará.
+- **Carga:** Contiene el `symbol` de la variable destino para una rápida resolución de ámbito en el parseo y validación semántica.
+
+#### `BINARYOPERATOR_NODE`
+- **Propósito:** Operaciones aritméticas (`+`, `-`, `*`, `/`, `%`), de comparación (`==`, `<`, `>`) y lógicas (`&&`, `||`).
+- **Mapeo de Hijos:** Aridad fija de 2:
+  - `children[0]`: Sub-árbol del operando izquierdo (`GET_LEFT(node)`).
+  - `children[1]`: Sub-árbol del operando derecho (`GET_RIGHT(node)`).
+- **Carga:** El campo `operationType` almacena el operador específico (`OP_ADD`, `OP_SUB`, etc.). El campo `symbol` permanece en `NULL`.
+
+---
+
+### C. Estructuras de Control de Flujo
+
+#### `BLOCK_NODE`
+- **Propósito:** Representa un bloque de sentencias delimitado por llaves `{ ... }`.
+- **Mapeo de Hijos:** Aridad dinámica (`children[0...n]`), donde cada entrada corresponde a una sentencia en orden secuencial.
+- **Carga:** `symbol = NULL`.
+- **Acción Semántica:** Marca la apertura de un nuevo ámbito léxico hijo (`Scope`). El análisis semántico recorre sus sentencias recursivamente y restaura el ámbito al finalizar el bloque.
+
+#### `IF_ELSE_NODE`
+- **Propósito:** Estructuras condicionales simples (`if`) o dobles (`if-else`).
+- **Mapeo de Hijos:** Aridad de 2 o 3 según la presencia de la rama alternativa:
+  - `children[0]`: Expresión condicional (`GET_CONDITION(node)`).
+  - `children[1]`: Bloque o sentencia a ejecutar si es verdadera (`GET_IF_BLOCK(node)`).
+  - `children[2]`: (Opcional) Bloque `else` (`GET_ELSE_BLOCK(node)`), presente si `childCount == 3`.
+
+#### `WHILE_NODE`
+- **Propósito:** Estructura de iteración condicional (`while (...) { ... }`).
+- **Mapeo de Hijos:** Aridad fija de 2:
+  - `children[0]`: Expresión de condición de continuación (`GET_CONDITION(node)`).
+  - `children[1]`: Cuerpo del bucle a ejecutar en cada ciclo (`GET_WHILE_BLOCK(node)`, típicamente un `BLOCK_NODE`).
+
+#### `RETURN_NODE`
+- **Propósito:** Sentencia de retorno de una función (`return;` o `return expr;`).
+- **Mapeo de Hijos:**
+  - Sin hijos (`childCount = 0`, `children = NULL`) en métodos `void` con retorno vacío.
+  - Con un hijo (`children[0]`, accesible con `GET_EXPRESSION(node)`) en retornos con valor.
+- **Acción Semántica:** Verifica estar dentro del cuerpo de una función (`current_function != NULL`) y valida que el tipo de la expresión coincida o sea convertible al tipo de retorno declarado por el método contenedor.
+
+---
+
+### D. Métodos, Funciones y Parámetros
+
+#### `METHOD_DECLARATION_NODE`
+- **Propósito:** Declaración completa de una función o procedimiento.
+- **Mapeo de Hijos:** Aridad fija de 2:
+  - `children[0]`: Nodo `PARAMETERS_NODE` con la lista de parámetros formales.
+  - `children[1]`: Nodo `BLOCK_NODE` con el cuerpo de sentencias del método.
+- **Carga:** Su campo `symbol` almacena el nombre del método, su tipo de retorno (`type`) y un enlace directo a los parámetros (`symbol->parameters`). Su campo `node->type` refleja el tipo de retorno.
+- **Acción Semántica:** Registra la firma del método en el ámbito global para permitir recursión y genera un ámbito propio para sus parámetros y cuerpo.
+
+#### `METHOD_CALL_NODE`
+- **Propósito:** Invocación a una función existente (ej: `sumar(10, x)`).
+- **Mapeo de Hijos:** Aridad dinámica (`children[0...n]`), donde cada elemento es una expresión evaluada que conforma un argumento real.
+- **Carga:** Su campo `symbol` contiene el nombre de la función invocada.
+- **Acción Semántica:** Contrasta la cantidad y tipos de los argumentos con los parámetros formales de la función declarada.
+
+#### `PARAMETERS_NODE`
+- **Propósito:** Nodo de agrupación para la lista de parámetros formales en la firma de un método.
+- **Mapeo de Hijos:** Aridad dinámica (`children[0...n]`), donde cada hijo es un `VARIABLE_DECLARATION_NODE`.
+- **Carga:** Sin símbolo propio (`symbol = NULL`).
+
+---
+
+## 3. Mecanismo de Construcción y Aridad Dinámica
+
+Para construir nodos con una cantidad variable de hijos (como listas de sentencias, parámetros y argumentos) sin degradar el rendimiento con recursión por la izquierda en Bison:
+
+1. **Lista Transitoria (`NodeList`):** Durante el parseo se utiliza una estructura enlazada auxiliar con puntero `tail` en la cabecera:
+   - `initializeTemporaryList`: Inicializa la cabecera apuntando a sí misma como último nodo.
+   - `appendToTemporaryList`: Inserta nuevos elementos al final en tiempo constante $O(1)$.
+   - `mergeNodeLists`: Concatena dos listas enlazadas en $O(1)$ vinculando directamente los punteros `tail`.
+2. **Compactación en Arreglo (`resolveTemporaryList`):** Al completarse la reducción de la regla gramatical, se cuenta la cantidad total de elementos, se reserva el bloque contiguo `NodeAST** children` de tamaño exacto y se libera la estructura enlazada transitoria.
+
+---
+
+**Siguiente:** [Análisis Semántico y Tabla de Símbolos](04-semantic-analysis.md)

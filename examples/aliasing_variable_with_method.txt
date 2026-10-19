@@ -1,0 +1,10 @@
+int x(int x){
+    return x + 1;
+}
+
+void main(){
+    int x;
+    int y;
+    int z;
+    z = x(y);
+}

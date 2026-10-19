@@ -26,6 +26,7 @@ static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type
         } else {
             appendSymbol(current_scope, node->symbol);
         }
+        
     }
 
     Symbol *prev_function = current_function;
@@ -61,16 +62,12 @@ static void analyzeAssignmentNode(NodeAST *node, Scope *current_scope) {
         if (!resolvedSymbol) {
             semanticError(node->line, "Asignacion a variable no declarada '%s'.", node->symbol->id);
         } else {
-            varType = resolvedSymbol->type;
 
-            // La gramatica crea dos simbolos nuevos para el destino de la
-            // asignacion (uno para este nodo y otro para su ID_NODE hijo), sin
-            // tipo y sin relacion con la tabla. Los reapuntamos al simbolo
-            // declarado para que el generador de codigo sepa a que variable se
-            // esta asignando -- con su uid y su tipo -- sin volver a resolver
-            // nombres. Los duplicados quedan huerfanos a proposito: liberarlos
-            // haria que un segundo recorrido del mismo AST leyera memoria ya
-            // devuelta.
+            if(resolvedSymbol->symbolType != ID_SYMBOL){
+                semanticError(node->line, "Ese nombre de simbolo corresponde al metodo '%s'.", node->symbol->id);
+            }
+
+            varType = resolvedSymbol->type;
             node->symbol = resolvedSymbol;
             node->type = varType;
 

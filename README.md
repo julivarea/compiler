@@ -5,10 +5,11 @@ imperativo simple, desarrollado como proyecto de la materia Taller de Diseño
 de Software (Cod. 3306).
 
 El proyecto se aborda de forma incremental: cada entrega agrega una fase al
-compilador. Hoy está cerrado el front-end hasta el análisis semántico (léxico y
-sintáctico con Flex y Bison, construcción del AST, tabla de símbolos y las
-reglas semánticas del lenguaje). La próxima etapa es la generación de código
-intermedio (TAC); el objetivo final es emitir assembly x86-64.
+compilador. Hoy está cerrado el front-end completo (análisis léxico y sintáctico
+con Flex y Bison, construcción y decorado del AST, tabla de símbolos con scopes
+anidados y validación semántica estricta) y la generación de código intermedio
+(TAC - Three-Address Code) con buffer dinámico en memoria. La próxima etapa es
+la emisión de código assembly x86-64.
 
 ## Autores
 
@@ -29,23 +30,25 @@ intermedio (TAC); el objetivo final es emitir assembly x86-64.
 - **AST** (`src/ast.h`, `src/ast.c`): implementado. Las acciones semánticas de
   `src/bison.y` construyen el árbol durante el parseo y `printAST` lo imprime
   indentado. Las firmas y la documentación de cada nodo están en `src/ast.h`.
-- **Tabla de símbolos y análisis semántico** (`src/symbol_table.c`,
-  `src/error_handler.c`): un recorrido sobre el AST que arma un árbol de scopes
-  anidados (global, método, bloque) y valida las reglas del lenguaje:
-  identificadores declarados antes de usarse y sin redeclarar en el mismo
-  scope, compatibilidad de tipos en asignaciones y operaciones (con coerción
-  `int` → `float`), condiciones de `if`/`while` de tipo `boolean`, tipo de
-  retorno de cada método, métodos `void` que no pueden usarse como expresión,
-  cantidad y tipo de argumentos en cada llamada, y existencia de `main` sin
-  parámetros. Cada error se reporta con su línea y la compilación se aborta si
-  hubo al menos uno.
+- **Tabla de símbolos y ámbitos** (`src/symbol_table.h`, `src/symbol_table.c`):
+  gestión de la jerarquía de `Scope`s (global, funciones, bloques), soporte de
+  shadowing y asignación de identificadores únicos (`UID`) para cada entidad declarada.
+- **Chequeo de tipos** (`src/type_checker.h`, `src/type_checker.c`):
+  inferencia de tipos de expresiones, compatibilidad en asignaciones (`isAssignable`),
+  coerción de `int` a `float`, y validación de llamadas a métodos.
+- **Análisis semántico** (`src/semantic_analyzer.h`, `src/semantic_analyzer.c`, `src/error_handler.c`):
+  recorrido sobre el AST (`analyzeSemantics`) que valida identificadores no declarados
+  o duplicados en el mismo ámbito, condiciones booleanas en `if`/`while`, consistencia
+  en retornos (`return;` vs `return expr;`), firmas de métodos y la presencia del método `main()`.
+- **Código intermedio (TAC)** (`src/intermediate_code.h`, `src/intermediate_code.c`, `src/string_builder.h`, `src/string_builder.c`):
+  transforma el AST validado en instrucciones lineales de tres direcciones con
+  variables temporales (`t0, t1...`) y etiquetas de salto (`L0, L1...`).
 
 Las decisiones de diseño están documentadas en
-[`documentacion/lexico-sintactico/analizador_sintactico.pdf`](documentacion/lexico-sintactico/analizador_sintactico.pdf)
-(el conflicto shift/reduce que resolvimos, por qué separamos el AST de la
-gramática, cuándo un nodo se representa en el árbol),
-[`documentacion/arbol_AST/decisiones_diseno_ast.md`](documentacion/arbol_AST/decisiones_diseno_ast.md)
-y [`documentacion/analisis-semantico.md`](documentacion/analisis-semantico.md). Toda la documentación técnica y las guías de onboarding están organizadas en `documentacion/`.
+[`documentacion/lexico-sintactico/analizador_sintactico.pdf`](documentacion/lexico-sintactico/analizador_sintactico.pdf),
+[`documentacion/arbol_AST/decisiones_diseno_ast.md`](documentacion/arbol_AST/decisiones_diseno_ast.md),
+[`documentacion/analisis-semantico.md`](documentacion/analisis-semantico.md) y
+[`documentacion/wiki/05-intermediate-code.md`](documentacion/wiki/05-intermediate-code.md). Toda la documentación técnica y las guías de onboarding están organizadas en `documentacion/`.
 
 ## Estructura del repositorio
 
@@ -55,7 +58,12 @@ y [`documentacion/analisis-semantico.md`](documentacion/analisis-semantico.md). 
 │   ├── lexer.l                                      # Analizador léxico (Flex)
 │   ├── bison.y                                      # Analizador sintáctico (Bison) + main() del compilador
 │   ├── ast.h / ast.c                                # Interfaz e implementación del AST
-│   ├── symbol_table.h / symbol_table.c              # Tabla de símbolos, scopes y análisis semántico
+│   ├── types.h                                      # Enumerados DataType y OperationType
+│   ├── symbol_table.h / symbol_table.c              # Gestión de Scopes y Symbols
+│   ├── type_checker.h / type_checker.c              # Inferencia, chequeo y compatibilidad de tipos
+│   ├── semantic_analyzer.h / semantic_analyzer.c    # Recorrido semántico y validaciones del lenguaje
+│   ├── intermediate_code.h / intermediate_code.c    # Generador de Código de Tres Direcciones (TAC)
+│   ├── string_builder.h / string_builder.c          # Buffer dinámico de cadenas para la salida TAC
 │   └── error_handler.h / error_handler.c            # Reporte y conteo de errores léxicos y semánticos
 ├── tests/                                           # Tests unitarios (Unity) de lexer y parser
 ├── examples/                                        # Programas de ejemplo para probar rápido el compilador
@@ -83,23 +91,47 @@ de `build.sh`.
 
 ## Compilación
 
-Requisitos: `bison` (3.x), `flex` (2.6+) y `gcc`.
+### Prerrequisitos
+
+- **`gcc`** (soporte C99 o superior)
+- **`bison`** (versión 3.x)
+- **`flex`** (versión 2.6 o superior)
+
+Para verificar que las herramientas estén instaladas:
+```bash
+bison --version && flex --version && gcc --version
+```
+
+### Proceso de compilación
+
+Para compilar el proyecto completo:
 
 ```bash
 bash build.sh
 ```
 
-Hace tres cosas, en orden: corre `bison` sobre `src/bison.y` y `flex` sobre
-`src/lexer.l` para generar el parser y el scanner en `build/` (`bison.tab.c`,
-`bison.tab.h`, `lex.yy.c`), y después compila esos dos archivos generados junto
-con todos los `.c` de `src/` en el ejecutable `./mi_compilador`, en la raíz del
-repo.
+El script `build.sh` ejecuta las siguientes operaciones en orden:
 
-Hay que volver a correrlo cada vez que se modifica cualquier cosa de `src/`.
-Hoy la build sale sin warnings: si aparece alguno, es de un cambio nuevo.
+1. **Crea el directorio de salida temporal:** Crea la carpeta `build/` si aún no existe.
+2. **Genera el parser sintáctico:** Ejecuta `bison -d src/bison.y -o build/bison.tab.c`, creando el analizador sintáctico y el archivo de cabecera con los tokens (`build/bison.tab.h`).
+3. **Genera el scanner léxico:** Ejecuta `flex -o build/lex.yy.c src/lexer.l`, creando el analizador léxico a partir de las expresiones regulares.
+4. **Compila y enlaza:** Invoca `gcc` con las banderas de inclusión `-Isrc -Ibuild`, compilando los dos archivos generados junto con todos los módulos de `src/`:
+   - `src/ast.c` (Árbol de Sintaxis Abstracta)
+   - `src/symbol_table.c` (Gestión de ámbitos y tabla de símbolos)
+   - `src/type_checker.c` (Inferencia, reglas de tipos y coerción)
+   - `src/semantic_analyzer.c` (Recorrido y validaciones semánticas)
+   - `src/error_handler.c` (Formateo y conteo de errores)
+   - `src/string_builder.c` (Buffer dinámico para salida)
+   - `src/intermediate_code.c` (Generación de Código de Tres Direcciones - TAC)
+5. **Genera el binario final:** Produce el ejecutable `./mi_compilador` en la raíz del repositorio.
 
-Si se agrega un `.c` nuevo a `src/`, hay que sumarlo a mano a la línea de `gcc`
-de `build.sh` **y** a las de `test_suite.sh`.
+### Consideraciones y mantenimiento
+
+- **Recompilación necesaria:** Debe ejecutarse `bash build.sh` tras cualquier cambio realizado dentro de `src/`.
+- **Cero warnings:** La compilación actual no emite ninguna advertencia (*warnings*). Si surge alguna, debe corregirse antes de continuar.
+- **Incorporación de nuevos módulos:** Si se agrega un nuevo archivo `.c` a `src/`, debe agregarse manualmente a la lista de archivos de la llamada a `gcc` en `build.sh`, y en las secciones correspondientes de `test_suite.sh` si los tests unitarios lo consumen.
+- **Archivos generados:** El ejecutable `./mi_compilador` y el contenido de `build/` no deben editarse a mano ni incluirse en el control de versiones.
+
 
 ## Uso
 
@@ -113,34 +145,16 @@ uno válido que usa todas las construcciones de la gramática (`programa.txt`),
 uno con un error semántico (`programa_con_error.txt`, asigna `true + x` a un
 `boolean`) y un factorial recursivo (`factorial.txt`).
 
-Sobre el archivo de entrada corren cuatro fases, en este orden:
+Sobre el archivo de entrada se ejecutan las siguientes fases en orden:
 
-1. **Léxico** (`yylex`). Los símbolos no permitidos se reportan y se descartan;
-   como el parseo puede terminar bien igual sobre lo que queda, los errores
-   léxicos se cuentan aparte y abortan la compilación.
-2. **Sintáctico** (`yyparse`), que **corta en el primer error**
-   (`[Linea N] Error sintactico: ...`). Si no hay ninguno, imprime
-   `--- Analisis sintactico sin errores formales. ---`.
-3. **Construcción del AST**, hecha por las acciones semánticas durante el
-   parseo. El árbol completo queda en la global `raizAST`.
-4. **Análisis semántico** (`analyzeSemantics` + `checkMainMethodExists`), que
-   recorre el AST, arma la tabla de símbolos y valida las reglas del lenguaje.
-   A diferencia del sintáctico, **no corta en el primer error**: reporta todos
-   los que encuentra, cada uno con su línea, y al final
-   `Compilacion abortada: se encontraron N errores semanticos.`
-5. **Impresión del AST**, solo si no hubo ningún error, seguida de
-   `--- Analisis semantico completado sin errores. ---`.
+1. **Análisis Léxico:** Escanea los tokens del lenguaje, descarta comentarios y espacios, y rastrea números de línea.
+2. **Análisis Sintáctico:** Valida la gramática LALR(1) del programa y detiene la compilación ante el primer error formal.
+3. **Construcción del AST:** Genera la representación intermedia en memoria durante las reducciones sintácticas.
+4. **Análisis Semántico:** Recorre el AST para verificar declaraciones, resolución de ámbitos, compatibilidad de tipos en operaciones y asignaciones, condiciones de control, retornos y la presencia del método `main`. A diferencia de la etapa sintáctica, reporta todos los errores semánticos encontrados antes de abortar.
+5. **Generación de Código Intermedio (TAC):** Si el programa no tiene errores léxicos, sintácticos ni semánticos, emite las instrucciones de Código de Tres Direcciones linealizadas.
 
-O sea: ver el árbol impreso es la señal de que el programa pasó todas las fases.
-Los errores salen por `stderr` y el resto por `stdout`, así que si se redirige
-una sola de las dos el orden de las líneas se mezcla.
+El compilador finaliza con código de salida `0` si el programa es válido, o `1` si se detecta cualquier error.
 
-En el árbol, cada identificador aparece como `nombre #uid (Tipo T)`. El `uid`
-identifica a la entidad declarada, así que dos variables distintas con el mismo
-nombre (ocultamiento de scopes) se distinguen a simple vista.
-
-Un programa válido termina con código de salida 0, y cualquier error (léxico,
-sintáctico o semántico) con 1.
 
 ## Tests
 

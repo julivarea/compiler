@@ -55,6 +55,7 @@ nav:
       - 3. Análisis Léxico y Sintáctico: wiki/02-lexical-syntax-analysis.md
       - 4. Árbol de Sintaxis Abstracta (AST): wiki/03-ast.md
       - 5. Análisis Semántico: wiki/04-semantic-analysis.md
+      - 6. Código Intermedio (TAC): wiki/05-intermediate-code.md
   - Documentación Técnica:
       - Alcance Análisis Semántico: analisis-semantico.md
       - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md
@@ -73,7 +74,11 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - tables
