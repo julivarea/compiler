@@ -14,7 +14,7 @@ la emisión de código assembly x86-64.
 ## Autores
 
 - Agustín Alieni
-- Fran Natale
+- Francisco Natale
 - Julián Varea
 
 ## Estado actual

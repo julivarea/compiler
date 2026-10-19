@@ -102,7 +102,7 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
         return TYPE_ERROR;
     }
     
-    if(method->symbolType =! METHOD_SYMBOL){
+    if(method->symbolType != METHOD_SYMBOL){
         semanticError(node->line, "El simbolo encontrado pertenece a una variable no a una llamada de un metodo");
         return TYPE_ERROR;
     }
