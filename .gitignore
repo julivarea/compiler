@@ -4,3 +4,5 @@ lex.yy.c
 parser
 test_runner
 build/
+.venv/
+site/

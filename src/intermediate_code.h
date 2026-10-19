@@ -35,7 +35,7 @@ const char* getOperatorSymbol(OperationType op);
 /**
  * @brief Genera código de tres direcciones (TAC) para un nodo de expresión.
  * @param node Nodo de la expresión (ID_NODE, CONSTANT_NODE, BINARYOPERATOR_NODE, METHOD_CALL_NODE).
- * @return ExprResult con el 'place' donde reside el resultado.
+ * @return Expression con el 'place' donde reside el resultado.
  */
 Expression generateExpressionCode(NodeAST *node);
 

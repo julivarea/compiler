@@ -141,11 +141,10 @@ void generateStatementCode(NodeAST *node) {
             buildStringf("%s:\n", startIf);
             Expression conditionExpression = generateExpressionCode(GET_CONDITION(node));
             buildStringf("if %s false goto %s\n", conditionExpression.place, elseIf);
-            // falta generar una etiqueta para los bloques
             generateStatementCode(GET_IF_BLOCK(node));
             buildStringf("goto %s\n", endIf);
             if(GET_ELSE_BLOCK(node) != NULL){
-            buildString("%s:\n, elseIf");
+            buildStringf("%s:\n", elseIf);
             generateStatementCode(GET_ELSE_BLOCK(node));
             buildStringf("goto %s\n", endIf);
             }

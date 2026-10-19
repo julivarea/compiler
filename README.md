@@ -41,12 +41,11 @@ intermedio (TAC); el objetivo final es emitir assembly x86-64.
   hubo al menos uno.
 
 Las decisiones de diseño están documentadas en
-[`docs/lexico-sintactico/analizador_sintactico.pdf`](docs/lexico-sintactico/analizador_sintactico.pdf)
+[`documentacion/lexico-sintactico/analizador_sintactico.pdf`](documentacion/lexico-sintactico/analizador_sintactico.pdf)
 (el conflicto shift/reduce que resolvimos, por qué separamos el AST de la
 gramática, cuándo un nodo se representa en el árbol),
-[`docs/arbol_AST/decisiones_diseno_ast.md`](docs/arbol_AST/decisiones_diseno_ast.md)
-y [`docs/analisis-semantico.md`](docs/analisis-semantico.md). En `wiki/` hay
-una versión navegable de lo mismo.
+[`documentacion/arbol_AST/decisiones_diseno_ast.md`](documentacion/arbol_AST/decisiones_diseno_ast.md)
+y [`documentacion/analisis-semantico.md`](documentacion/analisis-semantico.md). Toda la documentación técnica y las guías de onboarding están organizadas en `documentacion/`.
 
 ## Estructura del repositorio
 
@@ -66,13 +65,15 @@ una versión navegable de lo mismo.
 ├── build.sh                                         # Compila el proyecto (ver Compilación)
 ├── test_suite.sh                                    # Corre los tests (ver Tests)
 ├── CLAUDE.md                                        # Contexto del proyecto para asistentes de IA
-├── wiki/                                            # Wiki interna, una página por etapa
-└── docs/
-    ├── spec/                                         # Enunciados de la cátedra (todo el proyecto)
-    ├── notas/                                        # Documentos internos del equipo
+├── mkdocs.yml                                       # Configuración del portal de documentación
+└── documentacion/                                   # Portal web y documentación centralizada
+    ├── index.md                                     # Portada de la documentación
+    ├── wiki/                                        # Wiki interactiva de onboarding (una página por etapa)
+    ├── spec/                                        # Enunciados de la cátedra (todo el proyecto)
+    ├── notas/                                       # Documentos internos del equipo
     ├── analisis-semantico.md                         # Documentación de la etapa semántica
     ├── arbol_AST/                                    # Decisiones de diseño del AST
-    └── lexico-sintactico/                            # Documentación de la primera etapa
+    └── lexico-sintactico/                           # Documentación de la primera etapa
         ├── analizador_sintactico.pdf
         └── notas/                                    # Notas de trabajo previas al documento final
 ```
@@ -199,6 +200,33 @@ eso al final conviene probar el compilador de verdad sobre un ejemplo:
 prueba de humo de todas las fases de una sola pasada. Para chequear que los
 errores se siguen detectando, `./mi_compilador examples/programa_con_error.txt`
 tiene que reportar un error semántico y salir con código 1.
+
+## Documentación del Proyecto
+
+El proyecto incluye un portal web de documentación interactivo construido con [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/), que reúne la wiki de onboarding, las especificaciones de diseño y las notas de implementación con buscador integrado y navegación por pestañas.
+
+Toda la documentación fuente se encuentra centralizada en la carpeta [`documentacion/`](documentacion/).
+
+### Cómo levantar la documentación localmente
+
+Para iniciar el servidor local con recarga en vivo (*live reload*):
+
+```bash
+uv run mkdocs serve
+```
+
+Una vez levantado, abre en tu navegador:
+ **[http://localhost:8000](http://localhost:8000)** (o `http://127.0.0.1:8000`)
+
+Cualquier cambio que realices en los archivos de `documentacion/` se actualizará automáticamente en pantalla.
+
+### Compilar el sitio estático
+
+Para generar la versión HTML estática del sitio (se crea en la carpeta `site/`):
+
+```bash
+uv run mkdocs build
+```
 
 ## Problemas conocidos
 
