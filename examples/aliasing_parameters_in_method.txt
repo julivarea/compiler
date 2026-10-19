@@ -1,0 +1,8 @@
+int aliasing_parameters_with_assignment(int x){
+    int x; 
+    return x;
+}
+
+void main(){
+    
+}

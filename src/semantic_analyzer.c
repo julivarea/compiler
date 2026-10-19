@@ -26,14 +26,29 @@ static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type
         } else {
             appendSymbol(current_scope, node->symbol);
         }
-        
     }
 
     Symbol *prev_function = current_function;
     current_function = node->symbol;
 
-    Scope *child_scope = analyzeSemantics(node, current_scope, type);
-    appendChildScope(current_scope, child_scope);
+    int level = current_scope ? current_scope->level + 1 : 0;
+    Scope *method_scope = createScope(level, current_scope, type);
+
+    NodeAST *params = (node->childCount > 0) ? node->children[0] : NULL;
+    if (params) {
+        for (int i = 0; i < params->childCount; i++) {
+            analyzeNodeSemantics(params->children[i], method_scope);
+        }
+    }
+
+    NodeAST *body = (node->childCount > 1) ? node->children[1] : NULL;
+    if (body) {
+        for (int i = 0; i < body->childCount; i++) {
+            analyzeNodeSemantics(body->children[i], method_scope);
+        }
+    }
+
+    appendChildScope(current_scope, method_scope);
 
     current_function = prev_function;
 }

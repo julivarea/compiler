@@ -11,12 +11,12 @@ Este documento reúne el estado actual, las discrepancias encontradas frente a l
   - **Problema:** Si se llama a una variable como si fuera una función (ej. `int x; x(1, 2);`), `lookupVariable` encuentra el símbolo pero no comprueba que `method->symbolType == METHOD_SYMBOL`.
   - **Acción:** Validar `symbolType == METHOD_SYMBOL` antes de leer parámetros; emitir error semántico claro si no es un método.
 
-- [X ] **Validación de tipos de símbolo en asignaciones (`ASSIGNMENT_NODE`)**
+- [X] **Validación de tipos de símbolo en asignaciones (`ASSIGNMENT_NODE`)**
   - **Ubicación:** `src/semantic_analyzer.c` (`analyzeAssignmentNode`).
   - **Problema:** Si se asigna a un nombre de función (ej. `void foo() {} ... foo = 5;`), no se valida que el destino sea una variable o parámetro (`symbolType == ID_SYMBOL`).
   - **Acción:** Exigir que la variable a la izquierda de la asignación sea `ID_SYMBOL` (Regla 8 de la especificación).
 
-- [ ] **Restricción de tipos en operadores relacionales (`<`, `>`)**
+- [X] **Restricción de tipos en operadores relacionales (`<`, `>`)**
   - **Ubicación:** `src/type_checker.c` (`resolveBinaryOperation`).
   - **Problema:** `OP_LT` y `OP_GT` están agrupados con `OP_EQ`, lo que permite comparar booleanos con desigualdad (ej. `true < false`).
   - **Acción:** Según la Regla 10 de la especificación, los operandos de `<` y `>` deben ser únicamente numéricos (`TYPE_INT` o `TYPE_FLOAT`), nunca `TYPE_BOOL`.
@@ -31,10 +31,10 @@ Este documento reúne el estado actual, las discrepancias encontradas frente a l
   - **Problema:** `OP_MOD` está agrupado con las operaciones aritméticas generales y permite `float % float -> float`.
   - **Acción:** La especificación define que `%` solo computa el resto entre números enteros (`TYPE_INT`).
 
-- [ ] **Conflicto entre parámetros formales y variables locales en el cuerpo de la función**
-  - **Ubicación:** `src/semantic_analyzer.c` (`analyzeMethodNode` y `analyzeBlockNode`).
-  - **Problema:** El cuerpo del método (`BLOCK_NODE`) crea un nuevo sub-ámbito, permitiendo redeclarar como variable local un identificador idéntico al de un parámetro formal (tratándolo como shadowing).
-  - **Acción:** Investigar si según las reglas de alcance de la cátedra ("el scope de la función está conformado por los parámetros formales y las variables declaradas en el cuerpo") debe emitirse error de redeclaración en el bloque principal del método.
+- [X] **Conflicto entre parámetros formales y variables locales en el cuerpo de la función**
+  - **Ubicación:** `src/semantic_analyzer.c` (`analyzeMethodNode`).
+  - **Problema:** El cuerpo del método (`BLOCK_NODE`) creaba un nuevo sub-ámbito, permitiendo redeclarar como variable local un identificador idéntico al de un parámetro formal (tratándolo como shadowing).
+  - **Acción:** Se unificó el ámbito del método: según la especificación ("el scope de la función está conformado por los parámetros formales y las variables declaradas en el cuerpo"), el cuerpo principal comparte el `method_scope`, detectándose la redeclaración automáticamente con `lookupVariableCurrentScope`. Los bloques anidados (`if`, `while`, `{}`) siguen creando sub-ámbitos con shadowing permitido.
 
 ---
 
