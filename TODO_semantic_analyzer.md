@@ -6,12 +6,12 @@ Este documento reúne el estado actual, las discrepancias encontradas frente a l
 
 ## 1. Reglas Semánticas y Bugs a Investigar / Corregir
 
-- [ ] **Validación de tipos de símbolo en invocaciones (`METHOD_CALL_NODE`)**
+- [ X ] **Validación de tipos de símbolo en invocaciones (`METHOD_CALL_NODE`)**
   - **Ubicación:** `src/type_checker.c` (`analyzeMethodCall`).
   - **Problema:** Si se llama a una variable como si fuera una función (ej. `int x; x(1, 2);`), `lookupVariable` encuentra el símbolo pero no comprueba que `method->symbolType == METHOD_SYMBOL`.
   - **Acción:** Validar `symbolType == METHOD_SYMBOL` antes de leer parámetros; emitir error semántico claro si no es un método.
 
-- [ ] **Validación de tipos de símbolo en asignaciones (`ASSIGNMENT_NODE`)**
+- [X ] **Validación de tipos de símbolo en asignaciones (`ASSIGNMENT_NODE`)**
   - **Ubicación:** `src/semantic_analyzer.c` (`analyzeAssignmentNode`).
   - **Problema:** Si se asigna a un nombre de función (ej. `void foo() {} ... foo = 5;`), no se valida que el destino sea una variable o parámetro (`symbolType == ID_SYMBOL`).
   - **Acción:** Exigir que la variable a la izquierda de la asignación sea `ID_SYMBOL` (Regla 8 de la especificación).
@@ -21,7 +21,7 @@ Este documento reúne el estado actual, las discrepancias encontradas frente a l
   - **Problema:** `OP_LT` y `OP_GT` están agrupados con `OP_EQ`, lo que permite comparar booleanos con desigualdad (ej. `true < false`).
   - **Acción:** Según la Regla 10 de la especificación, los operandos de `<` y `>` deben ser únicamente numéricos (`TYPE_INT` o `TYPE_FLOAT`), nunca `TYPE_BOOL`.
 
-- [ ] **Operaciones relacionales mixtas (`int` con `float`)**
+- [X] **Operaciones relacionales mixtas (`int` con `float`)**
   - **Ubicación:** `src/type_checker.c` (`resolveBinaryOperation`).
   - **Problema:** Actualmente se exige igualdad estricta `left == right`, rechazando comparaciones válidas como `3 < 4.5`.
   - **Acción:** Permitir comparación relacional entre `int` y `float` aplicando coerción/promoción (Regla 10 y 14).

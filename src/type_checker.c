@@ -33,7 +33,9 @@ DataType resolveBinaryOperation(
         case OP_LT:
         case OP_GT:
         case OP_EQ:
-            if (left == right)
+            if (left == right || (left == TYPE_FLOAT || left == TYPE_INT) &&
+                (right == TYPE_FLOAT || right == TYPE_INT) &&
+                (left == TYPE_FLOAT || right == TYPE_FLOAT))
                 return TYPE_BOOL;
 
             return TYPE_ERROR;
@@ -92,6 +94,11 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
         semanticError(node->line, "El metodo '%s' es void y no puede usarse como expresion.", node->symbol->id);
         return TYPE_ERROR;
     }
+    
+    if(method->symbolType =! METHOD_SYMBOL){
+        semanticError(node->line, "El simbolo encontrado pertenece a una variable no a una llamada de un metodo");
+        return TYPE_ERROR;
+    }
 
     NodeAST *parametersNode = method->parameters;
     int expectedArgCount = parametersNode ? parametersNode->childCount : 0;
@@ -113,8 +120,7 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
     node->type = method->type;
     return method->type;
 }
-// recorrido post-order
-// {dataType, id -> (valor literal o variable temporal para generacion de codigo)}
+
 DataType analyzeBinaryOperator(NodeAST *node, Scope *scope) {
     DataType leftType = analyzeExpression(GET_LEFT(node), scope); //
     DataType rightType = TYPE_VOID; // default
