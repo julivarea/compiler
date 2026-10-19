@@ -19,6 +19,7 @@ static void analyzeWhileNode(NodeAST *node, Scope *current_scope);
 static void analyzeIdNode(NodeAST *node, Scope *current_scope);
 
 static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type) {
+    int hasReturn = 0;
     if (node->symbol) {
         Symbol *existing = lookupVariableCurrentScope(current_scope, node->symbol->id);
         if (existing != NULL) {
@@ -34,17 +35,29 @@ static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type
     int level = current_scope ? current_scope->level + 1 : 0;
     Scope *method_scope = createScope(level, current_scope, type);
 
-    NodeAST *params = (node->childCount > 0) ? node->children[0] : NULL;
+    NodeAST *params = GET_LEFT(node);
     if (params) {
         for (int i = 0; i < params->childCount; i++) {
             analyzeNodeSemantics(params->children[i], method_scope);
+            
         }
     }
 
-    NodeAST *body = (node->childCount > 1) ? node->children[1] : NULL;
+    NodeAST *body = GET_RIGHT(node);
     if (body) {
         for (int i = 0; i < body->childCount; i++) {
+            if(hasReturn < 1){
+                if(body->children[i]->nodeType == RETURN_NODE){
+                    hasReturn++;
+                }
             analyzeNodeSemantics(body->children[i], method_scope);
+            } else {
+                semanticError(body->children[i]->line, "Ya hay un return definido");
+            }
+        }
+
+        if(node->type != TYPE_VOID && hasReturn == 0){
+            semanticError(node->line, "Tiene que haber un retorno en el metodo, ya que no es void en el perfil");
         }
     }
 

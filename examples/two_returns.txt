@@ -1,0 +1,8 @@
+int try_two_returns(){
+    return 1;
+    return 2;
+}
+
+void main(){
+
+}
