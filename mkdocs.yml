@@ -1,0 +1,84 @@
+site_name: C-TDS Compiler
+site_description: Compilador para C-TDS (TDS26) desarrollado en C con Flex y Bison
+site_url: ""
+repo_url: https://github.com/julivarea/compiler
+repo_name: julivarea/compiler
+docs_dir: documentacion
+edit_uri: edit/main/documentacion/
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/julivarea/compiler
+
+theme:
+  name: material
+  language: es
+  palette:
+    # Modo claro
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Cambiar a modo oscuro
+    # Modo oscuro
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Cambiar a modo claro
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.action.edit
+    - content.action.view
+    - content.code.copy
+    - content.code.annotate
+
+nav:
+  - Inicio: index.md
+  - Wiki de Onboarding:
+      - Índice: wiki/00-index.md
+      - 1. Primeros Pasos: wiki/00.5-getting-started.md
+      - 2. Visión General y Arquitectura: wiki/01-overview.md
+      - 3. Análisis Léxico y Sintáctico: wiki/02-lexical-syntax-analysis.md
+      - 4. Árbol de Sintaxis Abstracta (AST): wiki/03-ast.md
+      - 5. Análisis Semántico: wiki/04-semantic-analysis.md
+  - Documentación Técnica:
+      - Alcance Análisis Semántico: analisis-semantico.md
+      - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md
+      - Explicación Conflicto Bison: lexico-sintactico/notas/explicacion_conflicto_bison.md
+      - Notas Definición AST: lexico-sintactico/notas/notes_to_ast_definition.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - footnotes
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
