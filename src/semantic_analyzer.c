@@ -16,7 +16,6 @@ static void analyzeAssignmentNode(NodeAST *node, Scope *current_scope);
 static void analyzeReturnNode(NodeAST *node, Scope *current_scope);
 static void analyzeIfElseNode(NodeAST *node, Scope *current_scope);
 static void analyzeWhileNode(NodeAST *node, Scope *current_scope);
-static void analyzeIdNode(NodeAST *node, Scope *current_scope);
 static void checkMainMethodExists(Scope *globalScope);
 
 /**
@@ -180,15 +179,6 @@ static void analyzeReturnNode(NodeAST *node, Scope *current_scope) {
     }
 }
 
-static void analyzeIdNode(NodeAST *node, Scope *current_scope) {
-    if (node->symbol) {
-        Symbol *resolvedSymbol = lookupVariable(current_scope, node->symbol->id);
-        if (!resolvedSymbol) {
-            semanticError(node->line, "Uso de variable no declarada '%s'.", node->symbol->id);
-        }
-    }
-}
-
 static void analyzeWhileNode(NodeAST *node, Scope *current_scope) {
     NodeAST *condition = GET_CONDITION(node);
     DataType conditionType = analyzeExpression(condition, current_scope);
@@ -240,10 +230,6 @@ static void analyzeNodeSemantics(NodeAST *node, Scope *current_scope) {
             
         case ASSIGNMENT_NODE:
             analyzeAssignmentNode(node, current_scope);
-            break;
-            
-        case ID_NODE:
-            analyzeIdNode(node, current_scope);
             break;
 
         case RETURN_NODE:
