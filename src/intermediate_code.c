@@ -42,6 +42,18 @@ const char* getOperatorSymbol(OperationType op) {
     }
 }
 
+/*
+ * Emite los argumentos de una llamada como instrucciones 'param', de izquierda
+ * a derecha segun exige la letra. Lo comparten la llamada como expresion y la
+ * llamada como sentencia, que solo se diferencian en si el resultado se guarda.
+ */
+static void generateCallArguments(NodeAST *node) {
+    for (int i = 0; i < node->childCount; i++) {
+        Expression argument = generateExpressionCode(node->children[i]);
+        buildStringf("param %s\n", argument.place);
+    }
+}
+
 Expression generateExpressionCode(NodeAST *node) {
     Expression result;
     result.place[0] = '\0';
@@ -89,11 +101,11 @@ Expression generateExpressionCode(NodeAST *node) {
         }
 
         case METHOD_CALL_NODE:
-            for (int i = 0; i < node->childCount; i++) {
-                Expression arg = generateExpressionCode(node->children[i]);
-                buildStringf("param %s\n", arg.place);
-            }
+            generateCallArguments(node);
             if (node->symbol && node->symbol->id) {
+                // El temporal se pide despues de los argumentos, asi su numero
+                // queda despues de los temporales que estos hayan consumido.
+                strcpy(result.place, newTemp());
                 buildStringf("%s = call %s, %d\n", result.place, node->symbol->id, node->childCount);
             }
             break;
@@ -126,30 +138,47 @@ void generateStatementCode(NodeAST *node) {
             }
             break;
 
+        // Una llamada como sentencia genera lo mismo que como expresion, pero
+        // sin temporal destino: el resultado, si lo hay, se descarta.
+        case METHOD_CALL_NODE:
+            generateCallArguments(node);
+            if (node->symbol && node->symbol->id) {
+                buildStringf("call %s, %d\n", node->symbol->id, node->childCount);
+            }
+            break;
+
         case RETURN_NODE:
             if(GET_EXPRESSION(node) == NULL){
-                buildStringf("ret");
+                buildStringf("ret\n");
             } else {
                 buildStringf("ret %s\n", generateExpressionCode(GET_EXPRESSION(node)).place);
             }
             break;
 
-        case IF_ELSE_NODE:
-            char* startIf = newLabel();
-            char* elseIf = newLabel();
-            char* endIf = newLabel();
-            buildStringf("%s:\n", startIf);
+        case IF_ELSE_NODE: {
             Expression conditionExpression = generateExpressionCode(GET_CONDITION(node));
-            buildStringf("if %s false goto %s\n", conditionExpression.place, elseIf);
-            generateStatementCode(GET_IF_BLOCK(node));
-            buildStringf("goto %s\n", endIf);
-            if(GET_ELSE_BLOCK(node) != NULL){
-            buildStringf("%s:\n", elseIf);
-            generateStatementCode(GET_ELSE_BLOCK(node));
-            buildStringf("goto %s\n", endIf);
+            NodeAST *elseBlock = GET_ELSE_BLOCK(node);
+
+            if (elseBlock == NULL) {
+                // Sin rama else, la condicion falsa saltea el bloque entero.
+                char *endIf = newLabel();
+
+                buildStringf("if %s false goto %s\n", conditionExpression.place, endIf);
+                generateStatementCode(GET_IF_BLOCK(node));
+                buildStringf("%s:\n", endIf);
+            } else {
+                char *elseIf = newLabel();
+                char *endIf = newLabel();
+
+                buildStringf("if %s false goto %s\n", conditionExpression.place, elseIf);
+                generateStatementCode(GET_IF_BLOCK(node));
+                buildStringf("goto %s\n", endIf);
+                buildStringf("%s:\n", elseIf);
+                generateStatementCode(elseBlock);
+                buildStringf("%s:\n", endIf);
             }
-            buildStringf("%s:\n",endIf);
             break;
+        }
 
         case WHILE_NODE: {
             char* startOfWhile = newLabel();
