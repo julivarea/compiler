@@ -39,7 +39,10 @@ DataType resolveBinaryOperation(
             return resolveNumericOperation(left, right);
 
         case OP_MOD:
-            if (isNumeric(left) && isNumeric(right))
+            // % computa el resto de una division de numeros enteros, asi que
+            // ambos operandos deben ser int. Es el unico aritmetico que no
+            // admite float ni aplica la coercion int/float.
+            if (left == TYPE_INT && right == TYPE_INT)
                 return TYPE_INT;
             return TYPE_ERROR;
 
