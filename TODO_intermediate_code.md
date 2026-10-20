@@ -4,12 +4,30 @@ Este documento detalla el estado actual, los errores detectados en la implementa
 
 ---
 
+## 0. Orden de trabajo propuesto
+
+Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden que maximiza el avance es:
+
+1. **Los 4 bugs de generación de la sección 1.** Son acotados y todo lo demás se construye encima de un TAC correcto.
+2. **La migración a cuádruplas (sección 3.1).** Antes de agregar funcionalidad, no después: el 45% de la nota (Intérprete 10% + Código Objeto 20% + Optimizador 15%) consume el IR, y cualquier feature que escribamos en texto plano habrá que reescribirla.
+3. **Corto circuito `&&` / `||` (sección 2.1).** Lo exige el enunciado de forma explícita.
+4. **Lo que cada método debe exponer (secciones 2.2, 3.2 y 3.3):** `begin_func`/`end_func`, parámetros formales y `ret` implícito en métodos `void`. Es un solo trabajo.
+5. **Desambiguación de variables por alcance (sección 2.3).**
+6. **Declaraciones de variables, globales y locales (sección 3.4).**
+7. **La CLI (sección 4).** Es independiente del diseño del TAC y puede hacerse en paralelo.
+8. **Coerción `int`/`float` (sección 2.4),** si se decide mantener `float` en el TAC. El enunciado solo exige TAC para enteros y lógicos, así que es opcional.
+9. **Pruebas unitarias (sección 5).**
+
+---
+
 ## 1. Errores Críticos e Inmediatos (Bugs en la Generación de TAC)
+
+> Los cuatro primeros fueron reproducidos sobre `examples/factorial.txt` y `examples/programa_sin_error.txt`.
 
 - [ ] **Llamadas a funciones en expresiones generan código incompleto / nulo**
   - **Ubicación:** `src/intermediate_code.c` (`generateExpressionCode`, caso `METHOD_CALL_NODE`).
   - **Problema:** Se emite `buildStringf("%s = call %s, %d\n", result.place, ...)`, pero `result.place` nunca se inicializa con un nuevo temporal (`newTemp()`). Queda como cadena vacía `""`.
-  - **Efecto:** Se emiten instrucciones rotas como ` = call factorial, 1` y las expresiones que usan el resultado quedan con operandos truncados (ej. `t4 = n * `, `promedio = `).
+  - **Efecto:** Se emiten instrucciones rotas como ` = call factorial, 1` y las expresiones que usan el resultado quedan con operandos truncados (ej. `t4 = n * `, `res = `).
   - **Acción:** Asignar `strcpy(result.place, newTemp());` antes de emitir la instrucción `call`.
 
 - [ ] **Llamadas a funciones como sentencias son ignoradas completamente**
@@ -40,37 +58,45 @@ Este documento detalla el estado actual, los errores detectados en la implementa
   - **Problemas:**
     1. `newTemp()` devuelve un puntero a un buffer estático (`static char buffer[32]`). Múltiples llamadas concurrentes o anidadas sobrescriben el mismo espacio de memoria.
     2. `newLabel()` utiliza `strdup()`, reservando memoria dinámica en el heap que nunca es liberada (`free()`).
-  - **Acción:** Diseñar un manejo seguro de memoria (ej. copiar cadenas en estructuras con tamaño fijo de buffer o un pool de asignación reutilizable).
+  - **Acción:** Diseñar un manejo seguro de memoria (ej. copiar cadenas en estructuras con tamaño fijo de buffer o un pool de asignación reutilizable). La migración a cuádruplas (sección 3.1) resuelve esto de raíz, porque los nombres pasan a vivir en campos de tamaño fijo dentro de cada instrucción.
 
 ---
 
 ## 2. Requisitos de la Especificación de C-TDS No Contemplados
 
+### 2.1
 - [ ] **Evaluación de corto circuito en operadores lógicos (`&&`, `||`)**
   - **Referencia:** `documentacion/spec/01-TDS-spec-lenguaje.pdf` (Página 5, "Expresiones"):
     > *"Los operadores lógicos && y || deben ser evaluados usando evaluación de corto circuito. El segundo operador no es evaluado si el primer operador determina el valor de toda la expresión, es decir, si el resultado es false para && o true para ||."*
   - **Problema actual:** En `generateExpressionCode`, para `OP_AND` y `OP_OR` se evalúa incondicionalmente el operando derecho antes de emitir la operación binaria. Si el lado derecho contiene llamadas a métodos con efectos colaterales o expresiones con guardas (ej. `n != 0 && 10 / n > 1`), la semántica del lenguaje se rompe.
-  - **Acción:** Diseñar la evaluación booleana con control de flujo (saltos condicionales) para asegurar que el operando derecho solo se evalúe cuando sea estrictamente necesario.
+  - **Acción:** Diseñar la evaluación booleana con control de flujo (saltos condicionales) para asegurar que el operando derecho solo se evalúe cuando sea estrictamente necesario. Se resuelve en una sola pasada con etiquetas, sin backpatching, porque el AST ya está completo.
 
+### 2.2
 - [ ] **Retorno implícito en métodos `void` al alcanzar el fin del bloque**
   - **Referencia:** `documentacion/spec/01-TDS-spec-lenguaje.pdf` (Página 4, "Invocación y Retorno de Métodos"):
     > *"Un método que no tiene declarado un tipo de retorno (un método void) retorna con una sentencia return (sin expresión) o cuando el fin del método es alcanzado."*
   - **Problema actual:** Si una función `void` (como `main`) no incluye una sentencia `return;` explícita, el generador no emite ninguna instrucción `ret`. En la posterior generación de código máquina x86-64, la función no tendrá epílogo de retorno y caerá en las instrucciones de la función contigua (fall-through caótico).
-  - **Acción:** Al finalizar la generación del cuerpo de un método `void`, verificar si la última sentencia emitida fue un retorno; si no lo fue, emitir `ret\n`.
+  - **Acción:** Al finalizar la generación del cuerpo de un método `void`, verificar si la última sentencia emitida fue un retorno; si no lo fue, emitir `ret\n`. Para los métodos no-void no hace falta: el análisis semántico ya garantiza que todos sus caminos terminan en un `return`.
 
+### 2.3
 - [ ] **Diferenciación de variables por alcance (Shadowing y variables globales vs locales)**
   - **Problema:** En el TAC actual, las variables se emiten con su nombre de identificador crudo (`x = 5`). Si existe una variable global `x` y una función declara una variable local `x` (o en bloques anidados), en el código intermedio ambas reciben el mismo nombre.
   - **Impacto:** En las fases posteriores (generador x86-64 e Intérprete), no será posible distinguir si `x` corresponde a una posición en el segmento `.data`/`.bss` o a un desplazamiento en la pila local (`-8(%rbp)`).
   - **Acción:** Desambiguar las variables asociándolas a su identificador de símbolo único o prefijándolas con su ámbito (ej. `g_x`, `x_1`, `x_2`).
+  - **Nota:** La infraestructura ya existe. `struct Symbol` tiene el campo `uid`, que `appendSymbol()` asigna a toda entidad declarada (un `uid` distinto por declaración, incluso si comparten nombre), y vale `0` para lo que no es una entidad declarada. Alcanza con usarlo al emitir.
 
+### 2.4
 - [ ] **Conversión / Coerción de tipos entre `int` y `float`**
   - **Referencia:** Regla semántica 14 de la especificación: *"Se permiten coerciones o truncamientos entre int y float"*.
   - **Acción:** Analizar si el TAC requiere instrucciones explícitas de conversión de tipo (ej. `t0 = int_to_float x`) para facilitar la posterior traducción a instrucciones de punto flotante SSE/AVX en x86-64.
+  - **Prioridad:** Baja. El enunciado del proyecto acota esta etapa a *"las operaciones con tipos enteros y lógicos y para las operaciones de control de flujo"*, así que el `float` en el TAC es una extensión nuestra.
+  - **Menor asociado:** las constantes `float` se emiten con `%f` (`3.5` sale como `3.500000`). Si se mantiene `float`, hay que fijar el formato.
 
 ---
 
 ## 3. Decisiones de Diseño y Arquitectura para Próximas Etapas
 
+### 3.1
 - [ ] **Migración de texto plano (`string_builder`) a Estructura de Datos de Instrucciones (Cuádruplas / TAC)**
   - **Contexto:** La cátedra exige implementar posteriormente:
     1. **Intérprete (10%)**: Ejecución directa del código intermedio.
@@ -105,6 +131,46 @@ Este documento detalla el estado actual, los errores detectados en la implementa
       - El **Intérprete** puede evaluar las instrucciones directamente mediante un `switch (inst->op)`.
       - El **Optimizador** puede reescribir o eliminar nodos de la lista enlazada.
       - El **Generador x86-64** procesa cada cuádrupla de forma limpia sin parseo textual.
+  - **Nota:** hay que prever los opcodes que faltan en el borrador de arriba (`TAC_BEGIN_FUNC`, `TAC_END_FUNC`, los relacionales `TAC_LT`/`TAC_GT`/`TAC_EQ`, y los de declaración de variables de la sección 3.4).
+
+### 3.2
+- [ ] **Los parámetros formales de un método no aparecen en el TAC**
+  - **Ubicación:** `src/intermediate_code.c` (`generateStatementCode`, caso `METHOD_DECLARATION_NODE`).
+  - **Problema:** Solo se emite la etiqueta del método y se genera el cuerpo (`node->children[1]`). El nodo de parámetros (`node->children[0]`) se ignora por completo, así que el TAC de `int duplicar(int n)` es simplemente `duplicar:` y no registra que existe un parámetro llamado `n`.
+  - **Impacto:** El generador x86-64 necesita saber cuántos parámetros formales tiene el método y en qué orden, para asociarlos a `%rdi, %rsi, %rdx, %rcx, %r8, %r9` (convención System V AMD64) y al stack a partir del séptimo. Hoy esa información solo existe en el AST y en la tabla de símbolos, no en el código intermedio.
+  - **Acción:** Emitir una cabecera por método del tipo `begin_func <nombre>, <cantidad_de_parametros>` y una instrucción por parámetro formal, o bien equivalente en la estructura de cuádruplas.
+
+### 3.3
+- [ ] **No existe marca de fin de método**
+  - **Problema:** El final de un método se infiere por la aparición de la siguiente etiqueta en el texto. Eso obliga a cualquier consumidor a mirar hacia adelante para saber dónde termina una función.
+  - **Impacto:** El generador x86-64 necesita el punto exacto donde emitir el epílogo (`leave` / `ret`), y el Intérprete necesita saber dónde cortar la ejecución de un cuerpo.
+  - **Acción:** Emitir `end_func <nombre>` al terminar cada método. Va junto con la sección 3.2.
+
+### 3.4
+- [ ] **Las declaraciones de variables no emiten ninguna instrucción**
+  - **Problema:** `VARIABLE_DECLARATION_NODE` cae al `default` de `generateStatementCode`, que recorre sus hijos (no tiene), de modo que no emite nada. Ni las variables globales ni las locales aparecen en el TAC.
+  - **Impacto:** El generador x86-64 necesita el listado de variables globales para emitir el segmento `.data`/`.bss`, y el de locales (más los temporales usados) para calcular el tamaño del stack frame de cada función.
+  - **Acción:** Decidir entre dos alternativas y documentarla:
+    1. Que el TAC lleve instrucciones de declaración (`global x_1, int` / `local y_4, int`).
+    2. Que el generador de código objeto consulte la tabla de símbolos.
+  - **Relacionado:** ver la sección 3.5, porque la alternativa 2 hoy no es posible.
+
+### 3.5
+- [ ] **El árbol de scopes se descarta después del análisis semántico**
+  - **Problema:** `analyzeSemantics()` devuelve el `Scope` global, pero `main()` en `src/bison.y` ignora el valor de retorno. Una vez terminado el análisis, ninguna estructura viva contiene la tabla de símbolos.
+  - **Impacto:** Si el generador de código objeto va a necesitar los scopes (para distinguir global de local, para calcular offsets, o para la alternativa 2 de la sección 3.4), hoy no los tiene.
+  - **Acción:** Decidir si se conserva el `Scope` global en una variable accesible por las etapas siguientes, o si el TAC se autocontiene con toda la información necesaria. Condiciona las secciones 2.3, 3.2 y 3.4.
+
+### 3.6
+- [ ] **Los contadores de temporales son globales a todo el programa**
+  - **Problema:** `resetTempAndLabelCounters()` se invoca una sola vez en `generateIntermediateCode()`, así que la numeración `t0..tN` y `L0..LN` es continua a lo largo de todos los métodos.
+  - **Impacto:** No es incorrecto, pero para dimensionar el stack frame de cada función hay que saber cuántos temporales usa *esa* función, lo que obliga a recorrer su rango de instrucciones.
+  - **Acción:** Decidir si los temporales se reinician por método (lo que simplifica el cálculo del frame) o si se lleva la cuenta por función de otra forma. Las etiquetas conviene que sigan siendo únicas globalmente, para no colisionar entre funciones.
+
+### 3.7
+- [ ] **El Intérprete no está planificado y vale más que esta etapa**
+  - **Contexto:** En la tabla de calificación de `documentacion/spec/00-TDS-proyecto.pdf` el **Intérprete vale 10%**, mientras que el **Generador de Código Intermedio vale 5%**. Sin embargo, el Intérprete no figura en el cronograma de entregas.
+  - **Acción:** Consultar a la cátedra si corresponde implementarlo, con qué alcance y para qué fecha. Si la respuesta es que sí, es un argumento más para ejecutar la migración de la sección 3.1 cuanto antes, porque el Intérprete se implementa como un `switch` sobre las cuádruplas.
 
 ---
 
@@ -117,7 +183,8 @@ Este documento detalla el estado actual, los errores detectados en la implementa
     - Opción `-o <salida>`: renombra el archivo generado.
     - Opción `-debug`: imprime información de depuración.
     - **Comportamiento por defecto:** Si no se especifica `-debug`, cuando la compilación es exitosa **no debe imprimirse nada por salida estándar**; la salida debe escribirse en un archivo con la extensión correspondiente a la etapa (`.ci` para código intermedio).
-  - **Problema actual:** `src/bison.y` imprime encabezados y trazas fijas por `stdout` de forma incondicional (`printf("--- Analisis sintactico ...")`), y no procesa los argumentos de línea de comandos requeridos.
+  - **Problema actual:** `src/bison.y` imprime encabezados y trazas fijas por `stdout` de forma incondicional (`printf("--- Analisis sintactico ...")`), y no procesa los argumentos de línea de comandos requeridos. Los ejemplos de `examples/` usan extensión `.txt` en lugar de `.ctds`.
+  - **Ambigüedad a resolver:** el enunciado dice que por defecto se compila *"hasta la etapa corriente"* generando un archivo con la extensión de esa etapa, y también que sin `-target` se produce el ejecutable `nombreArchivo.out`. Mientras el compilador esté incompleto ambas cosas no pueden valer a la vez; hay que elegir una y documentarla.
   - **Acción:** Adecuar la función `main()` de `bison.y` para respetar los flags y generar el archivo `.ci`.
 
 ---
@@ -126,10 +193,11 @@ Este documento detalla el estado actual, los errores detectados en la implementa
 
 - [ ] **Crear suite de pruebas unitarias `tests/test_intermediate_code.c`:**
   - Pruebas de expresiones aritméticas compuestas y generación correcta de temporales.
-  - Pruebas de expresiones lógicas con corto circuito (`&&`, `||`).
+  - Pruebas de expresiones lógicas con corto circuito (`&&`, `||`): verificar que el operando derecho no se evalúa cuando el izquierdo ya determina el resultado.
   - Pruebas de llamadas a métodos como expresiones (validar asignación de temporales destino).
   - Pruebas de llamadas a métodos como sentencias (validar emisión de `param` y `call`).
-  - Pruebas de control de flujo (`if-else` con y sin rama `else`, ciclos `while`).
+  - Pruebas de control de flujo (`if-else` con y sin rama `else`, ciclos `while`): verificar que toda etiqueta referenciada por un salto esté definida.
   - Pruebas de métodos `void` con y sin `return`.
+  - Pruebas de ocultamiento de scopes: dos variables con el mismo nombre en ámbitos distintos deben recibir nombres distintos en el TAC.
 - [ ] **Integrar en `test_suite.sh`:**
   - Compilación y ejecución automática de las pruebas de código intermedio junto con las de lexer y parser.
