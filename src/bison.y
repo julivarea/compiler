@@ -223,6 +223,7 @@ int main(int argc, char** argv) {
             printAST(raizAST, 0);
             printf("\n--- Analisis semantico completado sin errores. ---\n");
             generateIntermediateCode(raizAST);
+            printTACList(getIntermediateCode());
             printf("\n--- String Builder Buffer (TAC) ---\n%s", getBuiltString());
         }
     }
