@@ -17,6 +17,7 @@ static void analyzeReturnNode(NodeAST *node, Scope *current_scope);
 static void analyzeIfElseNode(NodeAST *node, Scope *current_scope);
 static void analyzeWhileNode(NodeAST *node, Scope *current_scope);
 static void analyzeIdNode(NodeAST *node, Scope *current_scope);
+static void checkMainMethodExists(Scope *globalScope);
 
 static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type) {
     int hasReturn = 0;
@@ -241,11 +242,19 @@ Scope* analyzeSemantics(NodeAST *root, Scope *parent, DataType returnType) {
     for (int i = 0; i < root->childCount; i++) {
         analyzeNodeSemantics(root->children[i], current_scope);
     }
-    
+
+    // El scope global es el unico que puede declarar 'main', y se reconoce por
+    // no tener padre. Validarlo aca hace que cualquier invocacion del analisis
+    // -- el compilador o un test unitario -- verifique su presencia y su firma
+    // sin tener que acordarse de pedirlo por separado.
+    if (parent == NULL) {
+        checkMainMethodExists(current_scope);
+    }
+
     return current_scope;
 }
 
-void checkMainMethodExists(Scope *globalScope) {
+static void checkMainMethodExists(Scope *globalScope) {
     Symbol *mainSymbol = lookupVariableCurrentScope(globalScope, "main");
 
     if (mainSymbol == NULL) {

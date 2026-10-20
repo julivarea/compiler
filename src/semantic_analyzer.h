@@ -12,9 +12,13 @@
 
 /**
  * @brief Realiza el análisis semántico recorriendo el AST a partir de un nodo raíz.
- * 
+ *
  * Construye la jerarquía de scopes, verifica declaraciones duplicadas o no declaradas,
  * y valida las reglas semánticas de las sentencias del lenguaje.
+ *
+ * Cuando se invoca sobre el scope global (@p parent == NULL) valida además la
+ * presencia y la firma del método 'main', de modo que un único llamado alcanza
+ * para dejar el programa completamente verificado.
  *
  * @param root Nodo raíz del AST a analizar.
  * @param parent Scope padre (NULL para el scope global).
@@ -22,13 +26,5 @@
  * @return Scope* Ámbito resultante creado para la raíz analizada.
  */
 Scope* analyzeSemantics(NodeAST *root, Scope *parent, DataType returnType);
-
-/**
- * @brief Verifica que el programa contenga la definición del método 'main',
- *        que sea de tipo método y que no reciba parámetros.
- *
- * @param globalScope Scope global generado tras analyzeSemantics.
- */
-void checkMainMethodExists(Scope *globalScope);
 
 #endif // SEMANTIC_ANALYZER_H

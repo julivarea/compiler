@@ -7,10 +7,11 @@ Documento de seguimiento del estado del analizador semántico (`src/semantic_ana
 ## 1. Tareas Pendientes (Lo que nos queda)
 
 ### 1.1 Estructura Global y Control de Flujo
-- [ ] **Integración de `checkMainMethodExists` en el ciclo semántico**
+- [x] **Integración de `checkMainMethodExists` en el ciclo semántico**
   - **Ubicación:** `src/semantic_analyzer.c` y `src/bison.y`.
   - **Problema:** La verificación del método `main` está implementada en `checkMainMethodExists()`, pero se invoca manualmente desde `main()` de `bison.y`.
   - **Acción:** Integrarla de forma automática en el scope global (`parent == NULL`) dentro de `analyzeSemantics()`, para que cualquier invocación del análisis (compilador o tests unitarios) valide automáticamente la presencia y firma de `main`.
+  - **Resuelto:** `analyzeSemantics()` llama a `checkMainMethodExists()` cuando `parent == NULL`, que es lo que distingue al scope global. La función pasó a ser `static` y se quitó de `semantic_analyzer.h`, para que no pueda invocarse dos veces y duplicar el error.
 
 
 ### 1.2 Pruebas Unitarias y Automatización
