@@ -8,9 +8,9 @@ Este documento detalla el estado actual, los errores detectados en la implementa
 
 Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden que maximiza el avance es:
 
-1. **Los 4 bugs de generación de la sección 1.** Son acotados y todo lo demás se construye encima de un TAC correcto.
-2. **La migración a cuádruplas (sección 3.1).** Antes de agregar funcionalidad, no después: el 45% de la nota (Intérprete 10% + Código Objeto 20% + Optimizador 15%) consume el IR, y cualquier feature que escribamos en texto plano habrá que reescribirla.
-3. **Corto circuito `&&` / `||` (sección 2.1).** Lo exige el enunciado de forma explícita.
+1. ~~**Los 4 bugs de generación de la sección 1.**~~ **HECHO.** Son acotados y todo lo demás se construye encima de un TAC correcto.
+2. ~~**La migración a cuádruplas (sección 3.1).**~~ **HECHO.** Antes de agregar funcionalidad, no después: el 45% de la nota (Intérprete 10% + Código Objeto 20% + Optimizador 15%) consume el IR, y cualquier feature que escribamos en texto plano habrá que reescribirla.
+3. **Corto circuito `&&` / `||` (sección 2.1).** ← **siguiente.** Lo exige el enunciado de forma explícita.
 4. **Lo que cada método debe exponer (secciones 2.2, 3.2 y 3.3):** `begin_func`/`end_func`, parámetros formales y `ret` implícito en métodos `void`. Es un solo trabajo.
 5. **Desambiguación de variables por alcance (sección 2.3).**
 6. **Declaraciones de variables, globales y locales (sección 3.4).**
@@ -22,27 +22,33 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 
 ## 1. Errores Críticos e Inmediatos (Bugs en la Generación de TAC)
 
-> Los cuatro primeros fueron reproducidos sobre `examples/factorial.txt` y `examples/programa_sin_error.txt`.
+> **Sección completa.** Los cuatro primeros se reprodujeron sobre `examples/factorial.txt` y
+> `examples/programa_sin_error.txt`, y se corrigieron en el commit
+> `fix TAC generation: call temporaries, call statements, ret newline and if labels`.
+> El quinto lo resolvió la migración de la sección 3.1.
+>
+> Verificación: sobre los 15 programas del corpus de prueba no queda ninguna etiqueta
+> referenciada sin definir, ninguna etiqueta muerta, ni ninguna instrucción truncada.
 
-- [ ] **Llamadas a funciones en expresiones generan código incompleto / nulo**
+- [x] **Llamadas a funciones en expresiones generan código incompleto / nulo**
   - **Ubicación:** `src/intermediate_code.c` (`generateExpressionCode`, caso `METHOD_CALL_NODE`).
   - **Problema:** Se emite `buildStringf("%s = call %s, %d\n", result.place, ...)`, pero `result.place` nunca se inicializa con un nuevo temporal (`newTemp()`). Queda como cadena vacía `""`.
   - **Efecto:** Se emiten instrucciones rotas como ` = call factorial, 1` y las expresiones que usan el resultado quedan con operandos truncados (ej. `t4 = n * `, `res = `).
   - **Acción:** Asignar `strcpy(result.place, newTemp());` antes de emitir la instrucción `call`.
 
-- [ ] **Llamadas a funciones como sentencias son ignoradas completamente**
+- [x] **Llamadas a funciones como sentencias son ignoradas completamente**
   - **Ubicación:** `src/intermediate_code.c` (`generateStatementCode`).
   - **Problema:** No existe `case METHOD_CALL_NODE:`. Cae al bloque `default:`, que itera sobre los hijos llamando a `generateStatementCode` sobre expresiones (argumentos), por lo que no emite ni los parámetros ni la instrucción `call`.
   - **Efecto:** Invocaciones independientes como `reiniciar();` o `factorial(a);` desaparecen silenciosamente del código intermedio generado.
   - **Acción:** Implementar `case METHOD_CALL_NODE:` en `generateStatementCode` que evalúe los argumentos con `generateExpressionCode`, emita `param ...` y luego emita `call nombre, N` (sin asignar a temporal).
 
-- [ ] **Falta de salto de línea en retorno `void` (`ret`)**
+- [x] **Falta de salto de línea en retorno `void` (`ret`)**
   - **Ubicación:** `src/intermediate_code.c` (`generateStatementCode`, caso `RETURN_NODE`).
   - **Problema:** En retornos sin expresión (`GET_EXPRESSION(node) == NULL`), se emite `buildStringf("ret");` sin el carácter `\n`.
   - **Efecto:** La instrucción `ret` se concatena directamente con la etiqueta del siguiente método (ej. `retfactorial:`).
   - **Acción:** Cambiar por `buildStringf("ret\n");`.
 
-- [ ] **Lógica de etiquetas y saltos rotos en condicionales `if-else`**
+- [x] **Lógica de etiquetas y saltos rotos en condicionales `if-else`**
   - **Ubicación:** `src/intermediate_code.c` (`generateStatementCode`, caso `IF_ELSE_NODE`).
   - **Problemas detectados:**
     1. Si no hay bloque `else` (`GET_ELSE_BLOCK(node) == NULL`), el salto condicional es `if <cond> false goto elseIf`, pero la etiqueta `elseIf:` nunca se imprime en el código porque está dentro del `if (GET_ELSE_BLOCK != NULL)`. El salto apunta a una etiqueta inexistente.
@@ -53,7 +59,7 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
     - Si hay bloque `else`: emitir `if <cond> false goto elseIf`, generar bloque `then`, emitir `goto endIf`, emitir `elseIf:`, generar bloque `else`, y emitir `endIf:`.
     - Eliminar la etiqueta no referenciada `startIf`.
 
-- [ ] **Fragilidad en la gestión de temporales y fuga de memoria en etiquetas**
+- [x] **Fragilidad en la gestión de temporales y fuga de memoria en etiquetas**
   - **Ubicación:** `src/intermediate_code.c` (`newTemp` y `newLabel`).
   - **Problemas:**
     1. `newTemp()` devuelve un puntero a un buffer estático (`static char buffer[32]`). Múltiples llamadas concurrentes o anidadas sobrescriben el mismo espacio de memoria.
@@ -68,7 +74,7 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 - [ ] **Evaluación de corto circuito en operadores lógicos (`&&`, `||`)**
   - **Referencia:** `documentacion/spec/01-TDS-spec-lenguaje.pdf` (Página 5, "Expresiones"):
     > *"Los operadores lógicos && y || deben ser evaluados usando evaluación de corto circuito. El segundo operador no es evaluado si el primer operador determina el valor de toda la expresión, es decir, si el resultado es false para && o true para ||."*
-  - **Problema actual:** En `generateExpressionCode`, para `OP_AND` y `OP_OR` se evalúa incondicionalmente el operando derecho antes de emitir la operación binaria. Si el lado derecho contiene llamadas a métodos con efectos colaterales o expresiones con guardas (ej. `n != 0 && 10 / n > 1`), la semántica del lenguaje se rompe.
+  - **Problema actual:** En `generateExpressionCode`, para `OP_AND` y `OP_OR` se evalúa incondicionalmente el operando derecho y se emite una única instrucción `TAC_AND` / `TAC_OR`. Si el lado derecho contiene llamadas a métodos con efectos colaterales o expresiones con guardas (ej. `n != 0 && 10 / n > 1`), la semántica del lenguaje se rompe.
   - **Acción:** Diseñar la evaluación booleana con control de flujo (saltos condicionales) para asegurar que el operando derecho solo se evalúe cuando sea estrictamente necesario. Se resuelve en una sola pasada con etiquetas, sin backpatching, porque el AST ya está completo.
 
 ### 2.2
@@ -83,7 +89,7 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
   - **Problema:** En el TAC actual, las variables se emiten con su nombre de identificador crudo (`x = 5`). Si existe una variable global `x` y una función declara una variable local `x` (o en bloques anidados), en el código intermedio ambas reciben el mismo nombre.
   - **Impacto:** En las fases posteriores (generador x86-64 e Intérprete), no será posible distinguir si `x` corresponde a una posición en el segmento `.data`/`.bss` o a un desplazamiento en la pila local (`-8(%rbp)`).
   - **Acción:** Desambiguar las variables asociándolas a su identificador de símbolo único o prefijándolas con su ámbito (ej. `g_x`, `x_1`, `x_2`).
-  - **Nota:** La infraestructura ya existe. `struct Symbol` tiene el campo `uid`, que `appendSymbol()` asigna a toda entidad declarada (un `uid` distinto por declaración, incluso si comparten nombre), y vale `0` para lo que no es una entidad declarada. Alcanza con usarlo al emitir.
+  - **Nota:** La infraestructura ya existe. `struct Symbol` tiene el campo `uid`, que `appendSymbol()` asigna a toda entidad declarada (un `uid` distinto por declaración, incluso si comparten nombre), y vale `0` para lo que no es una entidad declarada. Desde la migración de la sección 3.1, los operandos de tipo `OPERAND_VARIABLE` guardan el puntero al `Symbol`, así que el `uid` ya está disponible en el punto donde se imprime: alcanza con usarlo al emitir el nombre.
 
 ### 2.4
 - [ ] **Conversión / Coerción de tipos entre `int` y `float`**
@@ -97,7 +103,7 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 ## 3. Decisiones de Diseño y Arquitectura para Próximas Etapas
 
 ### 3.1
-- [ ] **Migración de texto plano (`string_builder`) a Estructura de Datos de Instrucciones (Cuádruplas / TAC)**
+- [x] **Migración de texto plano (`string_builder`) a Estructura de Datos de Instrucciones (Cuádruplas / TAC)**
   - **Contexto:** La cátedra exige implementar posteriormente:
     1. **Intérprete (10%)**: Ejecución directa del código intermedio.
     2. **Generador de Código Objeto x86-64 (20%)**: Traducción del TAC a ensamblador.
@@ -131,7 +137,48 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
       - El **Intérprete** puede evaluar las instrucciones directamente mediante un `switch (inst->op)`.
       - El **Optimizador** puede reescribir o eliminar nodos de la lista enlazada.
       - El **Generador x86-64** procesa cada cuádrupla de forma limpia sin parseo textual.
-  - **Nota:** hay que prever los opcodes que faltan en el borrador de arriba (`TAC_BEGIN_FUNC`, `TAC_END_FUNC`, los relacionales `TAC_LT`/`TAC_GT`/`TAC_EQ`, y los de declaración de variables de la sección 3.4).
+
+  - **RESUELTO.** La estructura vive en `src/tac.h` / `src/tac.c` y el recorrido del AST que la
+    llena quedó en `src/intermediate_code.c`. `getIntermediateCode()` devuelve la lista;
+    `printTACList()` es solo una de sus salidas posibles.
+
+  - **Decisión de diseño: operandos tipados.** El borrador de arriba proponía
+    `char result[32]; char arg1[32]; char arg2[32];`. Se implementó en cambio un `TACOperand`
+    con la naturaleza del operando explícita:
+
+    ```c
+    typedef enum {
+        OPERAND_NONE, OPERAND_TEMP, OPERAND_VARIABLE,
+        OPERAND_CONSTANT, OPERAND_LABEL, OPERAND_METHOD
+    } OperandKind;
+
+    typedef struct {
+        OperandKind kind;
+        DataType type;
+        char name[TAC_NAME_LENGTH];
+        Symbol *symbol;                                  /* solo OPERAND_VARIABLE */
+        union { int int_val; float float_val; } value;   /* solo OPERAND_CONSTANT */
+    } TACOperand;
+    ```
+
+    *Motivo:* con cadenas planas, el generador x86-64 tendría que mirar `"5"` y deducir si es
+    una constante o una variable con ese nombre, y mirar `"x"` sin poder saber si va al
+    segmento `.data` o a un desplazamiento en la pila. Con `kind` eso es un `switch`. Además
+    el campo `symbol` hace que el `uid` viaje dentro del operando, lo que resuelve la
+    sección 2.3 sin volver a tocar la estructura. Costo: unas 40 líneas más.
+
+  - **Verificación:** la migración es **equivalente en comportamiento**. El TAC generado es
+    byte a byte idéntico al anterior en los 15 programas del corpus (se guardó la salida
+    previa y se comparó con `diff`). Por eso se conservó una rareza del generador viejo: en
+    una operación binaria el temporal del resultado se pide antes de generar el operando
+    derecho, lo que produce `t0 = n + t2`. Es inofensivo; normalizarlo queda como cambio
+    cosmético aparte.
+
+  - **Estado de los opcodes:** `TAC_BEGIN_FUNC` ya se emite (imprime `nombre:`, igual que
+    antes). `TAC_END_FUNC` existe en el enum pero todavía no se emite: lo cubre la sección 3.3.
+    Los relacionales `TAC_LT`/`TAC_GT`/`TAC_EQ` están. `TAC_AND` y `TAC_OR` también, aunque
+    el corto circuito de la sección 2.1 va a dejar de emitirlos. Faltan los de declaración de
+    variables de la sección 3.4.
 
 ### 3.2
 - [ ] **Los parámetros formales de un método no aparecen en el TAC**
@@ -139,12 +186,14 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
   - **Problema:** Solo se emite la etiqueta del método y se genera el cuerpo (`node->children[1]`). El nodo de parámetros (`node->children[0]`) se ignora por completo, así que el TAC de `int duplicar(int n)` es simplemente `duplicar:` y no registra que existe un parámetro llamado `n`.
   - **Impacto:** El generador x86-64 necesita saber cuántos parámetros formales tiene el método y en qué orden, para asociarlos a `%rdi, %rsi, %rdx, %rcx, %r8, %r9` (convención System V AMD64) y al stack a partir del séptimo. Hoy esa información solo existe en el AST y en la tabla de símbolos, no en el código intermedio.
   - **Acción:** Emitir una cabecera por método del tipo `begin_func <nombre>, <cantidad_de_parametros>` y una instrucción por parámetro formal, o bien equivalente en la estructura de cuádruplas.
+  - **Avance parcial:** el opcode `TAC_BEGIN_FUNC` ya existe y se emite, pero por ahora solo lleva el nombre del método y se imprime como `nombre:`. Falta agregarle la cantidad de parámetros y emitir los formales.
 
 ### 3.3
 - [ ] **No existe marca de fin de método**
   - **Problema:** El final de un método se infiere por la aparición de la siguiente etiqueta en el texto. Eso obliga a cualquier consumidor a mirar hacia adelante para saber dónde termina una función.
   - **Impacto:** El generador x86-64 necesita el punto exacto donde emitir el epílogo (`leave` / `ret`), y el Intérprete necesita saber dónde cortar la ejecución de un cuerpo.
   - **Acción:** Emitir `end_func <nombre>` al terminar cada método. Va junto con la sección 3.2.
+  - **Avance parcial:** el opcode `TAC_END_FUNC` ya está definido en `src/tac.h` y contemplado en la impresión, pero todavía no lo emite nadie.
 
 ### 3.4
 - [ ] **Las declaraciones de variables no emiten ninguna instrucción**
