@@ -19,8 +19,45 @@ static void analyzeWhileNode(NodeAST *node, Scope *current_scope);
 static void analyzeIdNode(NodeAST *node, Scope *current_scope);
 static void checkMainMethodExists(Scope *globalScope);
 
+/**
+ * Determina si una sentencia garantiza que la ejecucion retorna antes de
+ * alcanzar el fin del metodo. La letra exige esto de todo metodo no-void: no
+ * alcanza con que exista un return en algun lado, tienen que retornar todos
+ * los caminos de ejecucion.
+ *
+ * - Un return siempre garantiza.
+ * - Un bloque garantiza si alguna de sus sentencias garantiza (lo que venga
+ *   despues de ese punto es inalcanzable).
+ * - Un if garantiza solo si tiene else y ambas ramas garantizan.
+ * - Un while nunca garantiza: su condicion puede ser falsa en la primera
+ *   evaluacion y el cuerpo no ejecutarse nunca.
+ */
+static int guaranteesReturn(NodeAST *node) {
+    if (node == NULL) return 0;
+
+    switch (node->nodeType) {
+        case RETURN_NODE:
+            return 1;
+
+        case BLOCK_NODE:
+            for (int i = 0; i < node->childCount; i++) {
+                if (guaranteesReturn(node->children[i])) return 1;
+            }
+            return 0;
+
+        case IF_ELSE_NODE: {
+            NodeAST *elseBlock = GET_ELSE_BLOCK(node);
+            if (elseBlock == NULL) return 0;
+
+            return guaranteesReturn(GET_IF_BLOCK(node)) && guaranteesReturn(elseBlock);
+        }
+
+        default:
+            return 0;
+    }
+}
+
 static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type) {
-    int hasReturn = 0;
     if (node->symbol) {
         Symbol *existing = lookupVariableCurrentScope(current_scope, node->symbol->id);
         if (existing != NULL) {
@@ -46,20 +83,16 @@ static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type
 
     NodeAST *body = GET_RIGHT(node);
     if (body) {
+        // Todas las sentencias se analizan siempre: las que estan despues de un
+        // return son inalcanzables, pero sus errores siguen siendo errores.
         for (int i = 0; i < body->childCount; i++) {
-            if(hasReturn < 1){
-                if(body->children[i]->nodeType == RETURN_NODE){
-                    hasReturn++;
-                }
             analyzeNodeSemantics(body->children[i], method_scope);
-            } else {
-                semanticError(body->children[i]->line, "Ya hay un return definido");
-            }
         }
+    }
 
-        if(node->type != TYPE_VOID && hasReturn == 0){
-            semanticError(node->line, "Tiene que haber un retorno en el metodo, ya que no es void en el perfil");
-        }
+    if (node->type != TYPE_VOID && !guaranteesReturn(body)) {
+        const char *methodName = node->symbol && node->symbol->id ? node->symbol->id : "anonimo";
+        semanticError(node->line, "El metodo '%s' no es void: todos sus caminos de ejecucion deben terminar en un return.", methodName);
     }
 
     appendChildScope(current_scope, method_scope);
