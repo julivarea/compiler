@@ -193,9 +193,10 @@ static void printInstruction(const TACInstruction *instruction) {
             break;
 
         case TAC_IF_FALSE:
+        case TAC_IF_TRUE:
             buildStringf("if ");
             printOperand(&instruction->arg1);
-            buildStringf(" false goto ");
+            buildStringf(instruction->op == TAC_IF_FALSE ? " false goto " : " true goto ");
             printOperand(&instruction->arg2);
             buildStringf("\n");
             break;

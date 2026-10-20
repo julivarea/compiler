@@ -62,6 +62,46 @@ static void generateCallArguments(NodeAST *node) {
     }
 }
 
+/*
+ * && y || no se traducen a una instruccion binaria sino a control de flujo,
+ * porque la letra exige evaluacion de corto circuito: el operando derecho no
+ * se evalua si el izquierdo ya determina el resultado de toda la expresion.
+ *
+ *   result = a && b              result = a || b
+ *   --------------------         --------------------
+ *   result = a                   result = a
+ *   if result false goto L       if result true goto L
+ *   result = b                   result = b
+ *   L:                           L:
+ *
+ * La idea en los dos casos es la misma: si el operando izquierdo ya decide,
+ * el valor que corresponde devolver es el suyo, que ya quedo en result, y el
+ * salto saltea la evaluacion del derecho. Si no decide, el resultado de la
+ * expresion completa es exactamente el del operando derecho.
+ *
+ * El resultado va a un temporal nuevo y no se reutiliza el operando izquierdo
+ * porque este puede ser una variable del programa, y sobreescribirla cambiaria
+ * el valor de la variable. La copia extra que eso introduce es candidata a
+ * eliminarse en la etapa de optimizacion.
+ */
+static TACOperand generateShortCircuitCode(NodeAST *node) {
+    TACOperand left = generateExpressionCode(GET_LEFT(node));
+    TACOperand result = newTemp(node->type);
+    TACOperand endLabel = newLabel();
+
+    emit(TAC_ASSIGN, result, left, tacNone());
+
+    TACOp shortCircuitJump = (node->operationType == OP_AND) ? TAC_IF_FALSE : TAC_IF_TRUE;
+    emit(shortCircuitJump, tacNone(), result, endLabel);
+
+    TACOperand right = generateExpressionCode(GET_RIGHT(node));
+    emit(TAC_ASSIGN, result, right, tacNone());
+
+    emit(TAC_LABEL, endLabel, tacNone(), tacNone());
+
+    return result;
+}
+
 static TACOperand generateConstantOperand(NodeAST *node) {
     if (node->symbol == NULL) return tacNone();
 
@@ -90,6 +130,10 @@ TACOperand generateExpressionCode(NodeAST *node) {
             return generateConstantOperand(node);
 
         case BINARYOPERATOR_NODE: {
+            if (node->operationType == OP_AND || node->operationType == OP_OR) {
+                return generateShortCircuitCode(node);
+            }
+
             TACOperand left = generateExpressionCode(GET_LEFT(node));
             TACOperand result = newTemp(node->type);
 

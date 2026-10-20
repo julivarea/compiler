@@ -49,6 +49,7 @@ typedef enum {
     TAC_LABEL,     /**< result: etiqueta que se define aquí     */
     TAC_GOTO,      /**< arg1: etiqueta destino                  */
     TAC_IF_FALSE,  /**< si arg1 es falso, salta a arg2          */
+    TAC_IF_TRUE,   /**< si arg1 es verdadero, salta a arg2      */
 
     /* Métodos */
     TAC_PARAM,      /**< arg1: argumento a pasar                            */

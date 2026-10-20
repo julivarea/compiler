@@ -10,8 +10,8 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 
 1. ~~**Los 4 bugs de generación de la sección 1.**~~ **HECHO.** Son acotados y todo lo demás se construye encima de un TAC correcto.
 2. ~~**La migración a cuádruplas (sección 3.1).**~~ **HECHO.** Antes de agregar funcionalidad, no después: el 45% de la nota (Intérprete 10% + Código Objeto 20% + Optimizador 15%) consume el IR, y cualquier feature que escribamos en texto plano habrá que reescribirla.
-3. **Corto circuito `&&` / `||` (sección 2.1).** ← **siguiente.** Lo exige el enunciado de forma explícita.
-4. **Lo que cada método debe exponer (secciones 2.2, 3.2 y 3.3):** `begin_func`/`end_func`, parámetros formales y `ret` implícito en métodos `void`. Es un solo trabajo.
+3. ~~**Corto circuito `&&` / `||` (sección 2.1).**~~ **HECHO.** Lo exige el enunciado de forma explícita.
+4. **Lo que cada método debe exponer (secciones 2.2, 3.2 y 3.3):** `begin_func`/`end_func`, parámetros formales y `ret` implícito en métodos `void`. Es un solo trabajo. ← **siguiente.**
 5. **Desambiguación de variables por alcance (sección 2.3).**
 6. **Declaraciones de variables, globales y locales (sección 3.4).**
 7. **La CLI (sección 4).** Es independiente del diseño del TAC y puede hacerse en paralelo.
@@ -71,11 +71,49 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 ## 2. Requisitos de la Especificación de C-TDS No Contemplados
 
 ### 2.1
-- [ ] **Evaluación de corto circuito en operadores lógicos (`&&`, `||`)**
+- [x] **Evaluación de corto circuito en operadores lógicos (`&&`, `||`)**
   - **Referencia:** `documentacion/spec/01-TDS-spec-lenguaje.pdf` (Página 5, "Expresiones"):
     > *"Los operadores lógicos && y || deben ser evaluados usando evaluación de corto circuito. El segundo operador no es evaluado si el primer operador determina el valor de toda la expresión, es decir, si el resultado es false para && o true para ||."*
   - **Problema actual:** En `generateExpressionCode`, para `OP_AND` y `OP_OR` se evalúa incondicionalmente el operando derecho y se emite una única instrucción `TAC_AND` / `TAC_OR`. Si el lado derecho contiene llamadas a métodos con efectos colaterales o expresiones con guardas (ej. `n != 0 && 10 / n > 1`), la semántica del lenguaje se rompe.
   - **Acción:** Diseñar la evaluación booleana con control de flujo (saltos condicionales) para asegurar que el operando derecho solo se evalúe cuando sea estrictamente necesario. Se resuelve en una sola pasada con etiquetas, sin backpatching, porque el AST ya está completo.
+
+  - **RESUELTO.** `generateShortCircuitCode()` en `src/intermediate_code.c`. Los dos operadores
+    usan el mismo esquema, "resultado en un temporal con salto de salida":
+
+    ```
+      result = a && b              result = a || b
+      --------------------         --------------------
+      result = a                   result = a
+      if result false goto L       if result true goto L
+      result = b                   result = b
+      L:                           L:
+    ```
+
+    Si el operando izquierdo ya decide el valor de la expresión, ese valor es justamente el
+    que hay que devolver y ya quedó en `result`, así que el salto saltea por completo la
+    evaluación del derecho. Si no lo decide, el resultado de la expresión es exactamente el
+    del operando derecho. Una sola pasada, sin backpatching.
+
+  - **Opcode nuevo:** se agregó `TAC_IF_TRUE` (`if <x> true goto <L>`). Se podría haber
+    evitado negando la condición, pero habría costado una instrucción extra por cada `||` y
+    en x86-64 los dos saltos mapean directo a `jz` / `jnz`.
+
+  - **Decisión de diseño:** el resultado va siempre a un temporal nuevo, aunque el operando
+    izquierdo ya sea un temporal reutilizable. Reutilizarlo ahorraría una copia, pero el
+    operando izquierdo puede ser una variable del programa, y asignarle el valor del operando
+    derecho la corrompería. La copia redundante (`t1 = t0`) es candidata directa para la
+    propagación de copias en la etapa de optimización.
+
+  - **Verificación:** se comprobó que el operando derecho queda **después** del salto
+    condicional en `false && efecto()` (con `efecto()` modificando una global), en
+    `n > 0 && 10 / n > 1` y en `n == 0 || 10 / n > 1`. También se probó el anidamiento
+    (`a && b && c`, `a || b && c` respetando precedencia) y el uso dentro de condiciones de
+    `if` y de `while`. Los programas del corpus que no usan operadores lógicos generan un TAC
+    byte a byte idéntico al anterior.
+
+  - **Pendiente menor:** `TAC_AND` y `TAC_OR` quedaron en el enum pero ya no los emite nadie.
+    Se conservan por si el optimizador quiere plegar una expresión sin efectos colaterales a
+    una única instrucción; si se decide que no, hay que borrarlos.
 
 ### 2.2
 - [ ] **Retorno implícito en métodos `void` al alcanzar el fin del bloque**
