@@ -12,6 +12,11 @@ static int isNumeric(DataType type) {
     return type == TYPE_INT || type == TYPE_FLOAT;
 }
 
+/* Tipos basicos del lenguaje (los unicos comparables con ==). */
+static int isBasicType(DataType type) {
+    return type == TYPE_INT || type == TYPE_FLOAT || type == TYPE_BOOL;
+}
+
 static DataType resolveNumericOperation(DataType left, DataType right) {
     if (!isNumeric(left) || !isNumeric(right))
         return TYPE_ERROR;
@@ -45,10 +50,10 @@ DataType resolveBinaryOperation(
             return TYPE_ERROR;
 
         case OP_EQ:
-            if (left == right)
-                return TYPE_BOOL;
-
-            if (isNumeric(left) && isNumeric(right))
+            // los operandos de == deben tener el mismo tipo basico.
+            // A diferencia de los relacionales, aca NO se aplica la coercion
+            // int/float. Unicamente se pueden comparar expresiones del mismo tipo.
+            if (left == right && isBasicType(left))
                 return TYPE_BOOL;
 
             return TYPE_ERROR;
