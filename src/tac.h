@@ -17,8 +17,10 @@
 #include "types.h"
 #include "symbol_table.h"
 
-/** Longitud máxima del nombre de un temporal, variable, etiqueta o método. */
-#define TAC_NAME_LENGTH 32
+/** Longitud máxima del nombre de un temporal, variable, etiqueta o método.
+ *  Las variables llevan el sufijo "@<uid>", así que necesitan holgura sobre el
+ *  largo del identificador original. */
+#define TAC_NAME_LENGTH 64
 
 /**
  * @brief Operaciones del código de tres direcciones.
@@ -117,7 +119,15 @@ typedef struct {
 TACOperand tacNone(void);
 /** Temporal generado por el compilador. */
 TACOperand tacTemp(const char *name, DataType type);
-/** Variable o parámetro declarado; conserva el Symbol para las etapas siguientes. */
+/**
+ * Variable o parámetro declarado.
+ *
+ * El nombre que queda en el operando es el del programa calificado con el `uid`
+ * del símbolo (`x@7`), de modo que dos variables homónimas declaradas en scopes
+ * distintos no se confunden en el código generado. Además conserva el puntero
+ * al `Symbol`, que es lo que usan las etapas siguientes para resolver
+ * almacenamiento.
+ */
 TACOperand tacVariable(Symbol *symbol);
 /** Literal entero. */
 TACOperand tacConstantInt(int value);

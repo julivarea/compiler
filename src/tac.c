@@ -28,11 +28,33 @@ TACOperand tacTemp(const char *name, DataType type) {
 }
 
 TACOperand tacVariable(Symbol *symbol) {
-    TACOperand operand = makeOperand(
-        OPERAND_VARIABLE,
-        symbol ? symbol->type : TYPE_ERROR,
-        symbol ? symbol->id : NULL
-    );
+    if (symbol == NULL) {
+        return makeOperand(OPERAND_VARIABLE, TYPE_ERROR, NULL);
+    }
+
+    const char *id = (symbol->id != NULL) ? symbol->id : "";
+    char qualifiedName[TAC_NAME_LENGTH];
+
+    /* El uid identifica a la entidad declarada, no al nombre: dos variables que
+     * se llaman igual en scopes distintos tienen uid distinto, así que el
+     * nombre calificado las separa.
+     *
+     * El separador es '@' porque no puede aparecer en un identificador de
+     * C-TDS: al leer el TAC se ve de inmediato que el sufijo lo puso el
+     * compilador y no es parte del nombre que escribió el programador. Con '_'
+     * no habría ambigüedad real (el uid se agrega siempre, así que un `x` y un
+     * `x_3` del programa nunca producen la misma cadena), pero `x_3` se lee
+     * como si fuera un identificador del código fuente.
+     *
+     * uid == 0 significa que el símbolo no quedó declarado en ningún scope, lo
+     * que no debería ocurrir si el análisis semántico terminó sin errores. */
+    if (symbol->uid != 0) {
+        snprintf(qualifiedName, sizeof(qualifiedName), "%s@%d", id, symbol->uid);
+    } else {
+        snprintf(qualifiedName, sizeof(qualifiedName), "%s", id);
+    }
+
+    TACOperand operand = makeOperand(OPERAND_VARIABLE, symbol->type, qualifiedName);
     operand.symbol = symbol;
 
     return operand;

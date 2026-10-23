@@ -12,8 +12,8 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 2. ~~**La migración a cuádruplas (sección 3.1).**~~ **HECHO.** Antes de agregar funcionalidad, no después: el 45% de la nota (Intérprete 10% + Código Objeto 20% + Optimizador 15%) consume el IR, y cualquier feature que escribamos en texto plano habrá que reescribirla.
 3. ~~**Corto circuito `&&` / `||` (sección 2.1).**~~ **HECHO.** Lo exige el enunciado de forma explícita.
 4. ~~**Lo que cada método debe exponer (secciones 2.2, 3.2 y 3.3):** `begin_func`/`end_func`, parámetros formales y `ret` implícito en métodos `void`.~~ **HECHO.**
-5. **Desambiguación de variables por alcance (sección 2.3).** ← **siguiente.**
-6. **Declaraciones de variables, globales y locales (sección 3.4).**
+5. ~~**Desambiguación de variables por alcance (sección 2.3).**~~ **HECHO.**
+6. **Declaraciones de variables, globales y locales (sección 3.4).** ← **siguiente.**
 7. **La CLI (sección 4).** Es independiente del diseño del TAC y puede hacerse en paralelo.
 8. **Coerción `int`/`float` (sección 2.4),** si se decide mantener `float` en el TAC. El enunciado solo exige TAC para enteros y lógicos, así que es opcional.
 9. **Pruebas unitarias (sección 5).**
@@ -134,11 +134,33 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
     que es la propiedad que importa.
 
 ### 2.3
-- [ ] **Diferenciación de variables por alcance (Shadowing y variables globales vs locales)**
+- [x] **Diferenciación de variables por alcance (Shadowing y variables globales vs locales)**
   - **Problema:** En el TAC actual, las variables se emiten con su nombre de identificador crudo (`x = 5`). Si existe una variable global `x` y una función declara una variable local `x` (o en bloques anidados), en el código intermedio ambas reciben el mismo nombre.
   - **Impacto:** En las fases posteriores (generador x86-64 e Intérprete), no será posible distinguir si `x` corresponde a una posición en el segmento `.data`/`.bss` o a un desplazamiento en la pila local (`-8(%rbp)`).
   - **Acción:** Desambiguar las variables asociándolas a su identificador de símbolo único o prefijándolas con su ámbito (ej. `g_x`, `x_1`, `x_2`).
   - **Nota:** La infraestructura ya existe. `struct Symbol` tiene el campo `uid`, que `appendSymbol()` asigna a toda entidad declarada (un `uid` distinto por declaración, incluso si comparten nombre), y vale `0` para lo que no es una entidad declarada. Desde la migración de la sección 3.1, los operandos de tipo `OPERAND_VARIABLE` guardan el puntero al `Symbol`, así que el `uid` ya está disponible en el punto donde se imprime: alcanza con usarlo al emitir el nombre.
+
+  - **RESUELTO.** `tacVariable()` en `src/tac.c` construye el nombre del operando como
+    `<identificador>@<uid>`. Un programa con una `y` global, una `y` parámetro, una `y` local
+    de `main` y una `y` de un bloque anidado genera `y@1`, `y@3`, `y@5` e `y@6`.
+
+  - **Elección del separador.** Se usa `@` porque no puede aparecer en un identificador de
+    C-TDS: al leer el `.ci` se distingue de inmediato que el sufijo lo agregó el compilador.
+    Con `_` tampoco habría ambigüedad real —el uid se agrega siempre, así que una `x` y una
+    `x_3` del programa nunca producen la misma cadena— pero `x_3` se lee como si fuera un
+    identificador del código fuente.
+
+  - **Para la etapa de código objeto:** el `@` no es un carácter portable en los símbolos del
+    ensamblador. No es un problema, porque la traducción no usa el texto sino el campo
+    `symbol` del operando: las locales van a un desplazamiento del frame y las globales pueden
+    etiquetarse con su identificador a secas, ya que dentro del scope global los nombres son
+    únicos por la regla 1 del lenguaje.
+
+  - `TAC_NAME_LENGTH` pasó de 32 a 64 para dar lugar al sufijo sin truncar identificadores
+    largos.
+
+  - **Verificación:** sobre los 20 programas del corpus hay 28 variables calificadas distintas
+    y ningún operando de variable quedó sin calificar.
 
 ### 2.4
 - [ ] **Conversión / Coerción de tipos entre `int` y `float`**
