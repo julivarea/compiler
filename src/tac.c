@@ -162,13 +162,28 @@ static void printOperand(const TACOperand *operand) {
 static void printInstruction(const TACInstruction *instruction) {
     switch (instruction->op) {
         case TAC_LABEL:
-        case TAC_BEGIN_FUNC:
             printOperand(&instruction->result);
             buildStringf(":\n");
             break;
 
+        case TAC_BEGIN_FUNC:
+            buildStringf("begin_func ");
+            printOperand(&instruction->result);
+            buildStringf(", ");
+            printOperand(&instruction->arg1);
+            buildStringf("\n");
+            break;
+
         case TAC_END_FUNC:
-            /* Todavía no se emite */
+            buildStringf("end_func ");
+            printOperand(&instruction->result);
+            buildStringf("\n");
+            break;
+
+        case TAC_PARAM_DECL:
+            buildStringf("param_decl ");
+            printOperand(&instruction->arg1);
+            buildStringf("\n");
             break;
 
         case TAC_ASSIGN:

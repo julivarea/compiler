@@ -11,8 +11,8 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 1. ~~**Los 4 bugs de generación de la sección 1.**~~ **HECHO.** Son acotados y todo lo demás se construye encima de un TAC correcto.
 2. ~~**La migración a cuádruplas (sección 3.1).**~~ **HECHO.** Antes de agregar funcionalidad, no después: el 45% de la nota (Intérprete 10% + Código Objeto 20% + Optimizador 15%) consume el IR, y cualquier feature que escribamos en texto plano habrá que reescribirla.
 3. ~~**Corto circuito `&&` / `||` (sección 2.1).**~~ **HECHO.** Lo exige el enunciado de forma explícita.
-4. **Lo que cada método debe exponer (secciones 2.2, 3.2 y 3.3):** `begin_func`/`end_func`, parámetros formales y `ret` implícito en métodos `void`. Es un solo trabajo. ← **siguiente.**
-5. **Desambiguación de variables por alcance (sección 2.3).**
+4. ~~**Lo que cada método debe exponer (secciones 2.2, 3.2 y 3.3):** `begin_func`/`end_func`, parámetros formales y `ret` implícito en métodos `void`.~~ **HECHO.**
+5. **Desambiguación de variables por alcance (sección 2.3).** ← **siguiente.**
 6. **Declaraciones de variables, globales y locales (sección 3.4).**
 7. **La CLI (sección 4).** Es independiente del diseño del TAC y puede hacerse en paralelo.
 8. **Coerción `int`/`float` (sección 2.4),** si se decide mantener `float` en el TAC. El enunciado solo exige TAC para enteros y lógicos, así que es opcional.
@@ -116,11 +116,22 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
     una única instrucción; si se decide que no, hay que borrarlos.
 
 ### 2.2
-- [ ] **Retorno implícito en métodos `void` al alcanzar el fin del bloque**
+- [x] **Retorno implícito en métodos `void` al alcanzar el fin del bloque**
   - **Referencia:** `documentacion/spec/01-TDS-spec-lenguaje.pdf` (Página 4, "Invocación y Retorno de Métodos"):
     > *"Un método que no tiene declarado un tipo de retorno (un método void) retorna con una sentencia return (sin expresión) o cuando el fin del método es alcanzado."*
   - **Problema actual:** Si una función `void` (como `main`) no incluye una sentencia `return;` explícita, el generador no emite ninguna instrucción `ret`. En la posterior generación de código máquina x86-64, la función no tendrá epílogo de retorno y caerá en las instrucciones de la función contigua (fall-through caótico).
   - **Acción:** Al finalizar la generación del cuerpo de un método `void`, verificar si la última sentencia emitida fue un retorno; si no lo fue, emitir `ret\n`. Para los métodos no-void no hace falta: el análisis semántico ya garantiza que todos sus caminos terminan en un `return`.
+
+  - **RESUELTO.** `lastInstructionIsReturn()` mira la última instrucción emitida usando el
+    puntero `tail` de la lista, sin recorrerla. Si un método `void` no terminó retornando, se
+    emite el `ret` antes del `end_func`.
+
+  - **Caso límite conocido:** en `void f(int n){ if (n>0) {return;} else {return;} }` la última
+    instrucción es la etiqueta de cierre del `if`, así que se emite un `ret` extra que es
+    inalcanzable. Es inofensivo (el generador de código objeto produce un epílogo al que nunca
+    se llega) y se eligió a propósito frente a la alternativa de reimplementar el análisis de
+    caminos que ya hace el analizador semántico: la heurística nunca omite un `ret` necesario,
+    que es la propiedad que importa.
 
 ### 2.3
 - [ ] **Diferenciación de variables por alcance (Shadowing y variables globales vs locales)**
@@ -219,19 +230,30 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
     variables de la sección 3.4.
 
 ### 3.2
-- [ ] **Los parámetros formales de un método no aparecen en el TAC**
+- [x] **Los parámetros formales de un método no aparecen en el TAC**
   - **Ubicación:** `src/intermediate_code.c` (`generateStatementCode`, caso `METHOD_DECLARATION_NODE`).
   - **Problema:** Solo se emite la etiqueta del método y se genera el cuerpo (`node->children[1]`). El nodo de parámetros (`node->children[0]`) se ignora por completo, así que el TAC de `int duplicar(int n)` es simplemente `duplicar:` y no registra que existe un parámetro llamado `n`.
   - **Impacto:** El generador x86-64 necesita saber cuántos parámetros formales tiene el método y en qué orden, para asociarlos a `%rdi, %rsi, %rdx, %rcx, %r8, %r9` (convención System V AMD64) y al stack a partir del séptimo. Hoy esa información solo existe en el AST y en la tabla de símbolos, no en el código intermedio.
   - **Acción:** Emitir una cabecera por método del tipo `begin_func <nombre>, <cantidad_de_parametros>` y una instrucción por parámetro formal, o bien equivalente en la estructura de cuádruplas.
-  - **Avance parcial:** el opcode `TAC_BEGIN_FUNC` ya existe y se emite, pero por ahora solo lleva el nombre del método y se imprime como `nombre:`. Falta agregarle la cantidad de parámetros y emitir los formales.
+  - **RESUELTO.** `TAC_BEGIN_FUNC` lleva ahora el nombre del método y la cantidad de parámetros,
+    y se imprime como `begin_func <nombre>, <n>`. Cada parámetro formal se emite a continuación
+    con el opcode nuevo `TAC_PARAM_DECL` (`param_decl <nombre>`), **en orden de declaración**,
+    que es el orden que necesita el generador de código objeto para asociarlos a
+    `%rdi, %rsi, %rdx, %rcx, %r8, %r9` y al stack a partir del séptimo.
+
+  - **Nota:** `param_decl` (lo que el método recibe) y `param` (lo que el llamador empuja antes
+    de un `call`) son deliberadamente dos opcodes distintos, para no confundir los dos lados de
+    la convención de llamada.
+
+  - El método deja de emitir una etiqueta `nombre:`; la marca de entrada es el `begin_func`.
 
 ### 3.3
-- [ ] **No existe marca de fin de método**
+- [x] **No existe marca de fin de método**
   - **Problema:** El final de un método se infiere por la aparición de la siguiente etiqueta en el texto. Eso obliga a cualquier consumidor a mirar hacia adelante para saber dónde termina una función.
   - **Impacto:** El generador x86-64 necesita el punto exacto donde emitir el epílogo (`leave` / `ret`), y el Intérprete necesita saber dónde cortar la ejecución de un cuerpo.
   - **Acción:** Emitir `end_func <nombre>` al terminar cada método. Va junto con la sección 3.2.
-  - **Avance parcial:** el opcode `TAC_END_FUNC` ya está definido en `src/tac.h` y contemplado en la impresión, pero todavía no lo emite nadie.
+  - **RESUELTO.** Se emite `end_func <nombre>` al cerrar cada método. Queda garantizado por
+    construcción que la instrucción inmediatamente anterior es siempre un `ret`.
 
 ### 3.4
 - [ ] **Las declaraciones de variables no emiten ninguna instrucción**

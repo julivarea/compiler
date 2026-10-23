@@ -32,6 +32,14 @@ static void emit(TACOp op, TACOperand result, TACOperand arg1, TACOperand arg2) 
     appendInstruction(current_code, op, result, arg1, arg2);
 }
 
+/* Mira la ultima instruccion emitida sin recorrer la lista, aprovechando el
+ * puntero tail. Sirve para saber si un metodo ya retorno por su cuenta. */
+static int lastInstructionIsReturn(void) {
+    return current_code != NULL
+        && current_code->tail != NULL
+        && current_code->tail->op == TAC_RETURN;
+}
+
 static TACOp getTACOpForOperation(OperationType operation) {
     switch (operation) {
         case OP_ADD:      return TAC_ADD;
@@ -172,14 +180,38 @@ void generateStatementCode(NodeAST *node) {
     }
 
     switch (node->nodeType) {
-        case METHOD_DECLARATION_NODE:
-            if (node->symbol && node->symbol->id) {
-                emit(TAC_BEGIN_FUNC, tacMethod(node->symbol->id, node->type), tacNone(), tacNone());
+        case METHOD_DECLARATION_NODE: {
+            if (node->symbol == NULL || node->symbol->id == NULL) {
+                break;
             }
-            if (node->childCount > 1 && node->children[1] != NULL) {
-                generateStatementCode(node->children[1]);
+
+            NodeAST *parameters = GET_LEFT(node);
+            int parameterCount = (parameters != NULL) ? parameters->childCount : 0;
+            TACOperand method = tacMethod(node->symbol->id, node->type);
+
+            // La cabecera lleva la cantidad de parametros y cada formal se
+            // declara aparte, en orden: el generador de codigo objeto necesita
+            // ese orden para asociarlos a los registros de la convencion de
+            // llamada.
+            emit(TAC_BEGIN_FUNC, method, tacConstantInt(parameterCount), tacNone());
+            for (int i = 0; i < parameterCount; i++) {
+                emit(TAC_PARAM_DECL, tacNone(), tacVariable(parameters->children[i]->symbol), tacNone());
             }
+
+            generateStatementCode(GET_RIGHT(node));
+
+            // Un metodo void puede terminar sin un return explicito, pero el
+            // codigo objeto necesita siempre un epilogo: si el cuerpo no
+            // termino retornando, se agrega el retorno implicito. Los metodos
+            // no-void no lo necesitan, porque el analisis semantico ya garantiza
+            // que todos sus caminos terminan en un return.
+            if (node->type == TYPE_VOID && !lastInstructionIsReturn()) {
+                emit(TAC_RETURN, tacNone(), tacNone(), tacNone());
+            }
+
+            emit(TAC_END_FUNC, method, tacNone(), tacNone());
             break;
+        }
 
         case ASSIGNMENT_NODE:
             if (node->symbol && node->symbol->id) {

@@ -52,10 +52,11 @@ typedef enum {
     TAC_IF_TRUE,   /**< si arg1 es verdadero, salta a arg2      */
 
     /* Métodos */
-    TAC_PARAM,      /**< arg1: argumento a pasar                            */
+    TAC_PARAM,      /**< arg1: argumento a pasar en el lugar de la llamada   */
+    TAC_PARAM_DECL, /**< arg1: parámetro formal que el método recibe         */
     TAC_CALL,       /**< result (opcional) = call arg1, arg2 argumentos      */
     TAC_RETURN,     /**< arg1 opcional: valor devuelto                       */
-    TAC_BEGIN_FUNC, /**< result: método que empieza                          */
+    TAC_BEGIN_FUNC, /**< result: método que empieza; arg1: nº de parámetros  */
     TAC_END_FUNC    /**< result: método que termina                          */
 } TACOp;
 
