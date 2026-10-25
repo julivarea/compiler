@@ -2,43 +2,97 @@
 #include <stdlib.h>
 #include <string.h>
 #include "intermediate_code.h"
-#include "string_builder.h"
+#include "tac.h"
+
+/* Lista que se está construyendo. Es estado de módulo para que el recorrido
+ * del AST no tenga que arrastrarla por cada llamada recursiva. */
+static TACList *current_code = NULL;
+
+/* Tipo de retorno del metodo que se esta generando: lo necesita RETURN_NODE
+ * para saber si hay que coercionar el valor devuelto. */
+static DataType current_method_type = TYPE_VOID;
 
 static int temp_count = 0;
 static int label_count = 0;
 
-void resetTempAndLabelCounters(void) {
-    temp_count = 0;
-    label_count = 0;
+/* Los temporales y las etiquetas se devuelven ya envueltos en un TACOperand,
+ * que copia el nombre a un buffer propio. Así no hay punteros a buffers
+ * estáticos compartidos ni cadenas reservadas con strdup que haya que liberar. */
+static TACOperand newTemp(DataType type) {
+    char name[TAC_NAME_LENGTH];
+
+    snprintf(name, sizeof(name), "t%d", temp_count++);
+    return tacTemp(name, type);
 }
 
-char* newTemp(void) {
-    static char buffer[32];
-    snprintf(buffer, sizeof(buffer), "t%d", temp_count++);
-    return buffer;
+static TACOperand newLabel(void) {
+    char name[TAC_NAME_LENGTH];
+
+    snprintf(name, sizeof(name), "L%d", label_count++);
+    return tacLabel(name);
 }
 
-char* newLabel(void) {
-    char buffer[32];
-    snprintf(buffer, sizeof(buffer), "L%d", label_count++);
-    return strdup(buffer);
+static void emit(TACOp op, TACOperand result, TACOperand arg1, TACOperand arg2) {
+    appendInstruction(current_code, op, result, arg1, arg2);
 }
 
-const char* getOperatorSymbol(OperationType op) {
-    switch (op) {
-        case OP_ADD:      return "+";
-        case OP_SUB:      return "-";
-        case OP_MUL:      return "*";
-        case OP_DIV:      return "/";
-        case OP_MOD:      return "%";
-        case OP_LT:       return "<";
-        case OP_GT:       return ">";
-        case OP_EQ:       return "==";
-        case OP_AND:      return "&&";
-        case OP_OR:       return "||";
-        case OP_NEGATIVE: return "-";
-        case OP_NEGATION: return "!";
-        default:          return "?";
+/* Mira la ultima instruccion emitida sin recorrer la lista, aprovechando el
+ * puntero tail. Sirve para saber si un metodo ya retorno por su cuenta. */
+static int lastInstructionIsReturn(void) {
+    return current_code != NULL
+        && current_code->tail != NULL
+        && current_code->tail->op == TAC_RETURN;
+}
+
+/*
+ * Devuelve un operando float equivalente al recibido, emitiendo la conversion
+ * si hacia falta. La letra permite coerciones entre int y float, pero el
+ * generador de codigo objeto necesita que la conversion sea explicita: en
+ * x86-64 los enteros y los reales viven en bancos de registros distintos y se
+ * operan con instrucciones distintas.
+ *
+ * La conversion se emite siempre que el operando sea entero, incluso si es una
+ * constante. Resolver `3` como `3.0` en tiempo de compilacion seria plegado de
+ * constantes, que es trabajo de la etapa de optimizacion, no de esta.
+ */
+static TACOperand coerceToFloat(TACOperand operand) {
+    if (operand.type != TYPE_INT) {
+        return operand;
+    }
+
+    TACOperand result = newTemp(TYPE_FLOAT);
+    emit(TAC_INT_TO_FLOAT, result, operand, tacNone());
+
+    return result;
+}
+
+/* Si una operacion binaria mezcla int y float, se convierte el operando entero
+ * para que los dos lados tengan el mismo tipo. Aplica tanto a las aritmeticas,
+ * donde el resultado es float, como a las relacionales, donde el resultado es
+ * boolean pero la comparacion igual se hace entre reales. */
+static void coerceBinaryOperands(TACOperand *left, TACOperand *right) {
+    if (left->type == TYPE_FLOAT && right->type == TYPE_INT) {
+        *right = coerceToFloat(*right);
+    } else if (left->type == TYPE_INT && right->type == TYPE_FLOAT) {
+        *left = coerceToFloat(*left);
+    }
+}
+
+static TACOp getTACOpForOperation(OperationType operation) {
+    switch (operation) {
+        case OP_ADD:      return TAC_ADD;
+        case OP_SUB:      return TAC_SUB;
+        case OP_MUL:      return TAC_MUL;
+        case OP_DIV:      return TAC_DIV;
+        case OP_MOD:      return TAC_MOD;
+        case OP_LT:       return TAC_LT;
+        case OP_GT:       return TAC_GT;
+        case OP_EQ:       return TAC_EQ;
+        case OP_AND:      return TAC_AND;
+        case OP_OR:       return TAC_OR;
+        case OP_NEGATIVE: return TAC_NEG;
+        case OP_NEGATION: return TAC_NOT;
+        default:          return TAC_ASSIGN;
     }
 }
 
@@ -48,73 +102,125 @@ const char* getOperatorSymbol(OperationType op) {
  * llamada como sentencia, que solo se diferencian en si el resultado se guarda.
  */
 static void generateCallArguments(NodeAST *node) {
+    NodeAST *formals = (node->symbol != NULL) ? node->symbol->parameters : NULL;
+
     for (int i = 0; i < node->childCount; i++) {
-        Expression argument = generateExpressionCode(node->children[i]);
-        buildStringf("param %s\n", argument.place);
+        TACOperand argument = generateExpressionCode(node->children[i]);
+
+        // Pasar un entero a un parametro float es una coercion valida, y tiene
+        // que quedar explicita antes de empujar el argumento.
+        if (formals != NULL && i < formals->childCount
+            && formals->children[i]->type == TYPE_FLOAT) {
+            argument = coerceToFloat(argument);
+        }
+
+        emit(TAC_PARAM, tacNone(), argument, tacNone());
     }
 }
 
-Expression generateExpressionCode(NodeAST *node) {
-    Expression result;
-    result.place[0] = '\0';
+/*
+ * && y || no se traducen a una instruccion binaria sino a control de flujo,
+ * porque la letra exige evaluacion de corto circuito: el operando derecho no
+ * se evalua si el izquierdo ya determina el resultado de toda la expresion.
+ *
+ *   result = a && b              result = a || b
+ *   --------------------         --------------------
+ *   result = a                   result = a
+ *   if result false goto L       if result true goto L
+ *   result = b                   result = b
+ *   L:                           L:
+ *
+ * La idea en los dos casos es la misma: si el operando izquierdo ya decide,
+ * el valor que corresponde devolver es el suyo, que ya quedo en result, y el
+ * salto saltea la evaluacion del derecho. Si no decide, el resultado de la
+ * expresion completa es exactamente el del operando derecho.
+ *
+ * El resultado va a un temporal nuevo y no se reutiliza el operando izquierdo
+ * porque este puede ser una variable del programa, y sobreescribirla cambiaria
+ * el valor de la variable. La copia extra que eso introduce es candidata a
+ * eliminarse en la etapa de optimizacion.
+ */
+static TACOperand generateShortCircuitCode(NodeAST *node) {
+    TACOperand left = generateExpressionCode(GET_LEFT(node));
+    TACOperand result = newTemp(node->type);
+    TACOperand endLabel = newLabel();
 
+    emit(TAC_ASSIGN, result, left, tacNone());
+
+    TACOp shortCircuitJump = (node->operationType == OP_AND) ? TAC_IF_FALSE : TAC_IF_TRUE;
+    emit(shortCircuitJump, tacNone(), result, endLabel);
+
+    TACOperand right = generateExpressionCode(GET_RIGHT(node));
+    emit(TAC_ASSIGN, result, right, tacNone());
+
+    emit(TAC_LABEL, endLabel, tacNone(), tacNone());
+
+    return result;
+}
+
+static TACOperand generateConstantOperand(NodeAST *node) {
+    if (node->symbol == NULL) return tacNone();
+
+    switch (node->symbol->type) {
+        case TYPE_INT:
+            return tacConstantInt(node->symbol->value.int_val);
+        case TYPE_BOOL:
+            return tacConstantBool(node->symbol->value.int_val);
+        case TYPE_FLOAT:
+            return tacConstantFloat(node->symbol->value.float_val);
+        default:
+            return tacNone();
+    }
+}
+
+TACOperand generateExpressionCode(NodeAST *node) {
     if (node == NULL) {
-        return result;
+        return tacNone();
     }
 
     switch (node->nodeType) {
         case ID_NODE:
-            strcpy(result.place, node->symbol->id);
-            break;
+            return tacVariable(node->symbol);
 
         case CONSTANT_NODE:
-            if (node->symbol != NULL) {
-                switch (node->symbol->type) {
-                    case TYPE_INT: 
-                        snprintf(result.place, sizeof(result.place), "%d", node->symbol->value.int_val);
-                        break;
-                    case TYPE_BOOL:
-                        snprintf(result.place, sizeof(result.place), "%s", node->symbol->value.int_val ? "true" : "false");
-                        break;
-                    case TYPE_FLOAT:
-                        snprintf(result.place, sizeof(result.place), "%f", node->symbol->value.float_val);
-                        break;
-                    default:
-                        result.place[0] = '\0';
-                        break;
-                }
-            }
-            break;
+            return generateConstantOperand(node);
 
         case BINARYOPERATOR_NODE: {
-            Expression leftExpression = generateExpressionCode(GET_LEFT(node));
-            char* temporalBinaryOperator = newTemp();
-            strcpy(result.place, temporalBinaryOperator);
+            if (node->operationType == OP_AND || node->operationType == OP_OR) {
+                return generateShortCircuitCode(node);
+            }
+
+            TACOperand left = generateExpressionCode(GET_LEFT(node));
+            TACOperand result = newTemp(node->type);
 
             if (node->operationType == OP_NEGATIVE || node->operationType == OP_NEGATION) {
-                buildStringf("%s = %s%s\n", result.place, getOperatorSymbol(node->operationType), leftExpression.place);
+                emit(getTACOpForOperation(node->operationType), result, left, tacNone());
             } else {
-                Expression rightExpression = generateExpressionCode(GET_RIGHT(node));
-                buildStringf("%s = %s %s %s\n", result.place, leftExpression.place, getOperatorSymbol(node->operationType), rightExpression.place);
+                TACOperand right = generateExpressionCode(GET_RIGHT(node));
+                coerceBinaryOperands(&left, &right);
+                emit(getTACOpForOperation(node->operationType), result, left, right);
             }
-            break;
+
+            return result;
         }
 
-        case METHOD_CALL_NODE:
+        case METHOD_CALL_NODE: {
             generateCallArguments(node);
-            if (node->symbol && node->symbol->id) {
-                // El temporal se pide despues de los argumentos, asi su numero
-                // queda despues de los temporales que estos hayan consumido.
-                strcpy(result.place, newTemp());
-                buildStringf("%s = call %s, %d\n", result.place, node->symbol->id, node->childCount);
+            if (node->symbol == NULL || node->symbol->id == NULL) {
+                return tacNone();
             }
-            break;
+
+            // El temporal se pide despues de los argumentos, asi su numero
+            // queda despues de los temporales que estos hayan consumido.
+            TACOperand result = newTemp(node->type);
+            emit(TAC_CALL, result, tacMethod(node->symbol->id, node->type), tacConstantInt(node->childCount));
+
+            return result;
+        }
 
         default:
-            break;
+            return tacNone();
     }
-
-    return result;
 }
 
 void generateStatementCode(NodeAST *node) {
@@ -123,18 +229,53 @@ void generateStatementCode(NodeAST *node) {
     }
 
     switch (node->nodeType) {
-        case METHOD_DECLARATION_NODE:
-            if (node->symbol && node->symbol->id) {
-                buildStringf("%s:\n", node->symbol->id);
+        case METHOD_DECLARATION_NODE: {
+            if (node->symbol == NULL || node->symbol->id == NULL) {
+                break;
             }
-            if (node->childCount > 1 && node->children[1] != NULL) {
-                generateStatementCode(node->children[1]);
+
+            NodeAST *parameters = GET_LEFT(node);
+            int parameterCount = (parameters != NULL) ? parameters->childCount : 0;
+            TACOperand method = tacMethod(node->symbol->id, node->type);
+
+            // La cabecera lleva la cantidad de parametros y cada formal se
+            // declara aparte, en orden: el generador de codigo objeto necesita
+            // ese orden para asociarlos a los registros de la convencion de
+            // llamada.
+            DataType previousMethodType = current_method_type;
+            current_method_type = node->type;
+
+            emit(TAC_BEGIN_FUNC, method, tacConstantInt(parameterCount), tacNone());
+            for (int i = 0; i < parameterCount; i++) {
+                emit(TAC_PARAM_DECL, tacNone(), tacVariable(parameters->children[i]->symbol), tacNone());
             }
+
+            generateStatementCode(GET_RIGHT(node));
+
+            // Un metodo void puede terminar sin un return explicito, pero el
+            // codigo objeto necesita siempre un epilogo: si el cuerpo no
+            // termino retornando, se agrega el retorno implicito. Los metodos
+            // no-void no lo necesitan, porque el analisis semantico ya garantiza
+            // que todos sus caminos terminan en un return.
+            if (node->type == TYPE_VOID && !lastInstructionIsReturn()) {
+                emit(TAC_RETURN, tacNone(), tacNone(), tacNone());
+            }
+
+            emit(TAC_END_FUNC, method, tacNone(), tacNone());
+
+            current_method_type = previousMethodType;
             break;
+        }
 
         case ASSIGNMENT_NODE:
-             if (node->symbol && node->symbol->id) {
-                buildStringf("%s = %s\n", node->symbol->id, generateExpressionCode(GET_RIGHT(node)).place);
+            if (node->symbol && node->symbol->id) {
+                TACOperand value = generateExpressionCode(GET_RIGHT(node));
+
+                if (node->symbol->type == TYPE_FLOAT) {
+                    value = coerceToFloat(value);
+                }
+
+                emit(TAC_ASSIGN, tacVariable(node->symbol), value, tacNone());
             }
             break;
 
@@ -143,64 +284,75 @@ void generateStatementCode(NodeAST *node) {
         case METHOD_CALL_NODE:
             generateCallArguments(node);
             if (node->symbol && node->symbol->id) {
-                buildStringf("call %s, %d\n", node->symbol->id, node->childCount);
+                emit(TAC_CALL, tacNone(), tacMethod(node->symbol->id, node->type), tacConstantInt(node->childCount));
             }
             break;
 
-        case RETURN_NODE:
-            if(GET_EXPRESSION(node) == NULL){
-                buildStringf("ret\n");
-            } else {
-                buildStringf("ret %s\n", generateExpressionCode(GET_EXPRESSION(node)).place);
+        case RETURN_NODE: {
+            NodeAST *expression = GET_EXPRESSION(node);
+            TACOperand value = (expression == NULL) ? tacNone() : generateExpressionCode(expression);
+
+            if (expression != NULL && current_method_type == TYPE_FLOAT) {
+                value = coerceToFloat(value);
             }
+
+            emit(TAC_RETURN, tacNone(), value, tacNone());
             break;
+        }
 
         case IF_ELSE_NODE: {
-            Expression conditionExpression = generateExpressionCode(GET_CONDITION(node));
+            TACOperand condition = generateExpressionCode(GET_CONDITION(node));
             NodeAST *elseBlock = GET_ELSE_BLOCK(node);
 
             if (elseBlock == NULL) {
                 // Sin rama else, la condicion falsa saltea el bloque entero.
-                char *endIf = newLabel();
+                TACOperand endIf = newLabel();
 
-                buildStringf("if %s false goto %s\n", conditionExpression.place, endIf);
+                emit(TAC_IF_FALSE, tacNone(), condition, endIf);
                 generateStatementCode(GET_IF_BLOCK(node));
-                buildStringf("%s:\n", endIf);
+                emit(TAC_LABEL, endIf, tacNone(), tacNone());
             } else {
-                char *elseIf = newLabel();
-                char *endIf = newLabel();
+                TACOperand elseIf = newLabel();
+                TACOperand endIf = newLabel();
 
-                buildStringf("if %s false goto %s\n", conditionExpression.place, elseIf);
+                emit(TAC_IF_FALSE, tacNone(), condition, elseIf);
                 generateStatementCode(GET_IF_BLOCK(node));
-                buildStringf("goto %s\n", endIf);
-                buildStringf("%s:\n", elseIf);
+                emit(TAC_GOTO, tacNone(), endIf, tacNone());
+                emit(TAC_LABEL, elseIf, tacNone(), tacNone());
                 generateStatementCode(elseBlock);
-                buildStringf("%s:\n", endIf);
+                emit(TAC_LABEL, endIf, tacNone(), tacNone());
             }
             break;
         }
 
         case WHILE_NODE: {
-            char* startOfWhile = newLabel();
-            char* endOfWhile = newLabel();
-            buildStringf("%s:\n", startOfWhile);
+            TACOperand startOfWhile = newLabel();
+            TACOperand endOfWhile = newLabel();
 
-            Expression conditionExpression = generateExpressionCode(GET_CONDITION(node));
-            buildStringf("if %s false goto %s\n", conditionExpression.place, endOfWhile);
+            emit(TAC_LABEL, startOfWhile, tacNone(), tacNone());
+
+            TACOperand condition = generateExpressionCode(GET_CONDITION(node));
+            emit(TAC_IF_FALSE, tacNone(), condition, endOfWhile);
 
             generateStatementCode(GET_WHILE_BLOCK(node));
 
-            buildStringf("goto %s\n", startOfWhile);
-            buildStringf("%s:\n", endOfWhile);
+            emit(TAC_GOTO, tacNone(), startOfWhile, tacNone());
+            emit(TAC_LABEL, endOfWhile, tacNone(), tacNone());
             break;
         }
 
-        case BLOCK_NODE:
-            for (int i = 0; i < node->childCount; i++) {
-                generateStatementCode(node->children[i]);
+        // Toda declaracion que llega hasta aca esta dentro del cuerpo de un
+        // metodo (las globales las maneja generateIntermediateCode), incluidas
+        // las de los bloques anidados, que se emiten en el lugar donde
+        // aparecen. El generador de codigo objeto recorre el rango entre
+        // begin_func y end_func para dimensionar el frame.
+        case VARIABLE_DECLARATION_NODE:
+            if (node->symbol != NULL) {
+                emit(TAC_LOCAL_DECL, tacNone(), tacVariable(node->symbol), tacNone());
             }
             break;
 
+        case BLOCK_NODE:
         default:
             for (int i = 0; i < node->childCount; i++) {
                 generateStatementCode(node->children[i]);
@@ -214,9 +366,29 @@ void generateIntermediateCode(NodeAST *root) {
         return;
     }
 
-    resetTempAndLabelCounters();
+    freeTACList(current_code);
+    current_code = createTACList();
+    temp_count = 0;
+    label_count = 0;
+    current_method_type = TYPE_VOID;
 
+    // En el nivel superior del programa solo hay declaraciones de variables
+    // globales y de metodos. Las globales se reconocen por estar aca: son las
+    // unicas que no estan dentro del cuerpo de un metodo.
     for (int i = 0; i < root->childCount; i++) {
-        generateStatementCode(root->children[i]);
+        NodeAST *declaration = root->children[i];
+        if (declaration == NULL) continue;
+
+        if (declaration->nodeType == VARIABLE_DECLARATION_NODE) {
+            if (declaration->symbol != NULL) {
+                emit(TAC_GLOBAL_DECL, tacNone(), tacVariable(declaration->symbol), tacNone());
+            }
+        } else {
+            generateStatementCode(declaration);
+        }
     }
+}
+
+const TACList *getIntermediateCode(void) {
+    return current_code;
 }

@@ -37,6 +37,7 @@ una versión navegable estructurada paso a paso.
 ```
 .
 ├── src/
+│   ├── cli.h / cli.c                                # parseo de la línea de comandos
 │   ├── lexer.l                                      # analizador léxico
 │   ├── bison.y                                      # analizador sintáctico
 │   ├── ast.h / ast.c                                # interfaz e implementación del AST
@@ -44,7 +45,8 @@ una versión navegable estructurada paso a paso.
 │   ├── symbol_table.h / symbol_table.c              # gestión de scopes y symbols
 │   ├── type_checker.h / type_checker.c              # inferencia, chequeo y compatibilidad de tipos
 │   ├── semantic_analyzer.h / semantic_analyzer.c    # recorrido semántico y validaciones del lenguaje
-│   ├── intermediate_code.h / intermediate_code.c    # generador de código de tres direcciones
+│   ├── tac.h / tac.c                                # estructura del código de tres direcciones
+│   ├── intermediate_code.h / intermediate_code.c    # recorrido del AST que construye el TAC
 │   ├── string_builder.h / string_builder.c          # buffer dinámico de cadenas para la salida TAC
 │   └── error_handler.h / error_handler.c            # reporte y conteo de errores léxicos y semánticos
 ├── tests/                                           # tests unitarios de lexer y parser
@@ -86,7 +88,9 @@ El script `build.sh` ejecuta las siguientes operaciones en orden:
    - `src/semantic_analyzer.c` (Recorrido y validaciones semánticas)
    - `src/error_handler.c` (Formateo y reporte de errores)
    - `src/string_builder.c` (Buffer dinámico para código intermedio)
-   - `src/intermediate_code.c` (Generador de Código de Tres Direcciones - TAC)
+   - `src/tac.c` (Estructura de datos del Código de Tres Direcciones)
+   - `src/intermediate_code.c` (Recorrido del AST que construye el TAC)
+   - `src/cli.c` (Parseo de los argumentos de la línea de comandos)
 5. **Genera el binario final:** Produce el ejecutable `./mi_compilador` en la raíz del repositorio.
 
 ### Consideraciones y mantenimiento
@@ -100,11 +104,45 @@ El script `build.sh` ejecuta las siguientes operaciones en orden:
 ## Uso
 
 ```bash
-./mi_compilador examples/programa.txt          # analiza un archivo
-echo "void main(){ int x }" | ./mi_compilador  # o desde la entrada estándar
+./mi_compilador [opciones] archivo.ctds
 ```
 
-Sobre el archivo de entrada se ejecutan las siguientes fases en orden:
+| Opción | Acción |
+| --- | --- |
+| `-o <salida>` | Nombre del archivo de salida, en vez del que se deduce de la etapa |
+| `-target <etapa>` | Compila hasta esa etapa: `scan`, `parse`, `sem`, `codinter`, `assembly` |
+| `-opt [nombre]` | Aplica optimizaciones; `all` son todas. Por defecto ninguna |
+| `-debug` | Imprime información de debugging por `stdout` |
+
+El archivo de entrada es obligatorio, no puede empezar con `-` y debe tener
+extensión `.ctds`.
+
+**Sin `-debug`, una compilación exitosa no imprime nada.** El resultado de la
+etapa se escribe en un archivo, y los errores siempre van a `stderr`. Cualquier
+error (de argumentos, léxico, sintáctico o semántico) termina con código 1 y
+**no** deja archivo de salida.
+
+Cada etapa escribe un archivo con el nombre del fuente y su propia extensión, o
+el que se haya pasado con `-o`:
+
+| `-target` | Salida | Contenido |
+| --- | --- | --- |
+| `scan` | `.lex` | La secuencia de tokens, con su número de línea y su lexema |
+| `parse` | `.sint` | El AST tal como lo construye el parser, sin anotar |
+| `sem` | `.sem` | El AST anotado: tipo y `uid` de cada identificador |
+| `codinter` (por defecto) | `.ci` | El código de tres direcciones |
+| `assembly` | `.ass` | Assembly x86-64 — **no implementado todavía** |
+
+Con `-opt` la extensión pasa a ser `.opt`.
+
+```bash
+./mi_compilador examples/factorial.ctds                 # -> examples/factorial.ci
+./mi_compilador -target scan examples/factorial.ctds    # -> examples/factorial.lex
+./mi_compilador -debug examples/factorial.ctds          # además lo imprime
+```
+
+Sobre el archivo de entrada se ejecutan las siguientes fases en orden, hasta
+donde indique `-target`:
 
 1. **Análisis Léxico:** Escanea los tokens del lenguaje, descarta comentarios y espacios, y rastrea números de línea.
 2. **Análisis Sintáctico:** Valida la gramática LALR(1) del programa y detiene la compilación ante el primer error formal.
@@ -113,6 +151,16 @@ Sobre el archivo de entrada se ejecutan las siguientes fases en orden:
 5. **Generación de Código Intermedio (TAC):** Si el programa no tiene errores léxicos, sintácticos ni semánticos, emite las instrucciones de Código de Tres Direcciones linealizadas.
 
 El compilador finaliza con código de salida `0` si el programa es válido, o `1` si se detecta cualquier error.
+
+**Decisión de diseño sobre el comportamiento por defecto:** el enunciado dice que
+sin `-target` se compila "hasta la etapa corriente" generando un archivo con la
+extensión de esa etapa, y también que sin `-target` se produce el ejecutable
+`nombreArchivo.out`. Mientras el compilador esté incompleto las dos cosas no
+pueden valer a la vez, así que el default es la etapa corriente (hoy
+`codinter`, salida `.ci`). La constante `CURRENT_TARGET` en `src/cli.h` es lo
+único que hay que mover al terminar cada etapa. El valor `sem` de `-target` es
+una extensión nuestra: el enunciado no lo enumera, pero sí lista la extensión
+`.sem`, con lo cual la etapa semántica no era alcanzable de otro modo.
 
 
 
@@ -161,22 +209,33 @@ compila su propia copia y **no** valida el ejecutable que dejó `build.sh`. Por
 eso al final conviene probar el compilador de verdad sobre un ejemplo:
 
 ```bash
-./mi_compilador examples/programa.txt
+./mi_compilador -debug examples/programa.ctds
 ```
 
-`programa.txt` usa todas las construcciones de la gramática, así que sirve de
-prueba de humo de todas las fases de una sola pasada. Para chequear que los
-errores se siguen detectando, `./mi_compilador examples/programa_con_error.txt`
-tiene que reportar un error semántico y salir con código 1.
+`programa.ctds` usa todas las construcciones de la gramática, así que sirve de
+prueba de humo de todas las fases de una sola pasada, y con `-debug` se ve el
+TAC generado. Para chequear que los errores se siguen detectando,
+`./mi_compilador examples/programa_con_error.ctds` tiene que reportar un error
+semántico y salir con código 1 sin dejar archivo de salida.
+
+### Prueba completa por etapas
+
+Para validar las cuatro etapas implementadas sobre un mismo programa:
+
+```bash
+for etapa in scan parse sem codinter; do ./mi_compilador -target $etapa examples/programa.ctds || echo "FALLO en $etapa"; done
+```
+
+Debe generar `programa.lex`, `programa.sint`, `programa.sem` y `programa.ci` en
+`examples/`, sin imprimir nada. Son artefactos generados: están en `.gitignore`
+y se borran con `rm -f examples/*.lex examples/*.sint examples/*.sem examples/*.ci`.
 
 ## Problemas conocidos
 
-- **Falta la interfaz de línea de comandos que pide la letra**
-  (`-target`, `-opt`, `-debug`, `-o`, extensión `.ctds` obligatoria, una salida
-  por etapa). Hoy el compilador toma un único argumento posicional y, si no se
-  le pasa ninguno, lee de la entrada estándar. Los ejemplos todavía usan `.txt`.
-- **Sin `-debug`, el compilador igual imprime el AST.** La letra pide que una
-  compilación exitosa no imprima nada salvo que se pida debugging.
+- **`-target assembly` no está implementado**: avisa y termina con código 1.
+  Lo mismo `-opt`, que se acepta y se ignora con un aviso, porque todavía no hay
+  ninguna optimización.
+- **No se genera el ejecutable `.out`**, porque falta la etapa de assembly.
 - **Un método solo ve a los declarados antes que él.** No hay declaración
   adelantada en C-TDS, así que `main(){ g(); }` con `g` definido más abajo da
   `Método no declarado`. Es lo que pide la letra ("todo se declara antes de

@@ -8,7 +8,9 @@
 #include "error_handler.h"
 #include "string_builder.h"
 #include "intermediate_code.h"
+#include "cli.h"
 extern int yylex(void);
+extern char *yytext;
 extern FILE *yyin;
 extern int yylineno;
 void yyerror(const char *s) {
@@ -189,22 +191,138 @@ NodeAST *raizAST = NULL;
 %%
 
 #ifndef UNITY_TESTING
-int main(int argc, char** argv) {
-    if (argc > 1) {
-        yyin = fopen(argv[1], "r");
-        if (!yyin) {
-            perror("Error abriendo archivo");
-            return 1;
+
+/* Nombre del token para el volcado de -target scan. Devuelve NULL para los
+ * tokens de un solo caracter, que el lexer retorna como su propio codigo. */
+static const char *getTokenName(int token) {
+    switch (token) {
+        case VOID:        return "VOID";
+        case INT:         return "INT";
+        case FLOAT:       return "FLOAT";
+        case BOOLEAN:     return "BOOLEAN";
+        case IF:          return "IF";
+        case ELSE:        return "ELSE";
+        case WHILE:       return "WHILE";
+        case RETURN:      return "RETURN";
+        case EQ:          return "EQ";
+        case AND:         return "AND";
+        case OR:          return "OR";
+        case NOT:         return "NOT";
+        case ID:          return "ID";
+        case NUMBER:      return "NUMBER";
+        case BOOL_CONST:  return "BOOL_CONST";
+        case FLOAT_CONST: return "FLOAT_CONST";
+        default:          return NULL;
+    }
+}
+
+/* Etapa scan: consume la entrada entera y vuelca la secuencia de tokens. */
+static int runScan(const Options *options) {
+    FILE *out = fopen(options->output, "w");
+    if (out == NULL) {
+        perror(options->output);
+        return 1;
+    }
+
+    int token;
+    while ((token = yylex()) != 0) {
+        char singleChar[4];
+        const char *name = getTokenName(token);
+
+        if (name == NULL) {
+            snprintf(singleChar, sizeof(singleChar), "'%c'", token);
+            name = singleChar;
         }
-    } else {
-        yyin = stdin;
+        fprintf(out, "[Linea %d] %-12s %s\n", yylineno, name, yytext);
+        if (options->debug) {
+            printf("[Linea %d] %-12s %s\n", yylineno, name, yytext);
+        }
+    }
+    fclose(out);
+
+    if (lexical_errors > 0) {
+        remove(options->output); /* una etapa que fallo no deja archivo */
+        return 1;
+    }
+    return 0;
+}
+
+/* Etapas parse y sem: el producto es el AST, anotado o no segun la etapa. */
+static int writeASTOutput(const Options *options) {
+    FILE *out = fopen(options->output, "w");
+    if (out == NULL) {
+        perror(options->output);
+        return 1;
+    }
+
+    fprintAST(out, raizAST, 0);
+    fclose(out);
+
+    if (options->debug) {
+        printAST(raizAST, 0);
+    }
+    return 0;
+}
+
+/* Etapa codinter: el producto es el codigo de tres direcciones. */
+static int writeIntermediateCodeOutput(const Options *options) {
+    generateIntermediateCode(raizAST);
+    printTACList(getIntermediateCode());
+
+    FILE *out = fopen(options->output, "w");
+    if (out == NULL) {
+        perror(options->output);
+        return 1;
+    }
+
+    fputs(getBuiltString(), out);
+    fclose(out);
+
+    if (options->debug) {
+        printf("%s", getBuiltString());
+    }
+    return 0;
+}
+
+int main(int argc, char** argv) {
+    Options options;
+
+    if (parseArguments(argc, argv, &options) != 0) {
+        return 1;
+    }
+
+    if (options.target > CURRENT_TARGET) {
+        fprintf(stderr, "Error: la etapa '%s' todavia no esta implementada; la ultima es '%s'.\n",
+                getTargetName(options.target), getTargetName(CURRENT_TARGET));
+        freeOptions(&options);
+        return 1;
+    }
+
+    if (options.opt != NULL) {
+        fprintf(stderr, "Aviso: no hay optimizaciones implementadas todavia, se ignora -opt %s.\n",
+                options.opt);
+    }
+
+    yyin = fopen(options.input, "r");
+    if (yyin == NULL) {
+        perror(options.input);
+        freeOptions(&options);
+        return 1;
+    }
+
+    if (options.debug) {
+        printf("Entrada: %s\n", options.input);
+        printf("Etapa:   %s\n", getTargetName(options.target));
+        printf("Salida:  %s\n\n", options.output);
     }
 
     // Una sola salida al final, asi el archivo se cierra en todos los caminos
     // y cualquier fase que falle termina con codigo distinto de 0.
     int exit_code = 0;
 
-    if (yyparse() != 0) {
+    if (options.target == TARGET_SCAN) {
+        exit_code = runScan(&options);
+    } else if (yyparse() != 0) {
         // yyerror ya reporto el error sintactico por stderr
         exit_code = 1;
     } else if (lexical_errors > 0) {
@@ -212,24 +330,27 @@ int main(int argc, char** argv) {
         // terminar bien sobre una entrada que igual era incorrecta.
         fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores lexicos.\033[0m\n", lexical_errors);
         exit_code = 1;
+    } else if (options.target == TARGET_PARSE) {
+        exit_code = writeASTOutput(&options);
     } else {
-        printf("--- Analisis sintactico sin errores formales. ---\n");
         analyzeSemantics(raizAST, NULL, TYPE_VOID);
+
         if (semantic_errors > 0) {
             fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores semanticos.\033[0m\n", semantic_errors);
             exit_code = 1;
+        } else if (options.target == TARGET_SEM) {
+            exit_code = writeASTOutput(&options);
         } else {
-            printf("\n--- Arbol de Sintaxis Abstracta (AST) ---\n");
-            printAST(raizAST, 0);
-            printf("\n--- Analisis semantico completado sin errores. ---\n");
-            generateIntermediateCode(raizAST);
-            printf("\n--- String Builder Buffer (TAC) ---\n%s", getBuiltString());
+            exit_code = writeIntermediateCodeOutput(&options);
         }
     }
 
-    if (argc > 1 && yyin) {
-        fclose(yyin);
+    if (options.debug && exit_code == 0) {
+        printf("\nSalida escrita en %s\n", options.output);
     }
+
+    fclose(yyin);
+    freeOptions(&options);
     return exit_code;
 }
 #endif

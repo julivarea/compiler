@@ -6,3 +6,9 @@ test_runner
 build/
 .venv/
 site/
+*.lex
+*.sint
+*.sem
+*.ci
+*.ass
+*.opt
