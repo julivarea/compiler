@@ -225,62 +225,65 @@ static const char* getOpName(OperationType op) {
     }
 }
 
-void printAST(NodeAST *node, int level) {
+void fprintAST(FILE *out, NodeAST *node, int level) {
     if (node == NULL) return;
     
     // Imprimir indentación basada en el nivel
     for (int i = 0; i < level; i++) {
-        printf("  | ");
+        fprintf(out, "  | ");
     }
     
     // Imprimir información del nodo actual
     switch(node->nodeType) {
         case METHOD_DECLARATION_NODE:
-            printf("Metodo: %s (Retorna %s)\n", node->symbol->id, getDataTypeName(node->type));
+            fprintf(out, "Metodo: %s (Retorna %s)\n", node->symbol->id, getDataTypeName(node->type));
             break;
         case VARIABLE_DECLARATION_NODE:
-            printf("Declaracion Variable: %s #%d (Tipo %s)\n", node->symbol->id, node->symbol->uid, getDataTypeName(node->type));
+            fprintf(out, "Declaracion Variable: %s #%d (Tipo %s)\n", node->symbol->id, node->symbol->uid, getDataTypeName(node->type));
             break;
         case ID_NODE:
-            printf("ID: %s #%d (Tipo %s)\n", node->symbol->id, node->symbol->uid, getDataTypeName(node->type));
+            fprintf(out, "ID: %s #%d (Tipo %s)\n", node->symbol->id, node->symbol->uid, getDataTypeName(node->type));
             break;
         case CONSTANT_NODE:
             if (node->symbol->type == TYPE_INT) 
-                printf("Constante INT: %d\n", node->symbol->value.int_val);
+                fprintf(out, "Constante INT: %d\n", node->symbol->value.int_val);
             else if (node->symbol->type == TYPE_FLOAT) 
-                printf("Constante FLOAT: %f\n", node->symbol->value.float_val);
+                fprintf(out, "Constante FLOAT: %f\n", node->symbol->value.float_val);
             else if (node->symbol->type == TYPE_BOOL) 
-                printf("Constante BOOL: %s\n", node->symbol->value.int_val ? "true" : "false");
+                fprintf(out, "Constante BOOL: %s\n", node->symbol->value.int_val ? "true" : "false");
             break;
         case BINARYOPERATOR_NODE:
-            printf("Operacion Binaria: %s\n", getOpName(node->operationType));
+            fprintf(out, "Operacion Binaria: %s\n", getOpName(node->operationType));
             break;
         case ASSIGNMENT_NODE:
-            printf("Asignacion a: %s #%d (Tipo %s)\n", node->symbol->id, node->symbol->uid, getDataTypeName(node->type));
+            fprintf(out, "Asignacion a: %s #%d (Tipo %s)\n", node->symbol->id, node->symbol->uid, getDataTypeName(node->type));
             break;
         case IF_ELSE_NODE:
-            printf("If-Else\n");
+            fprintf(out, "If-Else\n");
             break;
         case WHILE_NODE:
-            printf("While\n");
+            fprintf(out, "While\n");
             break;
         case RETURN_NODE:
-            printf("Return\n");
+            fprintf(out, "Return\n");
             break;
         case METHOD_CALL_NODE:
-            printf("Llamada a Metodo: %s\n", node->symbol->id);
+            fprintf(out, "Llamada a Metodo: %s\n", node->symbol->id);
             break;
         case BLOCK_NODE:
-            printf("Bloque\n");
+            fprintf(out, "Bloque\n");
             break;
         case PARAMETERS_NODE:
-            printf("Parametros\n");
+            fprintf(out, "Parametros\n");
             break;
         default:
-            printf("Nodo Desconocido (Tipo %d)\n", node->nodeType);
+            fprintf(out, "Nodo Desconocido (Tipo %d)\n", node->nodeType);
     }
     
     for (int i = 0; i < node->childCount; i++) {
-        printAST(node->children[i], level + 1);
+        fprintAST(out, node->children[i], level + 1);
     }
+}
+void printAST(NodeAST *node, int level) {
+    fprintAST(stdout, node, level);
 }

@@ -14,8 +14,8 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 4. ~~**Lo que cada método debe exponer (secciones 2.2, 3.2 y 3.3):** `begin_func`/`end_func`, parámetros formales y `ret` implícito en métodos `void`.~~ **HECHO.**
 5. ~~**Desambiguación de variables por alcance (sección 2.3).**~~ **HECHO.**
 6. ~~**Declaraciones de variables, globales y locales (sección 3.4).**~~ **HECHO.**
-7. **La CLI (sección 4).** ← **siguiente.** Es independiente del diseño del TAC y puede hacerse en paralelo.
-8. **Coerción `int`/`float` (sección 2.4),** si se decide mantener `float` en el TAC. El enunciado solo exige TAC para enteros y lógicos, así que es opcional.
+7. ~~**La CLI (sección 4).**~~ **HECHO.**
+8. **Coerción `int`/`float` (sección 2.4),** ← **siguiente.** si se decide mantener `float` en el TAC. El enunciado solo exige TAC para enteros y lógicos, así que es opcional.
 9. **Pruebas unitarias (sección 5).**
 
 ---
@@ -345,7 +345,7 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 
 ## 4. Interfaz de Línea de Comandos (CLI) y Especificación del Compilador
 
-- [ ] **Soporte de argumentos y modos de salida según Tabla 1 de `00-TDS-proyecto.pdf`**
+- [x] **Soporte de argumentos y modos de salida según Tabla 1 de `00-TDS-proyecto.pdf`**
   - **Requisitos de la cátedra:**
     - Sintaxis: `c-tds [opcion] nombreArchivo.ctds`
     - Opción `-target <etapa>`: con etapas `scan`, `parse`, `codinter`, `assembly`.
@@ -355,6 +355,42 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
   - **Problema actual:** `src/bison.y` imprime encabezados y trazas fijas por `stdout` de forma incondicional (`printf("--- Analisis sintactico ...")`), y no procesa los argumentos de línea de comandos requeridos. Los ejemplos de `examples/` usan extensión `.txt` en lugar de `.ctds`.
   - **Ambigüedad a resolver:** el enunciado dice que por defecto se compila *"hasta la etapa corriente"* generando un archivo con la extensión de esa etapa, y también que sin `-target` se produce el ejecutable `nombreArchivo.out`. Mientras el compilador esté incompleto ambas cosas no pueden valer a la vez; hay que elegir una y documentarla.
   - **Acción:** Adecuar la función `main()` de `bison.y` para respetar los flags y generar el archivo `.ci`.
+
+  - **RESUELTO.** El parseo de argumentos vive en `src/cli.h` / `src/cli.c`, que solo
+    interpreta `argv` y no abre archivos ni ejecuta etapas. El driver quedó en `main()` de
+    `src/bison.y`, que decide qué fases correr según `-target` y escribe el archivo de la
+    etapa.
+
+  - **Salidas por etapa:** `scan` → `.lex` (secuencia de tokens con línea y lexema),
+    `parse` → `.sint` (AST sin anotar), `sem` → `.sem` (AST anotado con tipo y `uid`),
+    `codinter` → `.ci` (el TAC). `assembly` avisa que no está implementada y termina con 1.
+    Con `-opt` la extensión pasa a `.opt`.
+
+  - **Decisión: comportamiento por defecto.** El enunciado dice que sin `-target` se compila
+    "hasta la etapa corriente" con la extensión de esa etapa, y también que sin `-target` se
+    produce `nombreArchivo.out`. Mientras el compilador esté incompleto las dos cosas no
+    pueden valer a la vez, así que el default es la etapa corriente. La constante
+    `CURRENT_TARGET` de `src/cli.h` es lo único que hay que mover al cerrar cada etapa: el
+    default y el chequeo de "etapa no implementada" se acomodan solos.
+
+  - **Decisión: `-target sem` es una extensión nuestra.** El enunciado enumera `scan`,
+    `parse`, `codinter` y `assembly`, pero también lista la extensión `.sem`, con lo cual la
+    etapa semántica no era alcanzable por `-target`. Se acepta el valor para poder pedirla.
+
+  - **Decisión: `-opt` acepta valor opcional.** Como solo puede ir seguido del nombre de una
+    optimización o del archivo de entrada, si lo que sigue empieza con `-` o termina en
+    `.ctds` se asume `all`.
+
+  - **Cambios asociados:** se agregó `fprintAST()` en `src/ast.c` para volcar el árbol a un
+    stream cualquiera (`printAST()` quedó como el caso `stdout`); los ejemplos pasaron de
+    `.txt` a `.ctds`; se dejó de leer de la entrada estándar, porque el enunciado exige un
+    archivo con extensión `.ctds`; y las extensiones generadas se agregaron a `.gitignore`.
+
+  - **Verificación:** las cuatro etapas implementadas generan su archivo; 12 caminos de error
+    (etapa inexistente, extensión incorrecta, sin archivo, dos archivos, opción desconocida,
+    `-o` sin valor, archivo inexistente, y los errores léxico, sintáctico y semántico)
+    terminan con código 1 y **sin dejar archivo de salida**; y una compilación exitosa sin
+    `-debug` no imprime absolutamente nada.
 
 ---
 

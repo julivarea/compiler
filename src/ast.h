@@ -1,6 +1,8 @@
 #ifndef AST_H
 #define AST_H
 
+#include <stdio.h>
+
 #include "types.h"
 #include "symbol_table.h"
 
@@ -135,6 +137,13 @@ NodeAST *newIntLiteralNode(int value);
 NodeAST *newFloatLiteralNode(float value);
 NodeAST *newBoolLiteralNode(int value);
 
+/**
+ * Imprime el arbol indentado en un stream cualquiera.
+ * Lo usa el driver para volcar el AST al archivo de la etapa.
+ */
+void fprintAST(FILE *out, NodeAST *node, int level);
+
+/** Equivale a fprintAST(stdout, node, level). */
 void printAST(NodeAST *node, int level);
 const char* getDataTypeName(DataType type);
 
