@@ -36,6 +36,7 @@ typedef enum {
     /* Unarias: result = <op> arg1 */
     TAC_NEG,
     TAC_NOT,
+    TAC_INT_TO_FLOAT, /**< conversion de entero a real (regla 14) */
 
     /* Relacionales y lógicas: result = arg1 <op> arg2 */
     TAC_LT,

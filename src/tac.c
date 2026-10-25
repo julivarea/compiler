@@ -230,6 +230,13 @@ static void printInstruction(const TACInstruction *instruction) {
             buildStringf("\n");
             break;
 
+        case TAC_INT_TO_FLOAT:
+            printOperand(&instruction->result);
+            buildStringf(" = int_to_float ");
+            printOperand(&instruction->arg1);
+            buildStringf("\n");
+            break;
+
         case TAC_GOTO:
             buildStringf("goto ");
             printOperand(&instruction->arg1);

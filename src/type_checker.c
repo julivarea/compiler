@@ -132,7 +132,13 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
         }
     }
 
+    // La gramatica deja en el nodo un simbolo propio, sin la lista de
+    // parametros formales. Se reapunta al simbolo declarado para que la
+    // generacion de codigo pueda consultar el perfil del metodo sin volver a
+    // resolver nombres (lo necesita, por ejemplo, para coercionar argumentos).
+    node->symbol = method;
     node->type = method->type;
+
     return method->type;
 }
 

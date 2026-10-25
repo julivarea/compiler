@@ -15,8 +15,8 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 5. ~~**Desambiguación de variables por alcance (sección 2.3).**~~ **HECHO.**
 6. ~~**Declaraciones de variables, globales y locales (sección 3.4).**~~ **HECHO.**
 7. ~~**La CLI (sección 4).**~~ **HECHO.**
-8. **Coerción `int`/`float` (sección 2.4),** ← **siguiente.** si se decide mantener `float` en el TAC. El enunciado solo exige TAC para enteros y lógicos, así que es opcional.
-9. **Pruebas unitarias (sección 5).**
+8. ~~**Coerción `int`/`float` (sección 2.4).**~~ **HECHO.** El enunciado solo exige TAC para enteros y lógicos, así que el soporte de `float` es una extensión nuestra; se implementó igual para que sea coherente.
+9. **Pruebas unitarias (sección 5).** ← único pendiente; a cargo de Julián.
 
 ---
 
@@ -163,11 +163,45 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
     y ningún operando de variable quedó sin calificar.
 
 ### 2.4
-- [ ] **Conversión / Coerción de tipos entre `int` y `float`**
+- [x] **Conversión / Coerción de tipos entre `int` y `float`**
   - **Referencia:** Regla semántica 14 de la especificación: *"Se permiten coerciones o truncamientos entre int y float"*.
   - **Acción:** Analizar si el TAC requiere instrucciones explícitas de conversión de tipo (ej. `t0 = int_to_float x`) para facilitar la posterior traducción a instrucciones de punto flotante SSE/AVX en x86-64.
   - **Prioridad:** Baja. El enunciado del proyecto acota esta etapa a *"las operaciones con tipos enteros y lógicos y para las operaciones de control de flujo"*, así que el `float` en el TAC es una extensión nuestra.
-  - **Menor asociado:** las constantes `float` se emiten con `%f` (`3.5` sale como `3.500000`). Si se mantiene `float`, hay que fijar el formato.
+  - **Menor asociado:** las constantes `float` se emiten con `%f` (`3.5` sale como `3.500000`). Se dejó así: es verboso pero no ambiguo.
+
+  - **RESUELTO.** Opcode nuevo `TAC_INT_TO_FLOAT`, que se imprime como
+    `t0 = int_to_float <operando>`. La conversión se emite en las cinco situaciones donde el
+    análisis semántico acepta la coerción:
+
+    | situación | ejemplo | se convierte |
+    | --- | --- | --- |
+    | asignación a una variable `float` | `f = i;` | el valor asignado |
+    | operación binaria mixta | `f = i + 2.5;` | el operando entero |
+    | relacional mixto | `b = i < 1.5;` | el operando entero |
+    | argumento para un parámetro `float` | `mitad(4)` | el argumento |
+    | `return` en un método `float` | `return 7;` | el valor devuelto |
+
+  - **Motivo:** en x86-64 los enteros y los reales viven en bancos de registros distintos y se
+    operan con instrucciones distintas, así que la conversión tiene que ser una instrucción
+    explícita del TAC y no algo que el generador de código objeto tenga que deducir comparando
+    tipos de operandos.
+
+  - **Decisión:** la conversión se emite siempre que el operando sea entero, incluso si es una
+    constante (`t0 = int_to_float 7`). Resolver `7` como `7.0` en tiempo de compilación sería
+    plegado de constantes, que es trabajo de la etapa de optimización. Queda como candidata
+    obvia para esa etapa.
+
+  - **Cambio a una etapa anterior:** `analyzeMethodCall()` en `src/type_checker.c` anotaba el
+    tipo del nodo de llamada (`node->type = method->type`) pero no reapuntaba su símbolo al
+    método declarado, así que el nodo quedaba con el símbolo que fabrica la gramática, sin la
+    lista de parámetros formales. Sin eso la generación de código no puede saber qué tipo
+    espera cada parámetro. Se agregó `node->symbol = method;`, que es exactamente la misma
+    corrección que ya se había hecho para el destino de las asignaciones.
+
+  - **Verificación:** se probaron las cinco situaciones en un mismo programa, incluido el caso
+    `f = i * i`, donde la conversión se aplica al resultado entero y no a los operandos. Se
+    comprobó además que no aparece ninguna conversión donde no corresponde: `programa.ctds`
+    usa `float` pero sus operandos ya son reales, y genera cero conversiones.
 
 ---
 

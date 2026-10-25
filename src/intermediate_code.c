@@ -8,6 +8,10 @@
  * del AST no tenga que arrastrarla por cada llamada recursiva. */
 static TACList *current_code = NULL;
 
+/* Tipo de retorno del metodo que se esta generando: lo necesita RETURN_NODE
+ * para saber si hay que coercionar el valor devuelto. */
+static DataType current_method_type = TYPE_VOID;
+
 static int temp_count = 0;
 static int label_count = 0;
 
@@ -40,6 +44,40 @@ static int lastInstructionIsReturn(void) {
         && current_code->tail->op == TAC_RETURN;
 }
 
+/*
+ * Devuelve un operando float equivalente al recibido, emitiendo la conversion
+ * si hacia falta. La letra permite coerciones entre int y float, pero el
+ * generador de codigo objeto necesita que la conversion sea explicita: en
+ * x86-64 los enteros y los reales viven en bancos de registros distintos y se
+ * operan con instrucciones distintas.
+ *
+ * La conversion se emite siempre que el operando sea entero, incluso si es una
+ * constante. Resolver `3` como `3.0` en tiempo de compilacion seria plegado de
+ * constantes, que es trabajo de la etapa de optimizacion, no de esta.
+ */
+static TACOperand coerceToFloat(TACOperand operand) {
+    if (operand.type != TYPE_INT) {
+        return operand;
+    }
+
+    TACOperand result = newTemp(TYPE_FLOAT);
+    emit(TAC_INT_TO_FLOAT, result, operand, tacNone());
+
+    return result;
+}
+
+/* Si una operacion binaria mezcla int y float, se convierte el operando entero
+ * para que los dos lados tengan el mismo tipo. Aplica tanto a las aritmeticas,
+ * donde el resultado es float, como a las relacionales, donde el resultado es
+ * boolean pero la comparacion igual se hace entre reales. */
+static void coerceBinaryOperands(TACOperand *left, TACOperand *right) {
+    if (left->type == TYPE_FLOAT && right->type == TYPE_INT) {
+        *right = coerceToFloat(*right);
+    } else if (left->type == TYPE_INT && right->type == TYPE_FLOAT) {
+        *left = coerceToFloat(*left);
+    }
+}
+
 static TACOp getTACOpForOperation(OperationType operation) {
     switch (operation) {
         case OP_ADD:      return TAC_ADD;
@@ -64,8 +102,18 @@ static TACOp getTACOpForOperation(OperationType operation) {
  * llamada como sentencia, que solo se diferencian en si el resultado se guarda.
  */
 static void generateCallArguments(NodeAST *node) {
+    NodeAST *formals = (node->symbol != NULL) ? node->symbol->parameters : NULL;
+
     for (int i = 0; i < node->childCount; i++) {
         TACOperand argument = generateExpressionCode(node->children[i]);
+
+        // Pasar un entero a un parametro float es una coercion valida, y tiene
+        // que quedar explicita antes de empujar el argumento.
+        if (formals != NULL && i < formals->childCount
+            && formals->children[i]->type == TYPE_FLOAT) {
+            argument = coerceToFloat(argument);
+        }
+
         emit(TAC_PARAM, tacNone(), argument, tacNone());
     }
 }
@@ -149,6 +197,7 @@ TACOperand generateExpressionCode(NodeAST *node) {
                 emit(getTACOpForOperation(node->operationType), result, left, tacNone());
             } else {
                 TACOperand right = generateExpressionCode(GET_RIGHT(node));
+                coerceBinaryOperands(&left, &right);
                 emit(getTACOpForOperation(node->operationType), result, left, right);
             }
 
@@ -193,6 +242,9 @@ void generateStatementCode(NodeAST *node) {
             // declara aparte, en orden: el generador de codigo objeto necesita
             // ese orden para asociarlos a los registros de la convencion de
             // llamada.
+            DataType previousMethodType = current_method_type;
+            current_method_type = node->type;
+
             emit(TAC_BEGIN_FUNC, method, tacConstantInt(parameterCount), tacNone());
             for (int i = 0; i < parameterCount; i++) {
                 emit(TAC_PARAM_DECL, tacNone(), tacVariable(parameters->children[i]->symbol), tacNone());
@@ -210,12 +262,19 @@ void generateStatementCode(NodeAST *node) {
             }
 
             emit(TAC_END_FUNC, method, tacNone(), tacNone());
+
+            current_method_type = previousMethodType;
             break;
         }
 
         case ASSIGNMENT_NODE:
             if (node->symbol && node->symbol->id) {
                 TACOperand value = generateExpressionCode(GET_RIGHT(node));
+
+                if (node->symbol->type == TYPE_FLOAT) {
+                    value = coerceToFloat(value);
+                }
+
                 emit(TAC_ASSIGN, tacVariable(node->symbol), value, tacNone());
             }
             break;
@@ -232,6 +291,10 @@ void generateStatementCode(NodeAST *node) {
         case RETURN_NODE: {
             NodeAST *expression = GET_EXPRESSION(node);
             TACOperand value = (expression == NULL) ? tacNone() : generateExpressionCode(expression);
+
+            if (expression != NULL && current_method_type == TYPE_FLOAT) {
+                value = coerceToFloat(value);
+            }
 
             emit(TAC_RETURN, tacNone(), value, tacNone());
             break;
@@ -307,6 +370,7 @@ void generateIntermediateCode(NodeAST *root) {
     current_code = createTACList();
     temp_count = 0;
     label_count = 0;
+    current_method_type = TYPE_VOID;
 
     // En el nivel superior del programa solo hay declaraciones de variables
     // globales y de metodos. Las globales se reconocen por estar aca: son las
