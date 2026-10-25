@@ -278,6 +278,17 @@ void generateStatementCode(NodeAST *node) {
             break;
         }
 
+        // Toda declaracion que llega hasta aca esta dentro del cuerpo de un
+        // metodo (las globales las maneja generateIntermediateCode), incluidas
+        // las de los bloques anidados, que se emiten en el lugar donde
+        // aparecen. El generador de codigo objeto recorre el rango entre
+        // begin_func y end_func para dimensionar el frame.
+        case VARIABLE_DECLARATION_NODE:
+            if (node->symbol != NULL) {
+                emit(TAC_LOCAL_DECL, tacNone(), tacVariable(node->symbol), tacNone());
+            }
+            break;
+
         case BLOCK_NODE:
         default:
             for (int i = 0; i < node->childCount; i++) {
@@ -297,8 +308,20 @@ void generateIntermediateCode(NodeAST *root) {
     temp_count = 0;
     label_count = 0;
 
+    // En el nivel superior del programa solo hay declaraciones de variables
+    // globales y de metodos. Las globales se reconocen por estar aca: son las
+    // unicas que no estan dentro del cuerpo de un metodo.
     for (int i = 0; i < root->childCount; i++) {
-        generateStatementCode(root->children[i]);
+        NodeAST *declaration = root->children[i];
+        if (declaration == NULL) continue;
+
+        if (declaration->nodeType == VARIABLE_DECLARATION_NODE) {
+            if (declaration->symbol != NULL) {
+                emit(TAC_GLOBAL_DECL, tacNone(), tacVariable(declaration->symbol), tacNone());
+            }
+        } else {
+            generateStatementCode(declaration);
+        }
     }
 }
 

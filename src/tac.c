@@ -208,6 +208,13 @@ static void printInstruction(const TACInstruction *instruction) {
             buildStringf("\n");
             break;
 
+        case TAC_GLOBAL_DECL:
+        case TAC_LOCAL_DECL:
+            buildStringf(instruction->op == TAC_GLOBAL_DECL ? "global " : "local ");
+            printOperand(&instruction->arg1);
+            buildStringf(", %s\n", getDataTypeName(instruction->arg1.type));
+            break;
+
         case TAC_ASSIGN:
             printOperand(&instruction->result);
             buildStringf(" = ");

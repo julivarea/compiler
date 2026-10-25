@@ -13,8 +13,8 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 3. ~~**Corto circuito `&&` / `||` (sección 2.1).**~~ **HECHO.** Lo exige el enunciado de forma explícita.
 4. ~~**Lo que cada método debe exponer (secciones 2.2, 3.2 y 3.3):** `begin_func`/`end_func`, parámetros formales y `ret` implícito en métodos `void`.~~ **HECHO.**
 5. ~~**Desambiguación de variables por alcance (sección 2.3).**~~ **HECHO.**
-6. **Declaraciones de variables, globales y locales (sección 3.4).** ← **siguiente.**
-7. **La CLI (sección 4).** Es independiente del diseño del TAC y puede hacerse en paralelo.
+6. ~~**Declaraciones de variables, globales y locales (sección 3.4).**~~ **HECHO.**
+7. **La CLI (sección 4).** ← **siguiente.** Es independiente del diseño del TAC y puede hacerse en paralelo.
 8. **Coerción `int`/`float` (sección 2.4),** si se decide mantener `float` en el TAC. El enunciado solo exige TAC para enteros y lógicos, así que es opcional.
 9. **Pruebas unitarias (sección 5).**
 
@@ -278,7 +278,7 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
     construcción que la instrucción inmediatamente anterior es siempre un `ret`.
 
 ### 3.4
-- [ ] **Las declaraciones de variables no emiten ninguna instrucción**
+- [x] **Las declaraciones de variables no emiten ninguna instrucción**
   - **Problema:** `VARIABLE_DECLARATION_NODE` cae al `default` de `generateStatementCode`, que recorre sus hijos (no tiene), de modo que no emite nada. Ni las variables globales ni las locales aparecen en el TAC.
   - **Impacto:** El generador x86-64 necesita el listado de variables globales para emitir el segmento `.data`/`.bss`, y el de locales (más los temporales usados) para calcular el tamaño del stack frame de cada función.
   - **Acción:** Decidir entre dos alternativas y documentarla:
@@ -286,11 +286,49 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
     2. Que el generador de código objeto consulte la tabla de símbolos.
   - **Relacionado:** ver la sección 3.5, porque la alternativa 2 hoy no es posible.
 
+  - **RESUELTO: se eligió la alternativa 1.** Opcodes nuevos `TAC_GLOBAL_DECL` y
+    `TAC_LOCAL_DECL`, que se imprimen como `global a@1, INT` y `local x@5, INT`. El tipo sale
+    del propio operando, así que el generador de código objeto tiene el tamaño de cada
+    variable sin consultar nada externo.
+
+  - **Motivo de la elección:** mantiene el código intermedio autocontenido, que es la misma
+    línea de la migración de la sección 3.1. El intérprete, el optimizador y el generador
+    x86-64 trabajan con un único artefacto y no dependen de que sobreviva una estructura
+    paralela del front-end.
+
+  - **Cómo se distingue global de local:** las globales son las declaraciones que cuelgan
+    directamente de la raíz del AST, y las maneja `generateIntermediateCode()`. Cualquier
+    `VARIABLE_DECLARATION_NODE` que llegue a `generateStatementCode()` está, por construcción,
+    dentro del cuerpo de un método.
+
+  - **Locales de bloques anidados:** se emiten en el lugar donde aparecen, no al principio del
+    método. Para dimensionar el frame, el generador de código objeto recorre el rango entre
+    `begin_func` y `end_func` y junta todas las `local`. Es una pasada previa trivial y
+    conserva la posición original de cada declaración.
+
+  - **Los parámetros no generan `local`:** ya los declara `param_decl`. El generador tiene que
+    reservarles lugar en el frame igual, porque llegan en registros y hay que volcarlos.
+
+  - **Verificación:** sobre los 15 programas del corpus se emiten 10 declaraciones globales y
+    15 locales; ninguna `global` quedó dentro de un método y ninguna `local` o `param_decl`
+    quedó fuera de uno.
+
 ### 3.5
-- [ ] **El árbol de scopes se descarta después del análisis semántico**
+- [x] **El árbol de scopes se descarta después del análisis semántico**
   - **Problema:** `analyzeSemantics()` devuelve el `Scope` global, pero `main()` en `src/bison.y` ignora el valor de retorno. Una vez terminado el análisis, ninguna estructura viva contiene la tabla de símbolos.
   - **Impacto:** Si el generador de código objeto va a necesitar los scopes (para distinguir global de local, para calcular offsets, o para la alternativa 2 de la sección 3.4), hoy no los tiene.
   - **Acción:** Decidir si se conserva el `Scope` global en una variable accesible por las etapas siguientes, o si el TAC se autocontiene con toda la información necesaria. Condiciona las secciones 2.3, 3.2 y 3.4.
+
+  - **RESUELTO por decisión: el TAC se autocontiene.** Con las secciones 2.3, 3.2 y 3.4
+    cerradas, el código intermedio ya lleva todo lo que necesitan las etapas siguientes: qué
+    variables existen y de qué tipo (`global` / `local`), cuáles son los parámetros formales y
+    en qué orden (`param_decl`), dónde empieza y termina cada método, y qué entidad declarada
+    es cada identificador (el sufijo `@uid`). No hace falta conservar el árbol de scopes, y
+    por eso se deja como está: `analyzeSemantics()` lo devuelve y el llamador lo descarta.
+
+  - Si en algún momento una etapa necesitara los scopes (por ejemplo para un análisis que
+    recorra la jerarquía léxica), alcanza con guardar el valor de retorno de
+    `analyzeSemantics()` en `src/bison.y`.
 
 ### 3.6
 - [ ] **Los contadores de temporales son globales a todo el programa**

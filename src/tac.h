@@ -47,6 +47,10 @@ typedef enum {
     /* Movimiento de datos: result = arg1 */
     TAC_ASSIGN,
 
+    /* Declaraciones: arg1 es la variable, y su tipo viaja dentro del operando */
+    TAC_GLOBAL_DECL, /**< variable global: va al segmento de datos     */
+    TAC_LOCAL_DECL,  /**< variable local: ocupa un lugar en el frame   */
+
     /* Control de flujo */
     TAC_LABEL,     /**< result: etiqueta que se define aquí     */
     TAC_GOTO,      /**< arg1: etiqueta destino                  */
