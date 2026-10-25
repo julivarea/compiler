@@ -209,22 +209,33 @@ compila su propia copia y **no** valida el ejecutable que dejó `build.sh`. Por
 eso al final conviene probar el compilador de verdad sobre un ejemplo:
 
 ```bash
-./mi_compilador examples/programa.txt
+./mi_compilador -debug examples/programa.ctds
 ```
 
-`programa.txt` usa todas las construcciones de la gramática, así que sirve de
-prueba de humo de todas las fases de una sola pasada. Para chequear que los
-errores se siguen detectando, `./mi_compilador examples/programa_con_error.txt`
-tiene que reportar un error semántico y salir con código 1.
+`programa.ctds` usa todas las construcciones de la gramática, así que sirve de
+prueba de humo de todas las fases de una sola pasada, y con `-debug` se ve el
+TAC generado. Para chequear que los errores se siguen detectando,
+`./mi_compilador examples/programa_con_error.ctds` tiene que reportar un error
+semántico y salir con código 1 sin dejar archivo de salida.
+
+### Prueba completa por etapas
+
+Para validar las cuatro etapas implementadas sobre un mismo programa:
+
+```bash
+for etapa in scan parse sem codinter; do ./mi_compilador -target $etapa examples/programa.ctds || echo "FALLO en $etapa"; done
+```
+
+Debe generar `programa.lex`, `programa.sint`, `programa.sem` y `programa.ci` en
+`examples/`, sin imprimir nada. Son artefactos generados: están en `.gitignore`
+y se borran con `rm -f examples/*.lex examples/*.sint examples/*.sem examples/*.ci`.
 
 ## Problemas conocidos
 
-- **Falta la interfaz de línea de comandos que pide la letra**
-  (`-target`, `-opt`, `-debug`, `-o`, extensión `.ctds` obligatoria, una salida
-  por etapa). Hoy el compilador toma un único argumento posicional y, si no se
-  le pasa ninguno, lee de la entrada estándar. Los ejemplos todavía usan `.txt`.
-- **Sin `-debug`, el compilador igual imprime el AST.** La letra pide que una
-  compilación exitosa no imprima nada salvo que se pida debugging.
+- **`-target assembly` no está implementado**: avisa y termina con código 1.
+  Lo mismo `-opt`, que se acepta y se ignora con un aviso, porque todavía no hay
+  ninguna optimización.
+- **No se genera el ejecutable `.out`**, porque falta la etapa de assembly.
 - **Un método solo ve a los declarados antes que él.** No hay declaración
   adelantada en C-TDS, así que `main(){ g(); }` con `g` definido más abajo da
   `Método no declarado`. Es lo que pide la letra ("todo se declara antes de
