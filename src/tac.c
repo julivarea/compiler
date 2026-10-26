@@ -61,21 +61,25 @@ TACOperand tacVariable(Symbol *symbol) {
 }
 
 TACOperand tacConstantInt(int value) {
-    TACOperand operand = makeOperand(OPERAND_CONSTANT, TYPE_INT, NULL);
+    char str[TAC_NAME_LENGTH];
+    snprintf(str, sizeof(str), "%d", value);
+    TACOperand operand = makeOperand(OPERAND_CONSTANT, TYPE_INT, str);
     operand.value.int_val = value;
 
     return operand;
 }
 
 TACOperand tacConstantBool(int value) {
-    TACOperand operand = makeOperand(OPERAND_CONSTANT, TYPE_BOOL, NULL);
+    TACOperand operand = makeOperand(OPERAND_CONSTANT, TYPE_BOOL, value ? "true" : "false");
     operand.value.int_val = value;
 
     return operand;
 }
 
 TACOperand tacConstantFloat(float value) {
-    TACOperand operand = makeOperand(OPERAND_CONSTANT, TYPE_FLOAT, NULL);
+    char str[TAC_NAME_LENGTH];
+    snprintf(str, sizeof(str), "%f", value);
+    TACOperand operand = makeOperand(OPERAND_CONSTANT, TYPE_FLOAT, str);
     operand.value.float_val = value;
 
     return operand;
@@ -160,134 +164,87 @@ static const char *getOperatorSymbol(TACOp op) {
     }
 }
 
-static void printOperand(const TACOperand *operand) {
-    if (operand->kind != OPERAND_CONSTANT) {
-        buildStringf("%s", operand->name);
-        return;
-    }
-
-    switch (operand->type) {
-        case TYPE_INT:
-            buildStringf("%d", operand->value.int_val);
-            break;
-        case TYPE_BOOL:
-            buildStringf("%s", operand->value.int_val ? "true" : "false");
-            break;
-        case TYPE_FLOAT:
-            buildStringf("%f", operand->value.float_val);
-            break;
-        default:
-            break;
-    }
+static const char *getOperand(const TACOperand *operand) {
+    return (operand != NULL) ? operand->name : "";
 }
 
 static void printInstruction(const TACInstruction *instruction) {
+    const char *res  = getOperand(&instruction->result);
+    const char *arg1 = getOperand(&instruction->arg1);
+    const char *arg2 = getOperand(&instruction->arg2);
+
     switch (instruction->op) {
         case TAC_LABEL:
-            printOperand(&instruction->result);
-            buildStringf(":\n");
+            buildStringf("%s:\n", res);
             break;
 
         case TAC_BEGIN_FUNC:
-            buildStringf("begin_func ");
-            printOperand(&instruction->result);
-            buildStringf(", ");
-            printOperand(&instruction->arg1);
-            buildStringf("\n");
+            buildStringf("begin_func %s, %s\n", res, arg1);
             break;
 
         case TAC_END_FUNC:
-            buildStringf("end_func ");
-            printOperand(&instruction->result);
-            buildStringf("\n");
+            buildStringf("end_func %s\n", res);
             break;
 
         case TAC_PARAM_DECL:
-            buildStringf("param_decl ");
-            printOperand(&instruction->arg1);
-            buildStringf("\n");
+            buildStringf("param_decl %s\n", arg1);
             break;
 
         case TAC_GLOBAL_DECL:
         case TAC_LOCAL_DECL:
-            buildStringf(instruction->op == TAC_GLOBAL_DECL ? "global " : "local ");
-            printOperand(&instruction->arg1);
-            buildStringf(", %s\n", getDataTypeName(instruction->arg1.type));
+            buildStringf("%s %s, %s\n",
+                         instruction->op == TAC_GLOBAL_DECL ? "global" : "local",
+                         arg1, getDataTypeName(instruction->arg1.type));
             break;
 
         case TAC_ASSIGN:
-            printOperand(&instruction->result);
-            buildStringf(" = ");
-            printOperand(&instruction->arg1);
-            buildStringf("\n");
+            buildStringf("%s = %s\n", res, arg1);
             break;
 
         case TAC_NEG:
         case TAC_NOT:
-            printOperand(&instruction->result);
-            buildStringf(" = %s", getOperatorSymbol(instruction->op));
-            printOperand(&instruction->arg1);
-            buildStringf("\n");
+            buildStringf("%s = %s%s\n", res, getOperatorSymbol(instruction->op), arg1);
             break;
 
         case TAC_INT_TO_FLOAT:
-            printOperand(&instruction->result);
-            buildStringf(" = int_to_float ");
-            printOperand(&instruction->arg1);
-            buildStringf("\n");
+            buildStringf("%s = int_to_float %s\n", res, arg1);
             break;
 
         case TAC_GOTO:
-            buildStringf("goto ");
-            printOperand(&instruction->arg1);
-            buildStringf("\n");
+            buildStringf("goto %s\n", arg1);
             break;
 
         case TAC_IF_FALSE:
         case TAC_IF_TRUE:
-            buildStringf("if ");
-            printOperand(&instruction->arg1);
-            buildStringf(instruction->op == TAC_IF_FALSE ? " false goto " : " true goto ");
-            printOperand(&instruction->arg2);
-            buildStringf("\n");
+            buildStringf("if %s %s %s\n",
+                         arg1,
+                         instruction->op == TAC_IF_FALSE ? "false goto" : "true goto",
+                         arg2);
             break;
 
         case TAC_PARAM:
-            buildStringf("param ");
-            printOperand(&instruction->arg1);
-            buildStringf("\n");
+            buildStringf("param %s\n", arg1);
             break;
 
         case TAC_CALL:
-            // El resultado es opcional: una llamada como sentencia lo descarta.
             if (instruction->result.kind != OPERAND_NONE) {
-                printOperand(&instruction->result);
-                buildStringf(" = ");
+                buildStringf("%s = call %s, %s\n", res, arg1, arg2);
+            } else {
+                buildStringf("call %s, %s\n", arg1, arg2);
             }
-            buildStringf("call ");
-            printOperand(&instruction->arg1);
-            buildStringf(", ");
-            printOperand(&instruction->arg2);
-            buildStringf("\n");
             break;
 
         case TAC_RETURN:
-            buildStringf("ret");
             if (instruction->arg1.kind != OPERAND_NONE) {
-                buildStringf(" ");
-                printOperand(&instruction->arg1);
+                buildStringf("ret %s\n", arg1);
+            } else {
+                buildStringf("ret\n");
             }
-            buildStringf("\n");
             break;
 
         default:
             /* Binarias: result = arg1 <op> arg2 */
-            printOperand(&instruction->result);
-            buildStringf(" = ");
-            printOperand(&instruction->arg1);
-            buildStringf(" %s ", getOperatorSymbol(instruction->op));
-            printOperand(&instruction->arg2);
-            buildStringf("\n");
+            buildStringf("%s = %s %s %s\n", res, arg1, getOperatorSymbol(instruction->op), arg2);
             break;
     }
 }
