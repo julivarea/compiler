@@ -227,17 +227,7 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
 
         // b = !a, b = !5
         case TAC_NOT: {
-        // analizamos si tenemos que recuperar el valor de la variable o si es inmediato
-        switch(instruction->arg1->operandKind){
-            case OPERAND_TEMP, OPERAND_VARIABLE:
-            asmLoad(ASM_RAX, getSlotOffset(instruction->arg1->name));
-            break;
-
-            case OPERAND_CONSTANT:
-             asmLoadImm(ASM_RAX,value);
-            break;
-        }
-        // definimos que operaciones corresponden segun el tipo del argumento
+        loadRegisterBasedOnOperand(ASM_RAX, instruction->arg1, frame);
         switch (instruction->arg1->dataType) {
         case TYPE_BOOL:
             asmOpImm(ASM_XOR, ASM_RAX, 1);
@@ -249,28 +239,26 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
         }
         // guardamos el resultado extrayendolo del rax
-        asmStore(getSlotOffset(frame, instruction->result->name));
+        asmStore(getSlotOffset(frame, instruction->result->name), ASM_RAX);
         }
         break;
 
 
         case TAC_LT:
-            loadOperand(&instruction->arg1, "%eax", frame);
-            loadOperand(&instruction->arg2, "%edx", frame);
-            buildStringf("    cmpl %%edx, %%eax\n");
-            buildStringf("    setl %%al\n");
-            buildStringf("    movzbl %%al, %%eax\n");
-            storeOperand(&instruction->result, "%eax", frame);
-            break;
+            loadRegisterBasedOnOperand(ASM_RAX, instruction->arg1);
+            loadRegisterBasedOnOperand(ASM_RDX, instruction->arg2);
+            asmOpReg(ASM_CMP, ASM_RAX, ASM_RDX);
+            asmSetCC(ASM_SETL, ASM_RAX); // 1 si es mayor, 0 menor o igual
+            asmStore(getSlotOffset(frame, instruction->result->name), ASM_RAX);
+        break;
 
-        case TAC_GT:
-            loadOperand(&instruction->arg1, "%eax", frame);
-            loadOperand(&instruction->arg2, "%edx", frame);
-            buildStringf("    cmpl %%edx, %%eax\n");
-            buildStringf("    setg %%al\n");
-            buildStringf("    movzbl %%al, %%eax\n");
-            storeOperand(&instruction->result, "%eax", frame);
-            break;
+         case TAC_GT:
+            loadRegisterBasedOnOperand(ASM_RAX, instruction->arg1);
+            loadRegisterBasedOnOperand(ASM_RDX, instruction->arg2);
+            asmOpReg(ASM_CMP, ASM_RAX, ASM_RDX);
+            asmSetCC(ASM_SETG, ASM_RAX); // 1 si es mayor, 0 menor o igual
+            asmStore(getSlotOffset(frame, instruction->result->name), ASM_RAX);
+        break;
 
         case TAC_EQ:
             loadOperand(&instruction->arg1, "%eax", frame);

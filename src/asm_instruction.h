@@ -13,17 +13,25 @@
  * @brief Códigos de operación (opcodes) de Assembly x86-64 soportados.
  */
 typedef enum {
-    ASM_MOV,  /**< Movimiento / transferencia de datos: movl src, dest */
-    ASM_ADD,  /**< Suma entera: addl src, dest */
-    ASM_SUB,  /**< Resta entera: subl src, dest */
-    ASM_IMUL, /**< Multiplicación entera con signo: imull src, dest */
-    ASM_IDIV, /**< División entera con signo: idivl src */
-    ASM_NEG,  /**< Negación aritmética a complemento a dos: negl dest */
-    ASM_AND,  /**< Conjunción a nivel de bits: andl src, dest */
-    ASM_OR,   /**< Disyunción a nivel de bits: orl src, dest */
-    ASM_XOR,  /**< Disyunción exclusiva (útil para negación booleana): xorl src, dest */
-    ASM_NOT,  /**< Negación a nivel de bits complemento a uno: notl dest */
-    ASM_CMP   /**< Comparación entera (modifica flags): cmpl src, dest */
+    ASM_MOV,    /**< Movimiento / transferencia de datos: movl src, dest */
+    ASM_ADD,    /**< Suma entera: addl src, dest */
+    ASM_SUB,    /**< Resta entera: subl src, dest */
+    ASM_IMUL,   /**< Multiplicación entera con signo: imull src, dest */
+    ASM_IDIV,   /**< División entera con signo: idivl src */
+    ASM_NEG,    /**< Negación aritmética a complemento a dos: negl dest */
+    ASM_AND,    /**< Conjunción a nivel de bits: andl src, dest */
+    ASM_OR,     /**< Disyunción a nivel de bits: orl src, dest */
+    ASM_XOR,    /**< Disyunción exclusiva (útil para negación booleana): xorl src, dest */
+    ASM_NOT,    /**< Negación a nivel de bits complemento a uno: notl dest */
+    ASM_CMP,    /**< Comparación entera (modifica flags): cmpl src, dest */
+    ASM_SETE,   /**< Seteo condicional si igual / cero (ZF=1): sete dest (8 bits) */
+    ASM_SETNE,  /**< Seteo condicional si distinto / no cero (ZF=0): setne dest (8 bits) */
+    ASM_SETL,   /**< Seteo condicional si menor con signo: setl dest (8 bits) */
+    ASM_SETLE,  /**< Seteo condicional si menor o igual con signo: setle dest (8 bits) */
+    ASM_SETG,   /**< Seteo condicional si mayor con signo: setg dest (8 bits) */
+    ASM_SETGE,  /**< Seteo condicional si mayor o igual con signo: setge dest (8 bits) */
+    ASM_MOVZBL, /**< Extensión de cero de byte a doubleword: movzbl src8, dest32 */
+    ASM_CLTD    /**< Extensión de signo de %eax a %edx:%eax para división idivl: cltd */
 } AsmOpcode;
 
 /**
@@ -167,18 +175,47 @@ AsmInstruction asmOpReg(AsmOpcode op, AsmRegister dest, AsmRegister src);
  */
 AsmInstruction asmOpImm(AsmOpcode op, AsmRegister dest, int imm);
 
-AsmInstruction loadRegisterBasedOnOperand(AsmRegister dest, TacOperand operand);
-
 /**
  * @brief Crea una operación unaria sobre un registro.
  *
- * Genera la instrucción: `<op> destReg` (ej. negl %eax).
+ * Genera la instrucción: `<op> destReg` (ej. negl %eax, idivl %ecx).
  *
- * @param op Código de operación unaria (ej. ASM_NEG).
+ * @param op Código de operación unaria (ej. ASM_NEG, ASM_NOT, ASM_IDIV).
  * @param dest Registro objetivo sobre el cual se aplica la operación.
  * @return AsmInstruction unaria configurada.
  */
 AsmInstruction asmOpUnary(AsmOpcode op, AsmRegister dest);
+
+/**
+ * @brief Crea una instrucción de seteo condicional (sete, setne, setl, setle, setg, setge).
+ *
+ * Genera la instrucción: `<setcc> %reg8` (ej: sete %al).
+ *
+ * @param op Código de operación de seteo condicional (ej. ASM_SETE, ASM_SETL).
+ * @param dest Registro cuyo byte inferior se asignará (ej: ASM_RAX -> %al).
+ * @return AsmInstruction configurada para el seteo condicional.
+ */
+AsmInstruction asmSetCC(AsmOpcode op, AsmRegister dest);
+
+/**
+ * @brief Crea una instrucción de extensión de cero de byte a long (32 bits).
+ *
+ * Genera la instrucción: `movzbl %src8, %dest32` (ej: movzbl %al, %eax).
+ *
+ * @param dest Registro de destino de 32 bits (ej: ASM_RAX -> %eax).
+ * @param src Registro de origen de 8 bits (ej: ASM_RAX -> %al).
+ * @return AsmInstruction configurada para extensión con ceros.
+ */
+AsmInstruction asmMovzbl(AsmRegister dest, AsmRegister src);
+
+/**
+ * @brief Crea una instrucción de extensión de signo cltd (%eax a %edx:%eax).
+ *
+ * Genera la instrucción: `cltd`.
+ *
+ * @return AsmInstruction configurada para cltd.
+ */
+AsmInstruction asmCltd(void);
 
 /**
  * @brief Emite la representación textual de una AsmInstruction al string_builder en sintaxis AT&T (GAS).
