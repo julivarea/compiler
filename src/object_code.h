@@ -12,6 +12,7 @@
  */
 
 #include "tac.h"
+#include "asm_instruction.h"
 
 /**
  * Macro para alinear un valor hacia arriba a un múltiplo de 'alignment'.
@@ -40,7 +41,6 @@ typedef struct {
     int paramCount;   /**< Contador de parámetros procesados en el prólogo */
 } FunctionFrame;
 
-/* --- Gestión de frames --- */
 
 /**
  * @brief Crea e inicializa un nuevo stack frame para una función.

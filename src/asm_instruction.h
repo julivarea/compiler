@@ -1,0 +1,188 @@
+#ifndef ASM_INSTRUCTION_H
+#define ASM_INSTRUCTION_H
+
+/**
+ * @file asm_instruction.h
+ * @brief Estructuras y constructores de instrucciones x86-64 para carga, guardado y operaciones aritmético-lógicas.
+ *
+ * Este módulo define el modelo de datos para representar instrucciones Assembly x86-64
+ * orientadas a operaciones sobre registros, constantes numéricas y accesos al stack frame.
+ */
+
+/**
+ * @brief Códigos de operación (opcodes) de Assembly x86-64 soportados.
+ */
+typedef enum {
+    ASM_MOV,  /**< Movimiento / transferencia de datos: movl src, dest */
+    ASM_ADD,  /**< Suma entera: addl src, dest */
+    ASM_SUB,  /**< Resta entera: subl src, dest */
+    ASM_IMUL, /**< Multiplicación entera con signo: imull src, dest */
+    ASM_IDIV, /**< División entera con signo: idivl src */
+    ASM_NEG,  /**< Negación aritmética a complemento a dos: negl dest */
+    ASM_AND,  /**< Conjunción a nivel de bits: andl src, dest */
+    ASM_OR,   /**< Disyunción a nivel de bits: orl src, dest */
+    ASM_XOR,  /**< Disyunción exclusiva (útil para negación booleana): xorl src, dest */
+    ASM_NOT,  /**< Negación a nivel de bits complemento a uno: notl dest */
+    ASM_CMP   /**< Comparación entera (modifica flags): cmpl src, dest */
+} AsmOpcode;
+
+/**
+ * @brief Registros x86-64 (en su variante de 32 bits) empleados en operaciones.
+ */
+typedef enum {
+    ASM_RAX, /**< %eax: registro acumulador / destino principal de operaciones */
+    ASM_RDX, /**< %edx: segundo operando en operaciones binarias */
+    ASM_RCX  /**< %ecx: divisor en idivl / registro auxiliar */
+} AsmRegister;
+
+/**
+ * @brief Discriminador para el tipo de operando en Assembly.
+ */
+typedef enum {
+    ASM_OP_NONE = 0, /**< Operando ausente (para instrucciones unarias como negl) */
+    ASM_OP_REG,      /**< Operando ubicado en un registro de la CPU (%eax, %edx, etc.) */
+    ASM_OP_MEM,      /**< Operando en memoria relativo al marco de pila (offset(%rbp)) */
+    ASM_OP_IMM       /**< Valor constante numérico inmediato ($val) */
+} AsmOperandType;
+
+/**
+ * @brief Representa un operando individual de una instrucción Assembly.
+ */
+typedef struct {
+    AsmOperandType type; /**< Tipo de operando */
+    union {
+        AsmRegister reg; /**< Identificador del registro cuando type == ASM_OP_REG */
+        int offset;     /**< Desplazamiento respecto a %rbp cuando type == ASM_OP_MEM (ej: -4) */
+        int immediate;  /**< Valor numérico constante cuando type == ASM_OP_IMM (ej: 1, 42) */
+    };
+} AsmOperand;
+
+/**
+ * @brief Representación intermedia de una instrucción de Assembly x86-64.
+ *
+ * En sintaxis AT&T (GNU Assembler / GAS), el formato de emisión textual es:
+ *     <mnemonic> <src>, <dest>
+ */
+typedef struct {
+    AsmOpcode opcode;  /**< Código de operación a ejecutar */
+    AsmOperand dest;   /**< Operando destino (registro o memoria) */
+    AsmOperand src;    /**< Operando origen (registro, memoria, inmediato o NONE) */
+} AsmInstruction;
+
+/* --- Helpers rápidos de construcción de operandos --- */
+
+/**
+ * @brief Construye un operando de tipo registro.
+ * @param r Registro x86 seleccionado.
+ * @return AsmOperand configurado como registro.
+ */
+static inline AsmOperand opReg(AsmRegister r) {
+    AsmOperand op = { .type = ASM_OP_REG, .reg = r };
+    return op;
+}
+
+/**
+ * @brief Construye un operando de memoria relativo a %rbp.
+ * @param offset Desplazamiento en bytes respecto a %rbp (ej: -4, -8).
+ * @return AsmOperand configurado como memoria de stack.
+ */
+static inline AsmOperand opMem(int offset) {
+    AsmOperand op = { .type = ASM_OP_MEM, .offset = offset };
+    return op;
+}
+
+/**
+ * @brief Construye un operando inmediato constante.
+ * @param val Valor numérico entero.
+ * @return AsmOperand configurado como constante inmediata.
+ */
+static inline AsmOperand opImm(int val) {
+    AsmOperand op = { .type = ASM_OP_IMM, .immediate = val };
+    return op;
+}
+
+/**
+ * @brief Construye un operando vacío (sin uso).
+ * @return AsmOperand de tipo ASM_OP_NONE.
+ */
+static inline AsmOperand opNone(void) {
+    AsmOperand op = { .type = ASM_OP_NONE };
+    return op;
+}
+
+/**
+ * @brief Crea una instrucción de carga desde el stack a un registro.
+ *
+ * Genera la instrucción: `movl offset(%rbp), destReg`.
+ *
+ * @param destReg Registro destino donde se colocará el valor.
+ * @param stackOffset Desplazamiento en el stack respecto a %rbp.
+ * @return AsmInstruction configurada para cargar desde memoria.
+ */
+AsmInstruction asmLoad(AsmRegister destReg, int stackOffset);
+
+/**
+ * @brief Crea una instrucción de carga de un valor inmediato a un registro.
+ *
+ * Genera la instrucción: `movl $val, destReg`.
+ *
+ * @param destReg Registro destino donde se almacenará la constante.
+ * @param val Valor entero constante.
+ * @return AsmInstruction configurada para cargar una constante.
+ */
+AsmInstruction asmLoadImm(AsmRegister destReg, int val);
+
+/**
+ * @brief Crea una instrucción de guardado desde un registro hacia el stack frame.
+ *
+ * Genera la instrucción: `movl srcReg, offset(%rbp)`.
+ *
+ * @param stackOffset Desplazamiento destino en el stack relativo a %rbp.
+ * @param srcReg Registro de origen cuyo contenido se guardará.
+ * @return AsmInstruction configurada para escribir en memoria.
+ */
+AsmInstruction asmStore(int stackOffset, AsmRegister srcReg);
+
+/**
+ * @brief Crea una operación binaria entre dos registros de la CPU.
+ *
+ * Genera la instrucción: `<op> srcReg, destReg` (destReg = destReg <op> srcReg).
+ *
+ * @param op Código de operación (ej. ASM_ADD, ASM_SUB, ASM_OR).
+ * @param dest Registro destino que se modifica con el resultado.
+ * @param src Registro origen que opera sobre el destino.
+ * @return AsmInstruction configurada para operar entre registros.
+ */
+AsmInstruction asmOpReg(AsmOpcode op, AsmRegister dest, AsmRegister src);
+
+/**
+ * @brief Crea una operación aritmética o lógica con una constante inmediata.
+ *
+ * Genera la instrucción: `<op> $imm, destReg` (destReg = destReg <op> imm).
+ *
+ * @param op Código de operación (ej. ASM_XOR para negación booleana con $1).
+ * @param dest Registro destino modificado por la operación.
+ * @param imm Valor constante inmediato.
+ * @return AsmInstruction configurada con operando inmediato.
+ */
+AsmInstruction asmOpImm(AsmOpcode op, AsmRegister dest, int imm);
+
+/**
+ * @brief Crea una operación unaria sobre un registro.
+ *
+ * Genera la instrucción: `<op> destReg` (ej. negl %eax).
+ *
+ * @param op Código de operación unaria (ej. ASM_NEG).
+ * @param dest Registro objetivo sobre el cual se aplica la operación.
+ * @return AsmInstruction unaria configurada.
+ */
+AsmInstruction asmOpUnary(AsmOpcode op, AsmRegister dest);
+
+/**
+ * @brief Emite la representación textual de una AsmInstruction al string_builder en sintaxis AT&T (GAS).
+ *
+ * @param inst Puntero a la instrucción a emitir.
+ */
+void emitAsm(const AsmInstruction *inst);
+
+#endif /* ASM_INSTRUCTION_H */

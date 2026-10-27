@@ -4,6 +4,7 @@
 #include "object_code.h"
 #include "string_builder.h"
 
+
 static const char *ARG_REGISTERS_32[] = {
     "%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"
 };
@@ -162,7 +163,6 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_LOCAL_DECL:
-            /* El espacio ya fue reservado en la pasada 1 */
             break;
 
         case TAC_ASSIGN:
@@ -170,56 +170,70 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             storeOperand(&instruction->result, "%eax", frame);
             break;
 
-        case TAC_ADD:
+        case TAC_ADD: {
             loadOperand(&instruction->arg1, "%eax", frame);
             loadOperand(&instruction->arg2, "%edx", frame);
-            buildStringf("    addl %%edx, %%eax\n");
+            AsmInstruction inst = asmOpReg(ASM_ADD, ASM_RAX, ASM_RDX);
+            emitAsm(&inst);
             storeOperand(&instruction->result, "%eax", frame);
             break;
+        }
 
-        case TAC_SUB:
+        case TAC_SUB: {
             loadOperand(&instruction->arg1, "%eax", frame);
             loadOperand(&instruction->arg2, "%edx", frame);
-            buildStringf("    subl %%edx, %%eax\n");
+            AsmInstruction inst = asmOpReg(ASM_SUB, ASM_RAX, ASM_RDX);
+            emitAsm(&inst);
             storeOperand(&instruction->result, "%eax", frame);
             break;
+        }
 
-        case TAC_MUL:
+        case TAC_MUL: {
             loadOperand(&instruction->arg1, "%eax", frame);
             loadOperand(&instruction->arg2, "%edx", frame);
-            buildStringf("    imull %%edx, %%eax\n");
+            AsmInstruction inst = asmOpReg(ASM_IMUL, ASM_RAX, ASM_RDX);
+            emitAsm(&inst);
             storeOperand(&instruction->result, "%eax", frame);
             break;
+        }
 
-        case TAC_DIV:
+        case TAC_DIV: {
             loadOperand(&instruction->arg1, "%eax", frame);
             buildStringf("    cltd\n");
             loadOperand(&instruction->arg2, "%ecx", frame);
-            buildStringf("    idivl %%ecx\n");
+            AsmInstruction inst = asmOpUnary(ASM_IDIV, ASM_RCX);
+            emitAsm(&inst);
             storeOperand(&instruction->result, "%eax", frame);
             break;
+        }
 
-        case TAC_MOD:
+        case TAC_MOD: {
             loadOperand(&instruction->arg1, "%eax", frame);
             buildStringf("    cltd\n");
             loadOperand(&instruction->arg2, "%ecx", frame);
-            buildStringf("    idivl %%ecx\n");
+            AsmInstruction inst = asmOpUnary(ASM_IDIV, ASM_RCX);
+            emitAsm(&inst);
             storeOperand(&instruction->result, "%edx", frame);
             break;
+        }
 
-        case TAC_NEG:
+        case TAC_NEG: {
             loadOperand(&instruction->arg1, "%eax", frame);
-            buildStringf("    negl %%eax\n");
+            AsmInstruction inst = asmOpUnary(ASM_NEG, ASM_RAX);
+            emitAsm(&inst);
             storeOperand(&instruction->result, "%eax", frame);
             break;
+        }
 
-        case TAC_NOT:
-            loadOperand(&instruction->arg1, "%eax", frame);
-            buildStringf("    cmpl $0, %%eax\n");
-            buildStringf("    sete %%al\n");
-            buildStringf("    movzbl %%al, %%eax\n");
-            storeOperand(&instruction->result, "%eax", frame);
-            break;
+        case TAC_NOT: {
+        AsmInstruction loadOperandInstruction = asmOpReg(ASM_MOV, )
+        emitAsm(&loadOperandInstruction);
+        AsmInstruction logicalNotInstruction = asmOpImm(ASM_XOR, ASM_RAX, 1);
+        emitAsm(&logicalNotInstruction);
+        storeOperand(&instruction->result, "%eax", frame);
+
+    break;
+}
 
         case TAC_LT:
             loadOperand(&instruction->arg1, "%eax", frame);
@@ -248,19 +262,23 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             storeOperand(&instruction->result, "%eax", frame);
             break;
 
-        case TAC_AND:
+        case TAC_AND: {
             loadOperand(&instruction->arg1, "%eax", frame);
             loadOperand(&instruction->arg2, "%edx", frame);
-            buildStringf("    andl %%edx, %%eax\n");
+            AsmInstruction inst = asmOpReg(ASM_AND, ASM_RAX, ASM_RDX);
+            emitAsm(&inst);
             storeOperand(&instruction->result, "%eax", frame);
             break;
+        }
 
-        case TAC_OR:
+        case TAC_OR: {
             loadOperand(&instruction->arg1, "%eax", frame);
             loadOperand(&instruction->arg2, "%edx", frame);
-            buildStringf("    orl %%edx, %%eax\n");
+            AsmInstruction inst = asmOpReg(ASM_OR, ASM_RAX, ASM_RDX);
+            emitAsm(&inst);
             storeOperand(&instruction->result, "%eax", frame);
             break;
+        }
 
         case TAC_INT_TO_FLOAT:
             loadOperand(&instruction->arg1, "%eax", frame);
@@ -395,7 +413,6 @@ void generateAssembly(const TACList *tacList) {
 
             frame->frameSize = ALIGN_UP(frame->nextOffset, 16);
 
-            /* Segunda pasada: emitir Assembly */
             emitPrologue(frame);
 
             current = instruction->next;
