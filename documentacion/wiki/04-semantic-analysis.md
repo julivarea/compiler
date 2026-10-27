@@ -34,18 +34,18 @@ classDiagram
     Scope "1" *-- "many" Symbol : symbols
 ```
 
-### Archivos Fuente Relevantes
-- [src/symbol_table.h](file:///home/francisco/compiler/src/symbol_table.h): Definición de estructuras `Symbol`, `Scope`, enumerado `SymbolType` y firmas de operaciones.
-- [src/symbol_table.c](file:///home/francisco/compiler/src/symbol_table.c): Implementación de creación de ámbitos, redimensionamiento dinámico, asignación de UID y algoritmos de búsqueda.
-- [src/types.h](file:///home/francisco/compiler/src/types.h): Definición de enumerados `DataType` (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL`, `TYPE_VOID`, `TYPE_ERROR`).
-- [src/type_checker.c](file:///home/francisco/compiler/src/type_checker.c): Reglas de compatibilidad (`isAssignable`), inferencia de expresiones y validación de tipos.
-- [src/semantic_analyzer.c](file:///home/francisco/compiler/src/semantic_analyzer.c): Recorrido del AST, control de flujo, validación de retornos y verificación del método `main()`.
+### Responsabilidades y Componentes de la Etapa
+- **Tabla de Símbolos (`SymbolTable`):** Definición de las estructuras `Symbol`, `Scope`, enumerado `SymbolType` y operaciones sobre entornos.
+- **Gestor de Ámbitos:** Creación de ámbitos jerárquicos, redimensionamiento dinámico, asignación de UID secuencial y algoritmos de búsqueda (*scoping*).
+- **Sistema de Tipos:** Definición de enumerados `DataType` (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL`, `TYPE_VOID`, `TYPE_ERROR`).
+- **Verificador de Tipos (`TypeChecker`):** Reglas de compatibilidad (`isAssignable`), inferencia en expresiones y validación de tipos.
+- **Analizador Semántico:** Recorrido recursivo del AST, control de flujo, validación de retornos y verificación del método principal `main()`.
 
 ---
 
 ## 2. Modelado de Símbolos (`Symbol`)
 
-Un `Symbol` ([src/symbol_table.h](file:///home/francisco/compiler/src/symbol_table.h#L46-L63)) representa una entidad con nombre, tipo o valor semántico dentro del compilador (variable declarada, función o constante literal).
+Un `Symbol` representa una entidad con nombre, tipo o valor semántico dentro del compilador (variable declarada, función o constante literal).
 
 ```mermaid
 classDiagram
@@ -109,7 +109,7 @@ classDiagram
 
 ## 3. Modelado de la Tabla de Símbolos (`Scope`)
 
-El entorno léxico del programa no es una tabla plana única, sino un **árbol jerárquico de ámbitos** (`Scope` en [src/symbol_table.h](file:///home/francisco/compiler/src/symbol_table.h#L31-L41)). Cada función y cada bloque delimitado por llaves `{ ... }` posee su propia tabla de símbolos.
+El entorno léxico del programa no es una tabla plana única, sino un **árbol jerárquico de ámbitos** (`Scope`). Cada función y cada bloque delimitado por llaves `{ ... }` posee su propia tabla de símbolos.
 
 ### Campos de la Estructura `Scope`
 - **`level` (`int`):** Nivel de profundidad léxica (`0` para el ámbito global, `1` para funciones, `2+` para bloques anidados).
@@ -167,7 +167,7 @@ El nodo `METHOD_DECLARATION_NODE` contiene dos ramas: `children[0]` (`PARAMETERS
 
 ## 5. Verificación de Tipos y Reglas Semánticas
 
-Durante el recorrido del AST, el módulo `type_checker.c` deduce y comprueba los tipos de todas las expresiones:
+Durante el recorrido del AST, el componente de verificación de tipos deduce y comprueba los tipos de todas las expresiones:
 
 - **Asignaciones:** El tipo de la expresión debe ser asignable a la variable destino según `isAssignable()`:
   - Tipos idénticos (`int` a `int`, `float` a `float`, `boolean` a `boolean`).
