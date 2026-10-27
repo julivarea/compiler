@@ -240,12 +240,12 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
         // definimos que operaciones corresponden segun el tipo del argumento
         switch (instruction->arg1->dataType) {
         case TYPE_BOOL:
-            asmXorImm(ASM_RAX, 1);
+            asmOpImm(ASM_XOR, ASM_RAX, 1);
             break;
 
         case TYPE_INT:
-            asmCmpImm(ASM_RAX, 0);
-            asmSetCC(ASM_SETE, ASM_RAX);
+            asmOpImm(ASM_CMP, ASM_RAX, 0);
+            asmOpUnary(ASM_SETE, ASM_RAX);
             break;
         }
         // guardamos el resultado extrayendolo del rax
