@@ -22,6 +22,19 @@ AsmInstruction asmStore(int stackOffset, AsmRegister srcReg) {
     return inst;
 }
 
+AsmInstruction loadRegisterBasedOnOperand(AsmRegister dest, TacOperand operand){
+    switch(instruction->arg1->operandKind){
+            case OPERAND_TEMP, OPERAND_VARIABLE:
+                return asmLoad(dest, getSlotOffset(operand->name));
+            case OPERAND_CONSTANT:
+             return asmLoadImm(dest,value);
+            // case OPERAND_GLOBAL:
+            // TODO
+    }
+    return NULL;
+}
+
+
 AsmInstruction asmOpReg(AsmOpcode op, AsmRegister dest, AsmRegister src) {
     AsmInstruction inst = { op, opReg(dest), opReg(src) };
     return inst;

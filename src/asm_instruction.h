@@ -167,6 +167,8 @@ AsmInstruction asmOpReg(AsmOpcode op, AsmRegister dest, AsmRegister src);
  */
 AsmInstruction asmOpImm(AsmOpcode op, AsmRegister dest, int imm);
 
+AsmInstruction loadRegisterBasedOnOperand(AsmRegister dest, TacOperand operand);
+
 /**
  * @brief Crea una operación unaria sobre un registro.
  *
