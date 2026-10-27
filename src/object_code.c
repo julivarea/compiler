@@ -225,15 +225,34 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
         }
 
+        // b = !a, b = !5
         case TAC_NOT: {
-        AsmInstruction loadOperandInstruction = asmOpReg(ASM_MOV, )
-        emitAsm(&loadOperandInstruction);
-        AsmInstruction logicalNotInstruction = asmOpImm(ASM_XOR, ASM_RAX, 1);
-        emitAsm(&logicalNotInstruction);
-        storeOperand(&instruction->result, "%eax", frame);
+        // analizamos si tenemos que recuperar el valor de la variable o si es inmediato
+        switch(instruction->arg1->operandKind){
+            case OPERAND_TEMP, OPERAND_VARIABLE:
+            asmLoad(ASM_RAX, getSlotOffset(instruction->arg1->name));
+            break;
 
-    break;
-}
+            case OPERAND_CONSTANT:
+             asmLoadImm(ASM_RAX,value);
+            break;
+        }
+        // definimos que operaciones corresponden segun el tipo del argumento
+        switch (instruction->arg1->dataType) {
+        case TYPE_BOOL:
+            asmXorImm(ASM_RAX, 1);
+            break;
+
+        case TYPE_INT:
+            asmCmpImm(ASM_RAX, 0);
+            asmSetCC(ASM_SETE, ASM_RAX);
+            break;
+        }
+        // guardamos el resultado extrayendolo del rax
+        asmStore(getSlotOffset(frame, instruction->result->name));
+        }
+        break;
+
 
         case TAC_LT:
             loadOperand(&instruction->arg1, "%eax", frame);
