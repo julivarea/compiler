@@ -1,6 +1,8 @@
 #ifndef ASM_INSTRUCTION_H
 #define ASM_INSTRUCTION_H
 
+#include <string.h>
+
 /**
  * @file asm_instruction.h
  * @brief Estructuras y constructores de instrucciones x86-64 para carga, guardado y operaciones aritmético-lógicas.
@@ -50,6 +52,7 @@ typedef enum {
     ASM_OP_NONE = 0, /**< Operando ausente (para instrucciones unarias como negl) */
     ASM_OP_REG,      /**< Operando ubicado en un registro de la CPU (%eax, %edx, etc.) */
     ASM_OP_MEM,      /**< Operando en memoria relativo al marco de pila (offset(%rbp)) */
+    ASM_OP_GLOBAL,   /**< Operando en memoria para variable global (nombre(%rip)) */
     ASM_OP_IMM       /**< Valor constante numérico inmediato ($val) */
 } AsmOperandType;
 
@@ -59,10 +62,12 @@ typedef enum {
 typedef struct {
     AsmOperandType type; /**< Tipo de operando */
     union {
-        AsmRegister reg; /**< Identificador del registro cuando type == ASM_OP_REG */
-        int offset;     /**< Desplazamiento respecto a %rbp cuando type == ASM_OP_MEM (ej: -4) */
-        int immediate;  /**< Valor numérico constante cuando type == ASM_OP_IMM (ej: 1, 42) */
+        AsmRegister reg;        /**< Identificador del registro cuando type == ASM_OP_REG */
+        int offset;            /**< Desplazamiento respecto a %rbp cuando type == ASM_OP_MEM (ej: -4) */
+        int immediate;         /**< Valor numérico constante cuando type == ASM_OP_IMM (ej: 1, 42) */
+        const char *globalName; /**< Nombre de la variable global cuando type == ASM_OP_GLOBAL */
     };
+    char customReg[16]; /**< Nombre explícito del registro (ej: "%edi", "%esi", etc.) */
 } AsmOperand;
 
 /**
@@ -80,12 +85,30 @@ typedef struct {
 /* --- Helpers rápidos de construcción de operandos --- */
 
 /**
- * @brief Construye un operando de tipo registro.
+ * @brief Construye un operando de tipo registro mediante enum.
  * @param r Registro x86 seleccionado.
  * @return AsmOperand configurado como registro.
  */
 static inline AsmOperand opReg(AsmRegister r) {
-    AsmOperand op = { .type = ASM_OP_REG, .reg = r };
+    AsmOperand op;
+    memset(&op, 0, sizeof(op));
+    op.type = ASM_OP_REG;
+    op.reg = r;
+    return op;
+}
+
+/**
+ * @brief Construye un operando de tipo registro por nombre de cadena (ej: "%edi", "%eax").
+ * @param name Nombre del registro con prefijo '%'.
+ * @return AsmOperand configurado como registro.
+ */
+static inline AsmOperand opRegStr(const char *name) {
+    AsmOperand op;
+    memset(&op, 0, sizeof(op));
+    op.type = ASM_OP_REG;
+    if (name != NULL) {
+        strncpy(op.customReg, name, sizeof(op.customReg) - 1);
+    }
     return op;
 }
 
@@ -95,7 +118,10 @@ static inline AsmOperand opReg(AsmRegister r) {
  * @return AsmOperand configurado como memoria de stack.
  */
 static inline AsmOperand opMem(int offset) {
-    AsmOperand op = { .type = ASM_OP_MEM, .offset = offset };
+    AsmOperand op;
+    memset(&op, 0, sizeof(op));
+    op.type = ASM_OP_MEM;
+    op.offset = offset;
     return op;
 }
 
@@ -105,8 +131,29 @@ static inline AsmOperand opMem(int offset) {
  * @return AsmOperand configurado como constante inmediata.
  */
 static inline AsmOperand opImm(int val) {
-    AsmOperand op = { .type = ASM_OP_IMM, .immediate = val };
+    AsmOperand op;
+    memset(&op, 0, sizeof(op));
+    op.type = ASM_OP_IMM;
+    op.immediate = val;
     return op;
+}
+
+/**
+ * @brief Construye un operando de memoria relativo a %rip para variables globales.
+ * @param name Nombre del identificador global.
+ * @return AsmOperand configurado como global.
+ */
+static inline AsmOperand opGlobal(const char *name) {
+    AsmOperand op;
+    memset(&op, 0, sizeof(op));
+    op.type = ASM_OP_GLOBAL;
+    op.globalName = name;
+    return op;
+}
+
+/** Alias para compatibilidad */
+static inline AsmOperand opConstant(const char *globalVariable) {
+    return opGlobal(globalVariable);
 }
 
 /**
@@ -114,20 +161,19 @@ static inline AsmOperand opImm(int val) {
  * @return AsmOperand de tipo ASM_OP_NONE.
  */
 static inline AsmOperand opNone(void) {
-    AsmOperand op = { .type = ASM_OP_NONE };
+    AsmOperand op;
+    memset(&op, 0, sizeof(op));
+    op.type = ASM_OP_NONE;
     return op;
 }
 
 /**
- * @brief Crea una instrucción de carga desde el stack a un registro.
- *
- * Genera la instrucción: `movl offset(%rbp), destReg`.
- *
- * @param destReg Registro destino donde se colocará el valor.
- * @param stackOffset Desplazamiento en el stack respecto a %rbp.
- * @return AsmInstruction configurada para cargar desde memoria.
+ * @brief Crea una instrucción de carga genérica (movl src, dest).
+ * @param dest Operando destino (generalmente un registro).
+ * @param src Operando origen (inmediato, memoria o global).
+ * @return AsmInstruction configurada para carga.
  */
-AsmInstruction asmLoad(AsmRegister destReg, int stackOffset);
+AsmInstruction asmLoad(AsmOperand dest, AsmOperand src);
 
 /**
  * @brief Crea una instrucción de carga de un valor inmediato a un registro.
@@ -141,15 +187,12 @@ AsmInstruction asmLoad(AsmRegister destReg, int stackOffset);
 AsmInstruction asmLoadImm(AsmRegister destReg, int val);
 
 /**
- * @brief Crea una instrucción de guardado desde un registro hacia el stack frame.
- *
- * Genera la instrucción: `movl srcReg, offset(%rbp)`.
- *
- * @param stackOffset Desplazamiento destino en el stack relativo a %rbp.
- * @param srcReg Registro de origen cuyo contenido se guardará.
+ * @brief Crea una instrucción de guardado genérica (movl src, dest).
+ * @param dest Operando destino (memoria o global).
+ * @param src Operando origen (generalmente un registro).
  * @return AsmInstruction configurada para escribir en memoria.
  */
-AsmInstruction asmStore(int stackOffset, AsmRegister srcReg);
+AsmInstruction asmStore(AsmOperand dest, AsmOperand src);
 
 /**
  * @brief Crea una operación binaria entre dos registros de la CPU.

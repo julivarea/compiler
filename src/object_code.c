@@ -99,31 +99,33 @@ static const char *getGlobalName(const TACOperand *op) {
 static void loadOperand(const TACOperand *op, const char *reg, const FunctionFrame *frame) {
     if (op == NULL) return;
 
-    if (op->kind == OPERAND_CONSTANT) {
-        buildStringf("    movl $%d, %s\n", op->value.int_val, reg);
+    AsmInstruction inst;
+    if (op->kind == OPERAND_CONSTANT) { // en caso de que sea valor inmediato
+        inst = asmLoad(opRegStr(reg), opImm(op->value.int_val));
     } else {
         int offset = getSlotOffset(frame, op->name);
         if (offset != 0) {
-            buildStringf("    movl %d(%%rbp), %s\n", offset, reg);
+            inst = asmLoad(opRegStr(reg), opMem(offset));
         } else {
-            /* Variable global */
             const char *name = getGlobalName(op);
-            buildStringf("    movl %s(%%rip), %s\n", name, reg);
+            inst = asmLoad(opRegStr(reg), opGlobal(name));
         }
     }
+    emitAsm(&inst);
 }
 
 static void storeOperand(const TACOperand *op, const char *reg, const FunctionFrame *frame) {
     if (op == NULL) return;
 
     int offset = getSlotOffset(frame, op->name);
-    if (offset != 0) {
-        buildStringf("    movl %s, %d(%%rbp)\n", reg, offset);
-    } else {
-        /* Variable global */
+    AsmInstruction inst;
+    if (offset != 0) { // variable local, parámetro o temporal en el stack
+        inst = asmStore(opMem(offset), opRegStr(reg));
+    } else {           // no está en el frame: es variable global
         const char *name = getGlobalName(op);
-        buildStringf("    movl %s, %s(%%rip)\n", reg, name);
+        inst = asmStore(opGlobal(name), opRegStr(reg));
     }
+    emitAsm(&inst);
 }
 
 /**
@@ -356,10 +358,10 @@ static void emitGlobals(const TACList *tacList) {
                 hasGlobals = 1;
             }
             const char *name = getGlobalName(&inst->arg1);
-            buildStringf(".globl %s\n", name);
-            buildStringf(".align 4\n");
+            buildStringf(".globl %s\n", name); // emite para poder usado de forma global
+            buildStringf(".align 4\n"); // guarda 4 bytes de lugar
             buildStringf("%s:\n", name);
-            buildStringf("    .long 0\n");
+            buildStringf("    .long 0\n"); // en el lenguaje siempre comienzan vacios
         }
     }
 
@@ -431,7 +433,6 @@ void generateAssembly(const TACList *tacList) {
             current = instruction->next;
 
             while (current != NULL && current->op != TAC_END_FUNC) {
-
                 generateInstruction(current, frame);
                 current = current->next;
             }

@@ -7,8 +7,8 @@
 #include "asm_instruction.h"
 #include "string_builder.h"
 
-AsmInstruction asmLoad(AsmRegister destReg, int stackOffset) {
-    AsmInstruction inst = { ASM_MOV, opReg(destReg), opMem(stackOffset) };
+AsmInstruction asmLoad(AsmOperand dest, AsmOperand src) {
+    AsmInstruction inst = { ASM_MOV, dest, src };
     return inst;
 }
 
@@ -17,8 +17,8 @@ AsmInstruction asmLoadImm(AsmRegister destReg, int val) {
     return inst;
 }
 
-AsmInstruction asmStore(int stackOffset, AsmRegister srcReg) {
-    AsmInstruction inst = { ASM_MOV, opMem(stackOffset), opReg(srcReg) };
+AsmInstruction asmStore(AsmOperand dest, AsmOperand src) {
+    AsmInstruction inst = { ASM_MOV, dest, src };
     return inst;
 }
 
@@ -128,13 +128,20 @@ static const char *getOpcodeMnemonic(AsmOpcode op) {
 static void formatOperand(const AsmOperand *op, char *buf, size_t size) {
     switch (op->type) {
         case ASM_OP_REG:
-            snprintf(buf, size, "%s", getRegisterName(op->reg));
+            if (op->customReg[0] != '\0') {
+                snprintf(buf, size, "%s", op->customReg);
+            } else {
+                snprintf(buf, size, "%s", getRegisterName(op->reg));
+            }
             break;
         case ASM_OP_MEM:
             snprintf(buf, size, "%d(%%rbp)", op->offset);
             break;
         case ASM_OP_IMM:
             snprintf(buf, size, "$%d", op->immediate);
+            break;
+        case ASM_OP_GLOBAL:
+            snprintf(buf, size, "%s(%%rip)", op->globalName ? op->globalName : "");
             break;
         case ASM_OP_NONE:
         default:
