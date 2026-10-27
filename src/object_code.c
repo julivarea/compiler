@@ -126,6 +126,77 @@ static void storeOperand(const TACOperand *op, const char *reg, const FunctionFr
     }
 }
 
+/**
+ * @brief Obtiene la cadena representativa de un registro para el emisor.
+ */
+static const char *getRegName(AsmRegister reg) {
+    switch (reg) {
+        case ASM_RAX: return "%eax";
+        case ASM_RDX: return "%edx";
+        case ASM_RCX: return "%ecx";
+        default:      return "%eax";
+    }
+}
+
+/**
+ * @brief Carga un operando TAC (constante, stack slot o global) en el registro x86 especificado.
+ * @param reg Registro destino (ej. ASM_RAX -> %eax).
+ * @param op Operando TAC a cargar.
+ * @param frame Marco de pila de la función actual.
+ */
+static void loadRegisterBasedOnOperand(AsmRegister reg, const TACOperand *op, const FunctionFrame *frame) {
+    loadOperand(op, getRegName(reg), frame);
+}
+
+/**
+ * @brief Guarda el contenido de un registro x86 en la posición del operando TAC destino (stack o global).
+ * @param op Operando TAC de destino.
+ * @param reg Registro origen cuyo valor se guardará.
+ * @param frame Marco de pila de la función actual.
+ */
+static void storeRegisterToOperand(const TACOperand *op, AsmRegister reg, const FunctionFrame *frame) {
+    storeOperand(op, getRegName(reg), frame);
+}
+
+/**
+ * @brief Abstracción para operaciones binarias aritmético-lógicas (ADD, SUB, MUL, AND, OR):
+ * 1. Carga arg1 en %eax
+ * 2. Carga arg2 en %edx
+ * 3. Ejecuta la operación: op %edx, %eax
+ * 4. Guarda %eax en result
+ * @param inst Instrucción TAC binaria.
+ * @param op Código de operación Assembly.
+ * @param frame Marco de pila actual.
+ */
+static void emitBinaryOp(const TACInstruction *inst, AsmOpcode op, const FunctionFrame *frame) {
+    loadRegisterBasedOnOperand(ASM_RAX, &inst->arg1, frame);
+    loadRegisterBasedOnOperand(ASM_RDX, &inst->arg2, frame);
+    AsmInstruction asmInst = asmOpReg(op, ASM_RAX, ASM_RDX);
+    emitAsm(&asmInst);
+    storeRegisterToOperand(&inst->result, ASM_RAX, frame);
+}
+
+/**
+ * @brief Abstracción para operaciones relacionales (<, >, ==):
+ * 1. Carga arg1 en %eax
+ * 2. Carga arg2 en %edx
+ * 3. cmpl %edx, %eax
+ * 4. set<cond> %al + movzbl %al, %eax
+ * 5. Guarda el booleano resultante en result
+ * @param inst Instrucción TAC relacional.
+ * @param setcc Mnemónico de condición (ej. "setl", "setg", "sete").
+ * @param frame Marco de pila actual.
+ */
+static void emitRelationalOp(const TACInstruction *inst, const char *setcc, const FunctionFrame *frame) {
+    loadRegisterBasedOnOperand(ASM_RAX, &inst->arg1, frame);
+    loadRegisterBasedOnOperand(ASM_RDX, &inst->arg2, frame);
+    AsmInstruction cmpInst = asmOpReg(ASM_CMP, ASM_RAX, ASM_RDX);
+    emitAsm(&cmpInst);
+    buildStringf("    %s %%al\n", setcc);
+    buildStringf("    movzbl %%al, %%eax\n");
+    storeRegisterToOperand(&inst->result, ASM_RAX, frame);
+}
+
 void emitPrologue(const FunctionFrame *frame) {
     if (frame == NULL) return;
 
@@ -166,126 +237,61 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_ASSIGN:
-            loadOperand(&instruction->arg1, "%eax", frame);
-            storeOperand(&instruction->result, "%eax", frame);
+            loadRegisterBasedOnOperand(ASM_RAX, &instruction->arg1, frame);
+            storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
             break;
 
-        case TAC_ADD: {
-            loadOperand(&instruction->arg1, "%eax", frame);
-            loadOperand(&instruction->arg2, "%edx", frame);
-            AsmInstruction inst = asmOpReg(ASM_ADD, ASM_RAX, ASM_RDX);
-            emitAsm(&inst);
-            storeOperand(&instruction->result, "%eax", frame);
+        case TAC_ADD:
+            emitBinaryOp(instruction, ASM_ADD, frame);
             break;
-        }
 
-        case TAC_SUB: {
-            loadOperand(&instruction->arg1, "%eax", frame);
-            loadOperand(&instruction->arg2, "%edx", frame);
-            AsmInstruction inst = asmOpReg(ASM_SUB, ASM_RAX, ASM_RDX);
-            emitAsm(&inst);
-            storeOperand(&instruction->result, "%eax", frame);
+        case TAC_SUB:
+            emitBinaryOp(instruction, ASM_SUB, frame);
             break;
-        }
 
-        case TAC_MUL: {
-            loadOperand(&instruction->arg1, "%eax", frame);
-            loadOperand(&instruction->arg2, "%edx", frame);
-            AsmInstruction inst = asmOpReg(ASM_IMUL, ASM_RAX, ASM_RDX);
-            emitAsm(&inst);
-            storeOperand(&instruction->result, "%eax", frame);
+        case TAC_MUL:
+            emitBinaryOp(instruction, ASM_IMUL, frame);
             break;
-        }
 
         case TAC_DIV: {
-            loadOperand(&instruction->arg1, "%eax", frame);
-            buildStringf("    cltd\n");
-            loadOperand(&instruction->arg2, "%ecx", frame);
-            AsmInstruction inst = asmOpUnary(ASM_IDIV, ASM_RCX);
-            emitAsm(&inst);
-            storeOperand(&instruction->result, "%eax", frame);
-            break;
+            // todo
         }
 
         case TAC_MOD: {
-            loadOperand(&instruction->arg1, "%eax", frame);
-            buildStringf("    cltd\n");
-            loadOperand(&instruction->arg2, "%ecx", frame);
-            AsmInstruction inst = asmOpUnary(ASM_IDIV, ASM_RCX);
-            emitAsm(&inst);
-            storeOperand(&instruction->result, "%edx", frame);
-            break;
+            // todo
         }
 
         case TAC_NEG: {
-            loadOperand(&instruction->arg1, "%eax", frame);
-            AsmInstruction inst = asmOpUnary(ASM_NEG, ASM_RAX);
-            emitAsm(&inst);
-            storeOperand(&instruction->result, "%eax", frame);
-            break;
+            // todo
         }
 
-        // b = !a, b = !5
         case TAC_NOT: {
-        loadRegisterBasedOnOperand(ASM_RAX, instruction->arg1, frame);
-        switch (instruction->arg1->dataType) {
-        case TYPE_BOOL:
-            asmOpImm(ASM_XOR, ASM_RAX, 1);
-            break;
-
-        case TYPE_INT:
-            asmOpImm(ASM_CMP, ASM_RAX, 0);
-            asmOpUnary(ASM_SETE, ASM_RAX);
+            loadRegisterBasedOnOperand(ASM_RAX, &instruction->arg1, frame);
+            AsmInstruction inst = asmOpImm(ASM_XOR, ASM_RAX, 1);
+            emitAsm(&inst);
+            storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
             break;
         }
-        // guardamos el resultado extrayendolo del rax
-        asmStore(getSlotOffset(frame, instruction->result->name), ASM_RAX);
-        }
-        break;
-
 
         case TAC_LT:
-            loadRegisterBasedOnOperand(ASM_RAX, instruction->arg1);
-            loadRegisterBasedOnOperand(ASM_RDX, instruction->arg2);
-            asmOpReg(ASM_CMP, ASM_RAX, ASM_RDX);
-            asmSetCC(ASM_SETL, ASM_RAX); // 1 si es mayor, 0 menor o igual
-            asmStore(getSlotOffset(frame, instruction->result->name), ASM_RAX);
-        break;
+            emitRelationalOp(instruction, "setl", frame);
+            break;
 
-         case TAC_GT:
-            loadRegisterBasedOnOperand(ASM_RAX, instruction->arg1);
-            loadRegisterBasedOnOperand(ASM_RDX, instruction->arg2);
-            asmOpReg(ASM_CMP, ASM_RAX, ASM_RDX);
-            asmSetCC(ASM_SETG, ASM_RAX); // 1 si es mayor, 0 menor o igual
-            asmStore(getSlotOffset(frame, instruction->result->name), ASM_RAX);
-        break;
+        case TAC_GT:
+            emitRelationalOp(instruction, "setg", frame);
+            break;
 
         case TAC_EQ:
-            loadOperand(&instruction->arg1, "%eax", frame);
-            loadOperand(&instruction->arg2, "%edx", frame);
-            buildStringf("    cmpl %%edx, %%eax\n");
-            buildStringf("    sete %%al\n");
-            buildStringf("    movzbl %%al, %%eax\n");
-            storeOperand(&instruction->result, "%eax", frame);
+            emitRelationalOp(instruction, "sete", frame);
             break;
 
-        case TAC_AND: {
-            loadOperand(&instruction->arg1, "%eax", frame);
-            loadOperand(&instruction->arg2, "%edx", frame);
-            AsmInstruction inst = asmOpReg(ASM_AND, ASM_RAX, ASM_RDX);
-            emitAsm(&inst);
-            storeOperand(&instruction->result, "%eax", frame);
+        case TAC_AND:
+            emitBinaryOp(instruction, ASM_AND, frame);
             break;
-        }
 
-        case TAC_OR: {
-            loadOperand(&instruction->arg1, "%eax", frame);
-            loadOperand(&instruction->arg2, "%edx", frame);
-            AsmInstruction inst = asmOpReg(ASM_OR, ASM_RAX, ASM_RDX);
-            emitAsm(&inst);
-            storeOperand(&instruction->result, "%eax", frame);
+        case TAC_OR:
+            emitBinaryOp(instruction, ASM_OR, frame);
             break;
-        }
 
         case TAC_INT_TO_FLOAT:
             loadOperand(&instruction->arg1, "%eax", frame);

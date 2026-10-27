@@ -9,9 +9,11 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
 - **Objetivo de la etapa (Spec TDS 2026):** Generar código assembly x86-64 (GNU Assembler / GAS) a partir del Código de Tres Direcciones (TAC).
   - *Entrega Enteros (20% de la nota final):* Soporte completo de tipos enteros y booleanos, control de flujo (`if`/`while`), variables locales y globales, y llamadas a funciones con pasaje de parámetros.
   - *Criterio de evaluación:* 30% diseño/documentación y 70% casos de prueba ejecutables (50% públicos, 50% privados). Se prioriza la **corrección** sobre la optimización.
-- **Estado de partida:**
-  - Definido manualmente: `FunctionFrame`, `StackSlot` (layout del frame relativo a `%rbp`, alineación a 16 bytes) y pasaje básico de parámetros mediante registros ABI (`ARG_REGISTERS_32`).
-  - Generado por IA (a auditar/completar): La mayoría de las instrucciones en `generateInstruction()` son esqueletos vacíos (`break;`), el pasaje de parámetros en llamadas anidadas tiene un error de diseño por usar un índice global estático, no hay soporte de más de 6 argumentos, y falta la integración en el pipeline del compilador (`src/bison.y` y `src/cli.c` para generar `.ass` y el binario ejecutable `.out`).
+- **Estado de partida y avances recientes:**
+  - ✅ **Modelo `AsmInstruction` operativo (`src/asm_instruction.h` y `src/asm_instruction.c`):** Abstracción compacta de instrucciones Assembly con registros (`%eax`, `%edx`, `%ecx`), inmediatos y stack offsets.
+  - ✅ **Abstracción de operaciones binarias y relacionales (`emitBinaryOp`, `emitRelationalOp`):** Se unificó el ciclo *Cargar -> Operar -> Guardar*, resolviendo `TAC_ADD`, `TAC_SUB`, `TAC_MUL`, `TAC_AND`, `TAC_OR`, `TAC_LT`, `TAC_GT`, `TAC_EQ`.
+  - ✅ **Negación booleana y aritmética:** `TAC_NOT` implementado vía `xorl $1, %eax` (los bools son estrictamente `{0, 1}`) y `TAC_NEG` vía `negl %eax`.
+  - ⚠️ **Próximo foco crítico:** Pasaje de parámetros en llamadas a métodos (`TAC_PARAM`/`TAC_CALL` con buffer/pila para llamadas anidadas), control de flujo (`if`/`while`/`goto`) y conexión con la CLI (`-target assembly`).
 
 ---
 
@@ -75,21 +77,21 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
 
 ### Fase 1: Núcleo de Código Objeto (Enteros y Booleanos)
 - [ ] **1.1 Asignación y Operaciones Aritméticas Básicas (`generateInstruction`)**
-  - [ ] Implementar `TAC_ASSIGN`: cargar `arg1` en `%eax` y almacenar en `result`.
-  - [ ] Implementar `TAC_ADD`: `movl arg1, %eax; addl arg2, %eax; store result`.
-  - [ ] Implementar `TAC_SUB`: `movl arg1, %eax; subl arg2, %eax; store result`.
-  - [ ] Implementar `TAC_MUL`: `movl arg1, %eax; imull arg2, %eax; store result`.
-  - [ ] Implementar `TAC_DIV`: dividend en `%eax`, divisor en `%ecx`, `cltd`, `idivl %ecx`, guardar `%eax`.
-  - [ ] Implementar `TAC_MOD`: dividend en `%eax`, divisor en `%ecx`, `cltd`, `idivl %ecx`, guardar `%edx`.
+  - [X] Implementar `TAC_ASSIGN`: cargar `arg1` en `%eax` y almacenar en `result` (vía `loadRegisterBasedOnOperand` y `storeRegisterToOperand`).
+  - [X] Implementar `TAC_ADD`: `emitBinaryOp(instruction, ASM_ADD, frame)`.
+  - [X] Implementar `TAC_SUB`: `emitBinaryOp(instruction, ASM_SUB, frame)`.
+  - [X] Implementar `TAC_MUL`: `emitBinaryOp(instruction, ASM_IMUL, frame)`.
+  - [ ] Implementar `TAC_DIV`: dividendo en `%eax`, divisor en `%ecx`, `cltd`, `idivl %ecx`, guardar `%eax`.
+  - [ ] Implementar `TAC_MOD`: dividendo en `%eax`, divisor en `%ecx`, `cltd`, `idivl %ecx`, guardar `%edx`.
   - [ ] Implementar `TAC_NEG`: `movl arg1, %eax; negl %eax; store result`.
 
-- [ ] **1.2 Operaciones Booleanas y Relacionales**
-  - [ ] Implementar `TAC_NOT`: evaluar con `cmpl $0, %eax; sete %al; movzbl %al, %eax`.
-  - [ ] Implementar `TAC_LT`: `cmpl arg2, arg1; setl %al; movzbl %al, %eax`.
-  - [ ] Implementar `TAC_GT`: `cmpl arg2, arg1; setg %al; movzbl %al, %eax`.
-  - [ ] Implementar `TAC_EQ`: `cmpl arg2, arg1; sete %al; movzbl %al, %eax`.
-  - [ ] Implementar `TAC_AND`: `movl arg1, %eax; andl arg2, %eax`.
-  - [ ] Auditar `TAC_OR`: verificar normalización booleana de operandos.
+- [X] **1.2 Operaciones Booleanas y Relacionales**
+  - [X] Implementar `TAC_NOT`: simplificado a `xorl $1, %eax` (los bools son estrictamente `{0, 1}`, sin chequeo de `TYPE_INT`).
+  - [X] Implementar `TAC_LT`: `emitRelationalOp(instruction, "setl", frame)`.
+  - [X] Implementar `TAC_GT`: `emitRelationalOp(instruction, "setg", frame)`.
+  - [X] Implementar `TAC_EQ`: `emitRelationalOp(instruction, "sete", frame)`.
+  - [X] Implementar `TAC_AND`: `emitBinaryOp(instruction, ASM_AND, frame)`.
+  - [X] Implementar `TAC_OR`: `emitBinaryOp(instruction, ASM_OR, frame)`.
 
 - [ ] **1.3 Salto y Control de Flujo**
   - [ ] Auditar `TAC_LABEL`, `TAC_GOTO`, `TAC_IF_FALSE`, `TAC_IF_TRUE` para asegurar coherencia en el prefijo de etiquetas (`.L` estándar en GAS).
