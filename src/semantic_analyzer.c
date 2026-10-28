@@ -18,6 +18,7 @@ static void analyzeIfElseNode(NodeAST *node, Scope *current_scope);
 static void analyzeWhileNode(NodeAST *node, Scope *current_scope);
 static void checkMainMethodExists(Scope *globalScope);
 
+
 /**
  * Determina si una sentencia garantiza que la ejecucion retorna antes de
  * alcanzar el fin del metodo. La letra exige esto de todo metodo no-void: no
@@ -57,13 +58,11 @@ static int guaranteesReturn(NodeAST *node) {
 }
 
 static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type) {
-    if (node->symbol) {
-        Symbol *existing = lookupVariableCurrentScope(current_scope, node->symbol->id);
-        if (existing != NULL) {
-            semanticError(node->line, "El metodo '%s' ya fue declarado previamente en este ambito.", node->symbol->id);
-        } else {
-            appendSymbol(current_scope, node->symbol);
-        }
+    Symbol *existing = lookupVariableCurrentScope(current_scope, node->symbol->id);
+    if (existing != NULL) {
+        semanticError(node->line, "El metodo '%s' ya fue declarado previamente en este ambito.", node->symbol->id);
+    } else {
+        appendSymbol(current_scope, node->symbol);
     }
 
     Symbol *prev_function = current_function;
@@ -71,26 +70,28 @@ static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type
 
     int level = current_scope ? current_scope->level + 1 : 0;
     Scope *method_scope = createScope(level, current_scope, type);
+    if (!method_scope) {
+        semanticError(node->line, "Error: no se pudo reservar memoria para el ambito del metodo.");
+        current_function = prev_function;
+        return;
+    }
 
     NodeAST *params = GET_LEFT(node);
     if (params) {
         for (int i = 0; i < params->childCount; i++) {
             analyzeNodeSemantics(params->children[i], method_scope);
-            
         }
     }
 
     NodeAST *body = GET_RIGHT(node);
     if (body) {
-        // Todas las sentencias se analizan siempre: las que estan despues de un
-        // return son inalcanzables, pero sus errores siguen siendo errores.
         for (int i = 0; i < body->childCount; i++) {
             analyzeNodeSemantics(body->children[i], method_scope);
         }
     }
 
     if (node->type != TYPE_VOID && !guaranteesReturn(body)) {
-        const char *methodName = node->symbol && node->symbol->id ? node->symbol->id : "anonimo";
+        const char *methodName = node->symbol->id ? node->symbol->id : "anonimo";
         semanticError(node->line, "El metodo '%s' no es void: todos sus caminos de ejecucion deben terminar en un return.", methodName);
     }
 
@@ -105,38 +106,33 @@ static void analyzeBlockNode(NodeAST *node, Scope *current_scope) {
 }
 
 static void analyzeVariableDeclarationNode(NodeAST *node, Scope *current_scope) {
-    if (node->symbol) {
-        Symbol *existing = lookupVariableCurrentScope(current_scope, node->symbol->id);
-        if (existing != NULL) {
-            semanticError(node->line, "La variable '%s' ya fue declarada previamente en este ambito.", node->symbol->id);
-        } else {
-            appendSymbol(current_scope, node->symbol);
-        }
+    Symbol *existing = lookupVariableCurrentScope(current_scope, node->symbol->id);
+    if (existing != NULL) {
+        semanticError(node->line, "La variable '%s' ya fue declarada previamente en este ambito.", node->symbol->id);
+    } else {
+        appendSymbol(current_scope, node->symbol);
     }
 }
 
 static void analyzeAssignmentNode(NodeAST *node, Scope *current_scope) {
     DataType varType = TYPE_ERROR;
 
-    if (node->symbol) {
-        Symbol *resolvedSymbol = lookupVariable(current_scope, node->symbol->id);
-        if (!resolvedSymbol) {
-            semanticError(node->line, "Asignacion a variable no declarada '%s'.", node->symbol->id);
-        } else {
+    Symbol *resolvedSymbol = lookupVariable(current_scope, node->symbol->id);
+    if (!resolvedSymbol) {
+        semanticError(node->line, "Asignacion a variable no declarada '%s'.", node->symbol->id);
+    } else {
+        if (resolvedSymbol->symbolType != ID_SYMBOL) {
+            semanticError(node->line, "Ese nombre de simbolo corresponde al metodo '%s'.", node->symbol->id);
+        }
 
-            if(resolvedSymbol->symbolType != ID_SYMBOL){
-                semanticError(node->line, "Ese nombre de simbolo corresponde al metodo '%s'.", node->symbol->id);
-            }
+        varType = resolvedSymbol->type;
+        node->symbol = resolvedSymbol;
+        node->type = varType;
 
-            varType = resolvedSymbol->type;
-            node->symbol = resolvedSymbol;
-            node->type = varType;
-
-            NodeAST *target = GET_LEFT(node);
-            if (target != NULL && target->nodeType == ID_NODE) {
-                target->symbol = resolvedSymbol;
-                target->type = varType;
-            }
+        NodeAST *target = GET_LEFT(node);
+        if (target != NULL && target->nodeType == ID_NODE) {
+            target->symbol = resolvedSymbol;
+            target->type = varType;
         }
     }
 
@@ -257,6 +253,10 @@ Scope* analyzeSemantics(NodeAST *root, Scope *parent, DataType returnType) {
     
     int level = parent ? parent->level + 1 : 0;
     Scope *current_scope = createScope(level, parent, returnType);
+    if (!current_scope) {
+        semanticError(root->line, "Error: no se pudo reservar memoria para el ambito.");
+        return NULL;
+    }
     
     for (int i = 0; i < root->childCount; i++) {
         analyzeNodeSemantics(root->children[i], current_scope);
