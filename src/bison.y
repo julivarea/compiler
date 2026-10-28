@@ -335,6 +335,15 @@ static int writeAssemblyOutput(const Options *options) {
     generateIntermediateCode(raizAST);
     generateAssembly(getIntermediateCode());
 
+    /* Un error interno significa que el assembly emitido no es confiable.
+     * Preferimos abortar antes que ensamblarlo y entregar un binario que
+     * calcula mal o que falla recien en el enlazador. */
+    if (getObjectCodeErrors() > 0) {
+        fprintf(stderr, "\n\033[1;31mCompilacion abortada: %d errores internos en la generacion de codigo objeto.\033[0m\n",
+                getObjectCodeErrors());
+        return 1;
+    }
+
     if (options->debug) {
         printf("%s", getBuiltString());
     }

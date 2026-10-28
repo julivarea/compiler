@@ -20,14 +20,15 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - ✅ **Fase 1 completa.** Las seis secciones del núcleo de enteros y booleanos están implementadas y verificadas ejecutando los binarios generados.
   - ✅ **Fase 2 completa:** el generador está conectado a la CLI. `./mi_compilador archivo.ctds` produce el ejecutable `.out` y `-target assembly` produce el `.ass`.
   - ✅ **Fase 3 completa:** soporte de `float` con SSE, constantes en `.rodata`, y pasaje de parámetros con las dos clases de registros de la convención. Cierra el hallazgo 1.13.
-  - ⚠️ **Queda la Fase 4 (testing)** y dos hallazgos menores sin resolver: 1.6 (detección de globales por ausencia de slot) y 1.10 (`build.sh` devuelve 0 aunque `gcc` falle).
+  - ✅ **Auditoría cerrada:** los 13 hallazgos de la sección 1 están corregidos o auditados.
+  - ⚠️ **Queda la Fase 4 (testing).**
   - ⚠️ **`generateAssembly()` todavía no está conectada a la CLI:** no hay forma de llegar a ella desde `./mi_compilador`, porque `CURRENT_TARGET` sigue en `TARGET_CODINTER` y `src/bison.y` no tiene el caso de la etapa. Mientras tanto, la única manera de probar el generador es con un arnés propio que llame a `generateIntermediateCode()` y después a `generateAssembly()`. Es el punto 2.1/2.2.
 
 ---
 
 ## 1. Auditoría Crítica: Errores, Riesgos y Discrepancias Detectadas
 
-### 1.1 Instrucciones Aritméticas, Lógicas y Asignación no Implementadas (Stubs vacíos)
+### 1.1 Instrucciones Aritméticas, Lógicas y Asignación no Implementadas (Stubs vacíos) — CORREGIDO
 - **Ubicación:** `src/object_code.c` (`generateInstruction`).
 - **Problema:** Los casos `TAC_ASSIGN`, `TAC_ADD`, `TAC_SUB`, `TAC_MUL`, `TAC_DIV`, `TAC_MOD`, `TAC_NEG`, `TAC_NOT`, `TAC_LT`, `TAC_GT`, `TAC_EQ`, `TAC_AND` contienen únicamente un `break;`. Solo `TAC_OR` tenía código provisional.
 - **Acción requerida:** Implementar la secuencia de instrucciones assembly GAS para cada operador.
@@ -44,7 +45,7 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - En la llamada: Empujar a la pila (`pushq` o almacenamiento en el área de argumentos) en orden inverso los parámetros 7 en adelante, asegurando la alineación a 16 bytes antes del `call`.
   - En la definición: Los parámetros 7+ no se leen de registros, sino del frame del caller en desplazamientos positivos (`16(%rbp)`, `24(%rbp)`, etc.).
 
-### 1.4 División (`TAC_DIV`) y Módulo (`TAC_MOD`) con `idivl`
+### 1.4 División (`TAC_DIV`) y Módulo (`TAC_MOD`) con `idivl` — CORREGIDO
 - **Ubicación:** `src/object_code.c`.
 - **Problema:** En x86-64, `idivl` divide el par `%edx:%eax` por el divisor. Requiere extender el signo de `%eax` a `%edx` mediante `cltd` (o `cdq`). Si el divisor se coloca en `%edx`, `cltd` lo sobreescribe antes de la división.
 - **Acción requerida:**
@@ -55,7 +56,7 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - Para `TAC_DIV`: el cociente queda en `%eax`.
   - Para `TAC_MOD`: el resto queda en `%edx`.
 
-### 1.5 Comparaciones Relacionales y Orden en Sintaxis AT&T (GAS)
+### 1.5 Comparaciones Relacionales y Orden en Sintaxis AT&T (GAS) — AUDITADO, SIN CAMBIOS
 - **Ubicación:** `src/object_code.c` (`TAC_LT`, `TAC_GT`, `TAC_EQ`).
 - **Problema:** En sintaxis AT&T, la instrucción `cmpl %src, %dest` evalúa `%dest - %src`.
   - Si cargamos `arg1` en `%eax` y `arg2` en `%edx`, `cmpl %edx, %eax` evalúa `%eax - %edx` (`arg1 - arg2`).
@@ -64,17 +65,43 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - Para `==`, es `sete %al`.
   - Luego debe extenderse a 32 bits con `movzbl %al, %eax` antes de almacenar el resultado booleano (0 o 1).
 
-### 1.6 Detección de Variables Globales vs Locales en `loadOperand` y `storeOperand`
+### 1.6 Detección de Variables Globales vs Locales en `loadOperand` y `storeOperand` — CORREGIDO
 - **Ubicación:** `src/object_code.c` (`loadOperand`, `storeOperand`).
 - **Problema:** Actualmente se asume que si `getSlotOffset(frame, op->name) == 0`, el símbolo es automáticamente global y emite `movl nombre(%rip), %reg`. Si una variable local o temporal no se registró en los slots por un bug, no emite advertencia y genera assembly inválido que falla recién en el linker (`undefined reference to 't0'`).
 - **Acción requerida:** Utilizar la información del símbolo (`op->kind == OPERAND_VARIABLE` y el alcance en la tabla de símbolos) para validar si efectivamente es global. Si es `OPERAND_TEMP` o variable local y no tiene slot, registrar error interno del compilador.
+
+- **RESUELTO.** Ser global ya no se deduce por descarte: se verifica contra la lista de
+  nombres que declararon los `TAC_GLOBAL_DECL`, que se arma en la misma pasada previa que
+  emite el segmento de datos. La decisión quedó centralizada en `resolveOperandLocation()`,
+  que devuelve `LOCATION_STACK`, `LOCATION_GLOBAL` o `LOCATION_UNRESOLVED`, y la usan las
+  cuatro rutas de acceso a memoria: `loadOperand`, `storeOperand` y sus equivalentes de punto
+  flotante.
+
+- **Qué pasa ahora ante una inconsistencia.** Se reporta un error interno nombrando el
+  operando y la función, se cuenta en `getObjectCodeErrors()`, y el driver aborta la
+  compilación sin ensamblar. El mensaje distingue explícitamente que es un error *del
+  compilador* y no del programa de entrada.
+
+- **Por qué importa el modo de falla.** El comportamiento anterior emitía
+  `movl t0(%rip), %eax`, que es assembly sintácticamente válido: ensamblaba bien y recién
+  fallaba en el enlazador con `undefined reference to 't0'`, sin ninguna pista de que el
+  problema estuviera en el generador. Y si por casualidad existiera una variable global con
+  ese nombre, ni siquiera fallaba: leía la variable equivocada y entregaba un binario que
+  calcula mal en silencio.
+
+- **Verificación:** se inyectó a propósito el bug que la sección describe (desactivar el
+  registro de slots de los temporales) y el compilador reportó
+  `el operando 't0' no tiene lugar asignado en el frame de 'main' ni esta declarado como
+  variable global`, abortó con código 1 y no dejó ejecutable. Restaurado el código, las
+  regresiones de enteros y de reales siguen pasando y los 12 ejemplos conservan su código de
+  salida.
 
 ### 1.7 Código de Salida y Retorno de `main` — CORREGIDO
 - **Ubicación:** `src/object_code.c` (`emitEpilogue`, `TAC_RETURN`).
 - **Problema:** C-TDS permite métodos `void main()`. Si `main` finaliza sin valor de retorno explícito, el registro `%eax` contendrá el residuo de la última operación ejecutada. Al enlazar con `gcc`, el sistema operativo tomará `%eax` como código de salida del proceso, haciendo que pruebas válidas reporten un exit code distinto de 0.
 - **Acción requerida:** Asegurar que si la función es `main`, se emita `movl $0, %eax` antes del epílogo si no hubo un retorno con valor.
 
-### 1.8 Conversión `int` a `float` Incompleta (`TAC_INT_TO_FLOAT`)
+### 1.8 Conversión `int` a `float` Incompleta (`TAC_INT_TO_FLOAT`) — CORREGIDO EN LA FASE 3
 - **Ubicación:** `src/object_code.c` (caso `TAC_INT_TO_FLOAT`).
 - **Problema:** Emite `cvtsi2ss %eax, %xmm0`, pero no almacena el contenido de `%xmm0` en el slot de destino ni gestiona registros SSE2 en `storeOperand`.
 - **Acción requerida:** Diseñar el soporte de flotantes de forma aislada en la Fase 3, completando primero el 100% de enteros y booleanos exigido para la entrega.

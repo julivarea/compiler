@@ -110,6 +110,82 @@ int getSlotOffset(const FunctionFrame *frame, const char *name) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Resolucion de operandos y errores internos                          */
+/* ------------------------------------------------------------------ */
+
+#define MAX_GLOBAL_VARIABLES 256
+
+/* Nombres calificados de las variables globales, tomados de los TAC_GLOBAL_DECL
+ * en la pasada previa. Es lo que permite distinguir "esto es global" de "esto
+ * deberia tener un slot y no lo tiene". */
+static char globalVariableNames[MAX_GLOBAL_VARIABLES][TAC_NAME_LENGTH];
+static int globalVariableCount = 0;
+
+static int objectCodeErrors = 0;
+
+int getObjectCodeErrors(void) {
+    return objectCodeErrors;
+}
+
+static void registerGlobalVariable(const TACOperand *op) {
+    if (globalVariableCount >= MAX_GLOBAL_VARIABLES) return;
+
+    strncpy(globalVariableNames[globalVariableCount], op->name, TAC_NAME_LENGTH - 1);
+    globalVariableNames[globalVariableCount][TAC_NAME_LENGTH - 1] = '\0';
+    globalVariableCount++;
+}
+
+static int isDeclaredGlobal(const TACOperand *op) {
+    for (int i = 0; i < globalVariableCount; i++) {
+        if (strcmp(globalVariableNames[i], op->name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Donde vive el valor de un operando. */
+typedef enum {
+    LOCATION_UNRESOLVED, /**< no se pudo ubicar: error interno del compilador */
+    LOCATION_STACK,      /**< en un slot del frame, en offset(%rbp) */
+    LOCATION_GLOBAL      /**< en el segmento de datos, en nombre(%rip) */
+} OperandLocation;
+
+/*
+ * Decide donde vive un operando que no es constante.
+ *
+ * Antes se asumia que todo lo que no tuviera slot era global. Eso hacia que un
+ * temporal o una local que por algun bug no hubieran quedado registrados se
+ * emitieran como `movl t3(%rip), %eax`: assembly sintacticamente valido, que
+ * compila, y que recien falla en el enlazador con `undefined reference to
+ * 't3'`, sin ninguna pista de que el problema estaba en el generador. Peor aun
+ * si existiera una global con ese nombre, porque entonces ni siquiera falla:
+ * lee la variable equivocada.
+ *
+ * Ahora ser global se verifica contra la lista de TAC_GLOBAL_DECL, y lo que no
+ * es ni una cosa ni la otra se reporta como error interno.
+ */
+static OperandLocation resolveOperandLocation(const TACOperand *op, const FunctionFrame *frame, int *offset) {
+    *offset = getSlotOffset(frame, op->name);
+    if (*offset != 0) {
+        return LOCATION_STACK;
+    }
+
+    if (op->kind == OPERAND_VARIABLE && isDeclaredGlobal(op)) {
+        return LOCATION_GLOBAL;
+    }
+
+    fprintf(stderr,
+            "\033[1;31mError interno del generador de codigo objeto:\033[0m el operando '%s'"
+            " no tiene lugar asignado en el frame de '%s' ni esta declarado como variable global.\n",
+            op->name[0] != '\0' ? op->name : "(sin nombre)",
+            (frame != NULL && frame->functionName[0] != '\0') ? frame->functionName : "(sin funcion)");
+    objectCodeErrors++;
+
+    return LOCATION_UNRESOLVED;
+}
+
+/* ------------------------------------------------------------------ */
 /* Punto flotante (SSE, precision simple)                              */
 /* ------------------------------------------------------------------ */
 
@@ -184,8 +260,11 @@ static void loadFloatOperand(const TACOperand *op, const char *xmmRegister, cons
         return;
     }
 
-    int offset = getSlotOffset(frame, op->name);
-    if (offset != 0) {
+    int offset;
+    OperandLocation location = resolveOperandLocation(op, frame, &offset);
+    if (location == LOCATION_UNRESOLVED) return;
+
+    if (location == LOCATION_STACK) {
         buildStringf("    movss %d(%%rbp), %s\n", offset, xmmRegister);
     } else {
         buildStringf("    movss %s(%%rip), %s\n", getGlobalName(op), xmmRegister);
@@ -196,8 +275,11 @@ static void loadFloatOperand(const TACOperand *op, const char *xmmRegister, cons
 static void storeFloatOperand(const TACOperand *op, const char *xmmRegister, const FunctionFrame *frame) {
     if (op == NULL) return;
 
-    int offset = getSlotOffset(frame, op->name);
-    if (offset != 0) {
+    int offset;
+    OperandLocation location = resolveOperandLocation(op, frame, &offset);
+    if (location == LOCATION_UNRESOLVED) return;
+
+    if (location == LOCATION_STACK) {
         buildStringf("    movss %s, %d(%%rbp)\n", xmmRegister, offset);
     } else {
         buildStringf("    movss %s, %s(%%rip)\n", xmmRegister, getGlobalName(op));
@@ -237,32 +319,32 @@ static const char *getGlobalName(const TACOperand *op) {
 static void loadOperand(const TACOperand *op, const char *reg, const FunctionFrame *frame) {
     if (op == NULL) return;
 
-    AsmInstruction inst;
     if (op->kind == OPERAND_CONSTANT) { // en caso de que sea valor inmediato
-        inst = asmLoad(opRegStr(reg), opImm(op->value.int_val));
-    } else {
-        int offset = getSlotOffset(frame, op->name);
-        if (offset != 0) {
-            inst = asmLoad(opRegStr(reg), opMem(offset));
-        } else {
-            const char *name = getGlobalName(op);
-            inst = asmLoad(opRegStr(reg), opGlobal(name));
-        }
+        AsmInstruction immediate = asmLoad(opRegStr(reg), opImm(op->value.int_val));
+        emitAsm(&immediate);
+        return;
     }
+
+    int offset;
+    OperandLocation location = resolveOperandLocation(op, frame, &offset);
+    if (location == LOCATION_UNRESOLVED) return;
+
+    AsmInstruction inst = (location == LOCATION_STACK)
+        ? asmLoad(opRegStr(reg), opMem(offset))
+        : asmLoad(opRegStr(reg), opGlobal(getGlobalName(op)));
     emitAsm(&inst);
 }
 
 static void storeOperand(const TACOperand *op, const char *reg, const FunctionFrame *frame) {
     if (op == NULL) return;
 
-    int offset = getSlotOffset(frame, op->name);
-    AsmInstruction inst;
-    if (offset != 0) { // variable local, parámetro o temporal en el stack
-        inst = asmStore(opMem(offset), opRegStr(reg));
-    } else {           // no está en el frame: es variable global
-        const char *name = getGlobalName(op);
-        inst = asmStore(opGlobal(name), opRegStr(reg));
-    }
+    int offset;
+    OperandLocation location = resolveOperandLocation(op, frame, &offset);
+    if (location == LOCATION_UNRESOLVED) return;
+
+    AsmInstruction inst = (location == LOCATION_STACK)
+        ? asmStore(opMem(offset), opRegStr(reg))
+        : asmStore(opGlobal(getGlobalName(op)), opRegStr(reg));
     emitAsm(&inst);
 }
 
@@ -705,6 +787,8 @@ static void emitGlobals(const TACList *tacList) {
                 buildStringf(".data\n");
                 hasGlobals = 1;
             }
+            registerGlobalVariable(&inst->arg1);
+
             const char *name = getGlobalName(&inst->arg1);
             buildStringf(".globl %s\n", name); // emite para poder usado de forma global
             buildStringf(".align 4\n"); // guarda 4 bytes de lugar
@@ -751,6 +835,9 @@ static void emitFloatConstantPool(const TACList *tacList) {
 
 void generateAssembly(const TACList *tacList) {
     if (tacList == NULL) return;
+
+    globalVariableCount = 0;
+    objectCodeErrors = 0;
 
     /* Constantes reales y variables globales, antes del codigo */
     emitFloatConstantPool(tacList);

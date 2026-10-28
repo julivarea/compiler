@@ -125,6 +125,16 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
  */
 void generateAssembly(const TACList *tacList);
 
+/**
+ * @brief Errores internos detectados durante la última generación.
+ *
+ * Son inconsistencias del propio compilador —por ejemplo, un operando que no
+ * quedó asociado a ningún lugar de memoria—, no errores del programa de
+ * entrada. Si es distinto de cero, el assembly emitido no es confiable y la
+ * compilación debe abortarse en vez de entregar un binario incorrecto.
+ */
+int getObjectCodeErrors(void);
+
 /* Alias para compatibilidad con la especificación en pseudocódigo */
 #define CREATE_FRAME(name)             createFrame(name)
 #define FREE_FRAME(frame)              freeFrame(frame)
