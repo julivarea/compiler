@@ -28,6 +28,9 @@ El proyecto se aborda de forma incremental: cada entrega agrega una fase al comp
   condiciones booleanas en `if`/`while`, consistencia en retornos (`return;` vs `return expr;`), firmas de métodos y la presencia del método `main()`.
 - **Código intermedio (TAC)**:
   transforma el AST validado en instrucciones lineales de tres direcciones
+- **Código objeto x86-64**:
+  traduce el TAC a assembly de GNU Assembler y lo ensambla con `gcc` para producir el
+  ejecutable. Enteros, booleanos y reales de precisión simple (SSE)
 
 En la [Wiki de Onboarding](wiki/00-index.md) hay
 una versión navegable estructurada paso a paso.
@@ -130,15 +133,20 @@ el que se haya pasado con `-o`:
 | `scan` | `.lex` | La secuencia de tokens, con su número de línea y su lexema |
 | `parse` | `.sint` | El AST tal como lo construye el parser, sin anotar |
 | `sem` | `.sem` | El AST anotado: tipo y `uid` de cada identificador |
-| `codinter` (por defecto) | `.ci` | El código de tres direcciones |
-| `assembly` | `.ass` | Assembly x86-64 — **no implementado todavía** |
+| `codinter` | `.ci` | El código de tres direcciones |
+| `assembly` | `.ass` | Assembly x86-64 (GNU Assembler) |
 
 Con `-opt` la extensión pasa a ser `.opt`.
 
+**Sin `-target` el compilador produce el ejecutable** `nombreArchivo.out`: genera el assembly
+como paso intermedio y lo ensambla y enlaza con `gcc`. Ese intermedio se borra al terminar,
+salvo que se pase `-debug`.
+
 ```bash
-./mi_compilador examples/factorial.ctds                 # -> examples/factorial.ci
-./mi_compilador -target scan examples/factorial.ctds    # -> examples/factorial.lex
-./mi_compilador -debug examples/factorial.ctds          # además lo imprime
+./mi_compilador examples/factorial.ctds                  # -> examples/factorial.out (ejecutable)
+./mi_compilador -target assembly examples/factorial.ctds # -> examples/factorial.ass
+./mi_compilador -target scan examples/factorial.ctds     # -> examples/factorial.lex
+./mi_compilador -o miprograma examples/factorial.ctds    # -> miprograma
 ```
 
 Sobre el archivo de entrada se ejecutan las siguientes fases en orden, hasta
@@ -232,10 +240,9 @@ y se borran con `rm -f examples/*.lex examples/*.sint examples/*.sem examples/*.
 
 ## Problemas conocidos
 
-- **`-target assembly` no está implementado**: avisa y termina con código 1.
-  Lo mismo `-opt`, que se acepta y se ignora con un aviso, porque todavía no hay
-  ninguna optimización.
-- **No se genera el ejecutable `.out`**, porque falta la etapa de assembly.
+- **`-opt` se acepta y se ignora con un aviso**, porque todavía no hay ninguna optimización.
+- **Los `float` son de precisión simple** (4 bytes, IEEE-754, instrucciones `movss`/`addss`).
+  No hay doble precisión.
 - **Un método solo ve a los declarados antes que él.** No hay declaración
   adelantada en C-TDS, así que `main(){ g(); }` con `g` definido más abajo da
   `Método no declarado`. Es lo que pide la letra ("todo se declara antes de

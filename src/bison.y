@@ -8,6 +8,7 @@
 #include "error_handler.h"
 #include "string_builder.h"
 #include "intermediate_code.h"
+#include "object_code.h"
 #include "cli.h"
 extern int yylex(void);
 extern char *yytext;
@@ -284,6 +285,100 @@ static int writeIntermediateCodeOutput(const Options *options) {
     return 0;
 }
 
+/* Escribe el contenido acumulado en el string_builder al archivo indicado. */
+static int writeBuiltStringTo(const char *path) {
+    FILE *out = fopen(path, "w");
+    if (out == NULL) {
+        perror(path);
+        return 1;
+    }
+
+    fputs(getBuiltString(), out);
+    fclose(out);
+
+    return 0;
+}
+
+/*
+ * Invoca al ensamblador del sistema para convertir el .ass en un ejecutable.
+ *
+ * Se usa gcc en vez de as + ld porque resuelve por su cuenta el runtime de C
+ * (_start, la llamada a main y la salida del proceso), que es lo que permite
+ * que el codigo de salida de main llegue al shell. -no-pie evita que el
+ * enlazador exija codigo independiente de posicion, que es lo que asume el
+ * acceso a globales por nombre(%rip) que emite el generador.
+ */
+static int assembleAndLink(const Options *options, const char *assemblyPath) {
+    char command[1024];
+
+    /* -x assembler es imprescindible: gcc deduce el lenguaje de la extension y
+     * no conoce .ass, asi que sin esto trata el archivo como script de enlazado. */
+    snprintf(command, sizeof(command), "gcc -no-pie -x assembler '%s' -o '%s'",
+             assemblyPath, options->output);
+
+    if (options->debug) {
+        printf("Ensamblando: %s\n", command);
+    }
+
+    int status = system(command);
+    if (status != 0) {
+        fprintf(stderr, "Error: fallo el ensamblado o el enlazado de '%s'.\n", assemblyPath);
+        return 1;
+    }
+
+    return 0;
+}
+
+/* Etapa assembly: el producto es el .ass, o el ejecutable si no se pidio una
+ * etapa explicita con -target. */
+static int writeAssemblyOutput(const Options *options) {
+    generateIntermediateCode(raizAST);
+    generateAssembly(getIntermediateCode());
+
+    /* Un error interno significa que el assembly emitido no es confiable.
+     * Preferimos abortar antes que ensamblarlo y entregar un binario que
+     * calcula mal o que falla recien en el enlazador. */
+    if (getObjectCodeErrors() > 0) {
+        fprintf(stderr, "\n\033[1;31mCompilacion abortada: %d errores internos en la generacion de codigo objeto.\033[0m\n",
+                getObjectCodeErrors());
+        return 1;
+    }
+
+    if (options->debug) {
+        printf("%s", getBuiltString());
+    }
+
+    /* Con -target assembly el .ass es el entregable y la compilacion termina
+     * ahi. Sin -target, el .ass es solo un paso intermedio hacia el ejecutable
+     * y se borra al final. */
+    if (!BUILDS_EXECUTABLE(options)) {
+        return writeBuiltStringTo(options->output);
+    }
+
+    /* El intermedio toma el nombre del ejecutable con extension .ass. */
+    char assemblyPath[1024];
+    size_t outputLength = strlen(options->output);
+    if (outputLength > 4 && strcmp(options->output + outputLength - 4, ".out") == 0) {
+        snprintf(assemblyPath, sizeof(assemblyPath), "%.*s.ass", (int)(outputLength - 4), options->output);
+    } else {
+        snprintf(assemblyPath, sizeof(assemblyPath), "%s.ass", options->output);
+    }
+
+    if (writeBuiltStringTo(assemblyPath) != 0) {
+        return 1;
+    }
+
+    int result = assembleAndLink(options, assemblyPath);
+
+    if (!options->debug) {
+        remove(assemblyPath);
+    } else {
+        printf("Assembly intermedio conservado en %s\n", assemblyPath);
+    }
+
+    return result;
+}
+
 int main(int argc, char** argv) {
     Options options;
 
@@ -340,8 +435,10 @@ int main(int argc, char** argv) {
             exit_code = 1;
         } else if (options.target == TARGET_SEM) {
             exit_code = writeASTOutput(&options);
-        } else {
+        } else if (options.target == TARGET_CODINTER) {
             exit_code = writeIntermediateCodeOutput(&options);
+        } else {
+            exit_code = writeAssemblyOutput(&options);
         }
     }
 

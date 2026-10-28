@@ -6,7 +6,7 @@ El Árbol de Sintaxis Abstracta (AST) es la estructura central de comunicación 
 
 ## 1. Estructura Universal de Nodos (`NodeAST`)
 
-En lugar de definir estructuras separadas por cada construcción gramatical, el compilador implementa un modelo de nodo universal (`NodeAST` en [src/ast.h](file:///home/francisco/compiler/src/ast.h#L23-L31)). Cada nodo adapta el uso de sus campos y el arreglo de hijos de acuerdo a su tipo (`nodeType`):
+En lugar de definir estructuras separadas por cada construcción gramatical, el compilador implementa un modelo de nodo universal (`NodeAST`). Cada nodo adapta el uso de sus campos y el arreglo de hijos de acuerdo a su tipo (`nodeType`):
 
 ```mermaid
 classDiagram

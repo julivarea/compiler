@@ -1,0 +1,420 @@
+# Checklist y Plan de Trabajo: Generador de Código Objeto x86-64 (`object_code`)
+
+Este documento detalla el estado actual del generador de código objeto (`src/object_code.h` y `src/object_code.c`), audita el código generado preliminarmente por IA frente a las estructuras definidas manualmente (`FunctionFrame`, `StackSlot`, `callParams`), y define el plan de trabajo pendiente (TODO) en cumplimiento con la especificación oficial del proyecto (`documentacion/spec/00-TDS-proyecto.pdf`) y del lenguaje (`documentacion/spec/01-TDS-spec-lenguaje.pdf`).
+
+---
+
+## 0. Resumen Ejecutivo y Estado Actual
+
+- **Objetivo de la etapa (Spec TDS 2026):** Generar código assembly x86-64 (GNU Assembler / GAS) a partir del Código de Tres Direcciones (TAC).
+  - *Entrega Enteros (20% de la nota final):* Soporte completo de tipos enteros y booleanos, control de flujo (`if`/`while`), variables locales y globales, y llamadas a funciones con pasaje de parámetros.
+  - *Criterio de evaluación:* 30% diseño/documentación y 70% casos de prueba ejecutables (50% públicos, 50% privados). Se prioriza la **corrección** sobre la optimización.
+- **Estado de partida y avances recientes:**
+  - ✅ **Modelo `AsmInstruction` operativo (`src/asm_instruction.h` y `src/asm_instruction.c`):** Abstracción compacta de instrucciones Assembly con registros (`%eax`, `%edx`, `%ecx`), inmediatos y stack offsets.
+  - ✅ **Abstracción de operaciones binarias y relacionales (`emitBinaryOp`, `emitRelationalOp`):** Se unificó el ciclo *Cargar -> Operar -> Guardar*, resolviendo `TAC_ADD`, `TAC_SUB`, `TAC_MUL`, `TAC_AND`, `TAC_OR`, `TAC_LT`, `TAC_GT`, `TAC_EQ`.
+  - ✅ **Negación booleana y aritmética:** `TAC_NOT` implementado vía `xorl $1, %eax` (los bools son estrictamente `{0, 1}`) y `TAC_NEG` vía `negl %eax`.
+  - ✅ **División, módulo y negación aritmética (`TAC_DIV`, `TAC_MOD`, `TAC_NEG`):** cierran el punto 1.1. Verificados ejecutando los binarios generados, incluidos los casos con signo.
+  - ✅ **Control de flujo y variables globales:** auditados y funcionando (puntos 1.3 y 1.6).
+  - ✅ **Pasaje de parámetros y llamadas (punto 1.4):** pila de argumentos por llamada, soporte de más de 6 parámetros en ambos lados de la convención, y evaluación de izquierda a derecha preservada. Cierra los bugs 1.2 y 1.3 de la auditoría.
+  - ✅ **Stack frame, prólogo y epílogo (punto 1.5):** alineación a 16 bytes auditada, copia de registros de entrada verificada y código de salida de `main` corregido. Cierra el bug 1.7.
+  - ✅ **Fase 1 completa.** Las seis secciones del núcleo de enteros y booleanos están implementadas y verificadas ejecutando los binarios generados.
+  - ✅ **Fase 2 completa:** el generador está conectado a la CLI. `./mi_compilador archivo.ctds` produce el ejecutable `.out` y `-target assembly` produce el `.ass`.
+  - ✅ **Fase 3 completa:** soporte de `float` con SSE, constantes en `.rodata`, y pasaje de parámetros con las dos clases de registros de la convención. Cierra el hallazgo 1.13.
+  - ✅ **Auditoría cerrada:** los 13 hallazgos de la sección 1 están corregidos o auditados.
+  - ⚠️ **Queda la Fase 4 (testing).**
+  - ⚠️ **`generateAssembly()` todavía no está conectada a la CLI:** no hay forma de llegar a ella desde `./mi_compilador`, porque `CURRENT_TARGET` sigue en `TARGET_CODINTER` y `src/bison.y` no tiene el caso de la etapa. Mientras tanto, la única manera de probar el generador es con un arnés propio que llame a `generateIntermediateCode()` y después a `generateAssembly()`. Es el punto 2.1/2.2.
+
+---
+
+## 1. Auditoría Crítica: Errores, Riesgos y Discrepancias Detectadas
+
+### 1.1 Instrucciones Aritméticas, Lógicas y Asignación no Implementadas (Stubs vacíos) — CORREGIDO
+- **Ubicación:** `src/object_code.c` (`generateInstruction`).
+- **Problema:** Los casos `TAC_ASSIGN`, `TAC_ADD`, `TAC_SUB`, `TAC_MUL`, `TAC_DIV`, `TAC_MOD`, `TAC_NEG`, `TAC_NOT`, `TAC_LT`, `TAC_GT`, `TAC_EQ`, `TAC_AND` contienen únicamente un `break;`. Solo `TAC_OR` tenía código provisional.
+- **Acción requerida:** Implementar la secuencia de instrucciones assembly GAS para cada operador.
+
+### 1.2 Bug Crítico en Pasaje de Argumentos (`callArgIndex` global y llamadas anidadas) — CORREGIDO
+- **Ubicación:** `src/object_code.c` (`TAC_PARAM` y `TAC_CALL`).
+- **Problema:** Se utiliza una variable global `static int callArgIndex = 0`. Cuando un argumento es una expresión que contiene otra llamada a función (por ejemplo `foo(bar(1), 2)` o `factorial(a - 1)` dentro de una expresión compuesta), la llamada interna emite sus propios `TAC_PARAM` y `TAC_CALL`, reseteando `callArgIndex = 0` y pisando los registros `%edi`, `%esi`, etc. de la función externa.
+- **Acción requerida:** Implementar una estructura de pila de parámetros (`CallParamBuffer` o `ParamStack`) que acumule los operandos de los `param` y los cargue a los registros correspondientes inmediatamente antes del `call`, utilizando la cantidad de argumentos indicada en `instruction->arg2`.
+
+### 1.3 Límite estricto de 6 parámetros y descarte silencioso de argumentos 7+ — CORREGIDO
+- **Ubicación:** `src/object_code.c` (`TAC_PARAM` y `TAC_PARAM_DECL`).
+- **Problema:** `if (callArgIndex < MAX_ARG_REGISTERS)` y `if (frame->paramCount < MAX_ARG_REGISTERS)` descartan silenciosamente cualquier parámetro más allá del 6to.
+- **Acción requerida:**
+  - En la llamada: Empujar a la pila (`pushq` o almacenamiento en el área de argumentos) en orden inverso los parámetros 7 en adelante, asegurando la alineación a 16 bytes antes del `call`.
+  - En la definición: Los parámetros 7+ no se leen de registros, sino del frame del caller en desplazamientos positivos (`16(%rbp)`, `24(%rbp)`, etc.).
+
+### 1.4 División (`TAC_DIV`) y Módulo (`TAC_MOD`) con `idivl` — CORREGIDO
+- **Ubicación:** `src/object_code.c`.
+- **Problema:** En x86-64, `idivl` divide el par `%edx:%eax` por el divisor. Requiere extender el signo de `%eax` a `%edx` mediante `cltd` (o `cdq`). Si el divisor se coloca en `%edx`, `cltd` lo sobreescribe antes de la división.
+- **Acción requerida:**
+  - Cargar dividendo en `%eax`.
+  - Cargar divisor en un registro auxiliar como `%ecx` (nunca `%edx`).
+  - Ejecutar `cltd`.
+  - Ejecutar `idivl %ecx`.
+  - Para `TAC_DIV`: el cociente queda en `%eax`.
+  - Para `TAC_MOD`: el resto queda en `%edx`.
+
+### 1.5 Comparaciones Relacionales y Orden en Sintaxis AT&T (GAS) — AUDITADO, SIN CAMBIOS
+- **Ubicación:** `src/object_code.c` (`TAC_LT`, `TAC_GT`, `TAC_EQ`).
+- **Problema:** En sintaxis AT&T, la instrucción `cmpl %src, %dest` evalúa `%dest - %src`.
+  - Si cargamos `arg1` en `%eax` y `arg2` en `%edx`, `cmpl %edx, %eax` evalúa `%eax - %edx` (`arg1 - arg2`).
+  - Para `<`, la condición sobre `%eax` respecto a `%edx` es `setl %al`.
+  - Para `>`, es `setg %al`.
+  - Para `==`, es `sete %al`.
+  - Luego debe extenderse a 32 bits con `movzbl %al, %eax` antes de almacenar el resultado booleano (0 o 1).
+
+### 1.6 Detección de Variables Globales vs Locales en `loadOperand` y `storeOperand` — CORREGIDO
+- **Ubicación:** `src/object_code.c` (`loadOperand`, `storeOperand`).
+- **Problema:** Actualmente se asume que si `getSlotOffset(frame, op->name) == 0`, el símbolo es automáticamente global y emite `movl nombre(%rip), %reg`. Si una variable local o temporal no se registró en los slots por un bug, no emite advertencia y genera assembly inválido que falla recién en el linker (`undefined reference to 't0'`).
+- **Acción requerida:** Utilizar la información del símbolo (`op->kind == OPERAND_VARIABLE` y el alcance en la tabla de símbolos) para validar si efectivamente es global. Si es `OPERAND_TEMP` o variable local y no tiene slot, registrar error interno del compilador.
+
+- **RESUELTO.** Ser global ya no se deduce por descarte: se verifica contra la lista de
+  nombres que declararon los `TAC_GLOBAL_DECL`, que se arma en la misma pasada previa que
+  emite el segmento de datos. La decisión quedó centralizada en `resolveOperandLocation()`,
+  que devuelve `LOCATION_STACK`, `LOCATION_GLOBAL` o `LOCATION_UNRESOLVED`, y la usan las
+  cuatro rutas de acceso a memoria: `loadOperand`, `storeOperand` y sus equivalentes de punto
+  flotante.
+
+- **Qué pasa ahora ante una inconsistencia.** Se reporta un error interno nombrando el
+  operando y la función, se cuenta en `getObjectCodeErrors()`, y el driver aborta la
+  compilación sin ensamblar. El mensaje distingue explícitamente que es un error *del
+  compilador* y no del programa de entrada.
+
+- **Por qué importa el modo de falla.** El comportamiento anterior emitía
+  `movl t0(%rip), %eax`, que es assembly sintácticamente válido: ensamblaba bien y recién
+  fallaba en el enlazador con `undefined reference to 't0'`, sin ninguna pista de que el
+  problema estuviera en el generador. Y si por casualidad existiera una variable global con
+  ese nombre, ni siquiera fallaba: leía la variable equivocada y entregaba un binario que
+  calcula mal en silencio.
+
+- **Verificación:** se inyectó a propósito el bug que la sección describe (desactivar el
+  registro de slots de los temporales) y el compilador reportó
+  `el operando 't0' no tiene lugar asignado en el frame de 'main' ni esta declarado como
+  variable global`, abortó con código 1 y no dejó ejecutable. Restaurado el código, las
+  regresiones de enteros y de reales siguen pasando y los 12 ejemplos conservan su código de
+  salida.
+
+### 1.7 Código de Salida y Retorno de `main` — CORREGIDO
+- **Ubicación:** `src/object_code.c` (`emitEpilogue`, `TAC_RETURN`).
+- **Problema:** C-TDS permite métodos `void main()`. Si `main` finaliza sin valor de retorno explícito, el registro `%eax` contendrá el residuo de la última operación ejecutada. Al enlazar con `gcc`, el sistema operativo tomará `%eax` como código de salida del proceso, haciendo que pruebas válidas reporten un exit code distinto de 0.
+- **Acción requerida:** Asegurar que si la función es `main`, se emita `movl $0, %eax` antes del epílogo si no hubo un retorno con valor.
+
+### 1.8 Conversión `int` a `float` Incompleta (`TAC_INT_TO_FLOAT`) — CORREGIDO EN LA FASE 3
+- **Ubicación:** `src/object_code.c` (caso `TAC_INT_TO_FLOAT`).
+- **Problema:** Emite `cvtsi2ss %eax, %xmm0`, pero no almacena el contenido de `%xmm0` en el slot de destino ni gestiona registros SSE2 en `storeOperand`.
+- **Acción requerida:** Diseñar el soporte de flotantes de forma aislada en la Fase 3, completando primero el 100% de enteros y booleanos exigido para la entrega.
+
+
+### 1.9 `build.sh` no compilaba `src/asm_instruction.c` (CORREGIDO)
+- **Ubicación:** `build.sh`.
+- **Problema:** La línea de `gcc` no incluía `src/asm_instruction.c`, pero `object_code.c`
+  usa `asmLoad`, `asmStore`, `asmOpReg`, `asmOpImm` y `emitAsm`, definidas ahí. **El proyecto
+  entero no linkeaba en esta rama**: `undefined reference to 'asmLoad'` y una docena más.
+- **Estado:** corregido junto con el punto 1.1, porque sin eso no se podía compilar ni probar
+  nada. Es el único cambio de esta tanda fuera de `object_code.c`.
+
+### 1.10 `build.sh` termina con código de salida 0 aunque `gcc` falle — CORREGIDO
+- **Ubicación:** `build.sh`.
+- **Problema:** La última línea del script es un `echo`, así que el código de salida del
+  script es el del `echo` y no el del `gcc`. Un build roto se ve como exitoso: fue lo que
+  ocultó el problema 1.9. Además rompe el `./build.sh && ./test_suite.sh` del README, porque
+  el `&&` nunca corta.
+- **Acción requerida:** mover el `echo` antes del `gcc`, o terminar el script con `exit $?`
+  tras la compilación.
+- **Estado: corregido.** Se agregó `set -e` al principio del script, que aborta apenas falla
+  cualquiera de los tres pasos (bison, flex o gcc) y no solo el último. También se le puso el
+  `#!/bin/bash` que le faltaba: sin shebang, `./build.sh` dependía de con qué intérprete lo
+  levantara el sistema.
+- **Verificación:** con el proyecto sano el script sigue devolviendo 0; introduciendo un error
+  de sintaxis en un `.c` devuelve 1, y el `./build.sh && ./test_suite.sh` del README corta
+  como corresponde en vez de seguir con un binario viejo.
+
+### 1.11 Fallthrough en `TAC_DIV`, `TAC_MOD` y `TAC_NEG` (CORREGIDO)
+- **Ubicación:** `src/object_code.c` (`generateInstruction`).
+- **Problema:** Los tres `case` eran bloques vacíos (`{ // todo }`) **sin `break`**, de modo
+  que la ejecución caía en el `case TAC_NOT` siguiente. No es que la división no estuviera
+  implementada: es que emitía el código de la negación booleana (`xorl $1, %eax`) y guardaba
+  ese resultado. Una división generaba assembly que compilaba y corría, devolviendo un valor
+  incorrecto en silencio.
+- **Estado:** corregido al implementar el punto 1.1.
+
+### 1.12 El assembly emitido no declara `.note.GNU-stack` — CORREGIDO
+- **Ubicación:** `src/object_code.c` (`generateAssembly`).
+- **Problema:** Al enlazar con `gcc` aparece en cada compilación:
+  `warning: missing .note.GNU-stack section implies executable stack`. El binario queda con
+  stack ejecutable, que es una mala práctica de seguridad y ensucia la salida de los tests.
+- **Acción requerida:** emitir al final del archivo
+  `.section .note.GNU-stack,"",@progbits`.
+- **Estado:** corregido durante la Fase 2. Dejó de ser opcional: como ahora el compilador
+  invoca a gcc, ese aviso del enlazador se imprimía en cada compilación y rompía el requisito
+  del enunciado de que una compilación exitosa no imprima nada.
+
+---
+
+
+### 1.13 El código objeto trata los `float` como enteros y genera resultados incorrectos en silencio — CORREGIDO
+- **Ubicación:** `src/object_code.c` (`loadOperand` y todas las operaciones binarias).
+- **Problema:** `loadOperand()` lee `op->value.int_val` para cualquier `OPERAND_CONSTANT`, sin
+  mirar el tipo. Para una constante `float` eso devuelve el patrón de bits IEEE-754
+  reinterpretado como entero, y después las operaciones se emiten con instrucciones enteras.
+- **Evidencia.** El programa
+  `int main(){ float f; f = 2.5; f = f + 1.5; if (f > 3.0) { return 1; } return 0; }`
+  compila sin ninguna advertencia y genera:
+
+  ```
+      movl $1075838976, %eax     # 2.5 como patron de bits
+      movl $1069547520, %edx     # 1.5 como patron de bits
+      addl %edx, %eax            # suma de patrones de bits, no de reales
+  ```
+
+  Devuelve 1, que *parece* correcto, pero por casualidad: los `float` positivos conservan el
+  orden al compararse como enteros, así que la comparación acierta aunque la suma sea basura.
+  Con otros valores el resultado es sencillamente incorrecto.
+- **Impacto.** `examples/programa.ctds` usa `float` y hoy produce un ejecutable que corre y da
+  resultados sin sentido. Es el peor modo de falla posible para los casos de test: no hay
+  error de compilación ni caída en ejecución, solo números equivocados.
+- **Acción requerida:** mientras la Fase 3 no esté, hacer que el generador **rechace** con un
+  error explícito cualquier operando de tipo `TYPE_FLOAT`, en vez de emitir código entero.
+- **Estado: corregido por la Fase 3**, que implementó el soporte real en vez del rechazo
+  provisorio. `examples/programa.ctds` compila y su aritmética real ahora es correcta.
+
+---
+
+## 1.bis Reproducciones concretas de los bugs ya documentados
+
+Estos tres ya estaban descritos arriba; acá quedan los programas mínimos que los disparan,
+con el resultado real medido. Sirven como casos de test para quien los corrija.
+
+| Bug | Programa | Esperado | Obtenido |
+| --- | --- | --- | --- |
+| ~~1.2 `callArgIndex`~~ CORREGIDO | `int doble(int x){return x*2;} int sumar(int a,int b){return a+b;} int main(){ return sumar(3, doble(2)); }` | 7 | 7 ✅ |
+| ~~1.3 más de 6 parámetros~~ CORREGIDO | `int f(int a,int b,int c,int d,int e,int g,int h){return h;} int main(){ return f(1,2,3,4,5,6,99); }` | 99 | 99 ✅ |
+| ~~1.7 exit code de `main` void~~ CORREGIDO | `void main(){ int x; x = 42; }` | 0 | 0 ✅ |
+
+Detalle del 1.2, que es el menos evidente: con la llamada interna en el **primer** argumento
+(`sumar(doble(2), 3)`) el resultado sale bien de casualidad, porque los `param` de la interna
+se emiten antes que los de la externa. El caso roto es cuando la llamada aparece en un
+argumento posterior: se emite `param 3` (→ `%edi`), después `param 2` de la interna (→ `%esi`,
+índice equivocado), el `call doble` lee `%edi` que vale 3 y devuelve 6, resetea el índice, y
+finalmente `param t0` pisa `%edi` con 6. Resultado: `sumar(6, 2) = 8`.
+
+---
+
+## 2. Checklist de Implementación (TODO)
+
+### Fase 1: Núcleo de Código Objeto (Enteros y Booleanos)
+- [X] **1.1 Asignación y Operaciones Aritméticas Básicas (`generateInstruction`)**
+  - [X] Implementar `TAC_ASSIGN`: cargar `arg1` en `%eax` y almacenar en `result` (vía `loadRegisterBasedOnOperand` y `storeRegisterToOperand`).
+  - [X] Implementar `TAC_ADD`: `emitBinaryOp(instruction, ASM_ADD, frame)`.
+  - [X] Implementar `TAC_SUB`: `emitBinaryOp(instruction, ASM_SUB, frame)`.
+  - [X] Implementar `TAC_MUL`: `emitBinaryOp(instruction, ASM_IMUL, frame)`.
+  - [X] Implementar `TAC_DIV`: dividendo en `%eax`, divisor en `%ecx`, `cltd`, `idivl %ecx`, guardar `%eax`.
+  - [X] Implementar `TAC_MOD`: dividendo en `%eax`, divisor en `%ecx`, `cltd`, `idivl %ecx`, guardar `%edx`.
+  - [X] Implementar `TAC_NEG`: `movl arg1, %eax; negl %eax; store result`.
+  - **Resuelto.** Las tres se apoyan en `emitDivisionOp()`, que abstrae que división y
+    módulo son la misma instrucción leída desde registros distintos (`%eax` el cociente,
+    `%edx` el resto). Verificado ensamblando y **ejecutando** 13 casos, incluidos los de
+    signo —`-17 / 5`, `-17 % 5`, `17 / -5`, `17 % -5`— que son justamente donde `cltd`
+    marca la diferencia.
+
+- [X] **1.2 Operaciones Booleanas y Relacionales**
+  - [X] Implementar `TAC_NOT`: simplificado a `xorl $1, %eax` (los bools son estrictamente `{0, 1}`, sin chequeo de `TYPE_INT`).
+  - [X] Implementar `TAC_LT`: `emitRelationalOp(instruction, "setl", frame)`.
+  - [X] Implementar `TAC_GT`: `emitRelationalOp(instruction, "setg", frame)`.
+  - [X] Implementar `TAC_EQ`: `emitRelationalOp(instruction, "sete", frame)`.
+  - [X] Implementar `TAC_AND`: `emitBinaryOp(instruction, ASM_AND, frame)`.
+  - [X] Implementar `TAC_OR`: `emitBinaryOp(instruction, ASM_OR, frame)`.
+
+- [X] **1.3 Salto y Control de Flujo**
+  - [X] Auditar `TAC_LABEL`, `TAC_GOTO`, `TAC_IF_FALSE`, `TAC_IF_TRUE` para asegurar coherencia en el prefijo de etiquetas (`.L` estándar en GAS).
+  - **Auditado y correcto.** Las etiquetas del TAC ya vienen como `L0`, `L1`, y se emiten con
+    un punto delante (`.L0:`), que es el prefijo de símbolo local de GAS. Los saltos usan el
+    mismo formato, así que no hay desalineación. Verificado ejecutando un `while` que suma
+    `0..4` (devuelve 10) y el `if` de `factorial`.
+
+- [X] **1.4 Pasaje de Parámetros y Llamadas a Métodos (Auditoría de `callParams`)**
+  - [X] Reemplazar `callArgIndex` global por un buffer o pila de argumentos para la llamada activa.
+  - [X] Asociar los argumentos al `TAC_CALL` respectivo mediante la aridad provista en TAC (`instruction->arg2.value.int_val`).
+  - [X] Cargar registros `%edi, %esi, %edx, %ecx, %r8d, %r9d` justo antes de emitir `call`.
+  - [X] Manejar retorno en `%eax` y almacenar en `result` si la llamada no es `void`.
+  - [X] Soporte para funciones con > 6 argumentos (pasaje por pila según System V ABI).
+
+  - **Resuelto** con `emitParam()` y `emitCall()` en `src/object_code.c`, más tres campos
+    nuevos en `FunctionFrame` (`pendingParamSlots`, `pendingParamCount`, `maxPendingParams`).
+
+  - **Por qué una pila y no un contador.** Cada `param` copia su valor a un slot propio del
+    frame y apila el desplazamiento; el `call` consume los **últimos N**, siendo N la aridad
+    que trae la propia instrucción TAC. Eso resuelve el anidamiento sin casos especiales,
+    porque los argumentos de la llamada interna son siempre los más recientes cuando aparece
+    su `call`.
+
+  - **Por qué se copia el valor en el `param` y no se recuerda el operando.** Si solo se
+    guardara "de dónde leer", un argumento posterior con efectos colaterales corrompería a
+    uno anterior. La letra exige evaluación de izquierda a derecha, así que en
+    `suma(g, modifica())` —con `modifica()` escribiendo la global `g`— hay que leer `g`
+    **antes** de que `modifica()` corra. Verificado: devuelve 6 y no 101.
+
+  - **Más de 6 argumentos.** Del séptimo en adelante van a la pila en orden inverso con
+    `pushq`, y se limpia con `addq` después del `call`. Si la cantidad empujada es impar se
+    agrega un relleno de 8 bytes, porque el stack tiene que estar alineado a 16 en el momento
+    del `call`. El lado del callee se resolvió en `TAC_PARAM_DECL`: los parámetros 7+ no
+    llegan en registros sino desde el frame del llamador, en `16(%rbp)`, `24(%rbp)`, etc.
+    (el 16 saltea el `%rbp` guardado y la dirección de retorno).
+
+  - **Verificación, ejecutando los binarios generados:** `sumar(3, doble(2))` = 7 y
+    `sumar(doble(2), 3)` = 7 (los dos órdenes), `sumar(doble(2), triple(3))` = 13,
+    `doble(doble(doble(2)))` = 16, 7 / 8 / 9 parámetros (incluido el caso impar que fuerza el
+    padding), `fib(10)` = 55, `factorial(10)`, llamada `void` como sentencia, y
+    `doble(doble(3) + 1)` = 14. Sin regresiones en `factorial`, `while`, globales ni
+    división/módulo.
+
+- [X] **1.5 Gestión del Stack Frame y Prólogo/Epílogo (Auditoría de `FunctionFrame`)**
+  - [X] Garantizar alineación del stack a 16 bytes (`frameSize = ALIGN_UP(nextOffset, 16)`) antes de cualquier instrucción `call`.
+  - [X] Registrar en el prólogo la copia de los registros de entrada (`%edi..%r9d`) a sus respectivos slots locales en el stack.
+  - [X] Manejar lectura de parámetros 7+ desde offsets positivos (`+16(%rbp)`, `+24(%rbp)`). *(resuelto junto con el punto 1.4, es el lado callee del mismo mecanismo)*
+  - [X] Emitir `movl $0, %eax` en `main` antes del epílogo si el tipo de retorno es `void`.
+
+  - **Alineación: auditada y correcta, no hizo falta cambiar nada.** La cadena de invariantes
+    es: al entrar a una función `%rsp ≡ 8 (mod 16)`, porque el `call` apiló la dirección de
+    retorno sobre un stack alineado; `pushq %rbp` lo lleva a `≡ 0`; y `subq $frameSize` lo
+    mantiene porque `frameSize` siempre es múltiplo de 16 por el `ALIGN_UP`. Cuando
+    `frameSize` es 0 no se emite el `subq` y el invariante igual se conserva. El pasaje de
+    argumentos por pila del punto 1.4 lo respeta agregando 8 bytes de relleno cuando empuja
+    una cantidad impar de argumentos.
+    *Verificación:* sobre un programa con funciones de 1, 6 y 9 parámetros, los cuatro
+    `subq` de frame emitidos fueron 16, 32, 48 y 80 —todos múltiplos de 16— y el único
+    `subq $8` del archivo es el relleno de alineación, emitido justo antes de los `pushq`.
+
+  - **Copia de registros en el prólogo: ya estaba implementada** vía `TAC_PARAM_DECL`, que el
+    TAC emite inmediatamente después del `begin_func`, así que las copias quedan al principio
+    de la función. Verificado en el prólogo de una función de 9 parámetros: los seis primeros
+    salen de `%edi, %esi, %edx, %ecx, %r8d, %r9d` y los tres restantes de `16(%rbp)`,
+    `24(%rbp)` y `32(%rbp)`.
+
+  - **Código de salida de `main` (bug 1.7): corregido.** `FunctionFrame` ganó un campo
+    `returnType`, que se toma del operando del `begin_func` —`tacMethod()` guarda ahí el tipo
+    de retorno—, y `emitEpilogue()` emite `movl $0, %eax` solo cuando la función es `main` y
+    es `void`. Se acota a `main` a propósito: en los demás métodos `void` el llamador ignora
+    `%eax`, y en los no-void el valor de retorno tiene que sobrevivir.
+    *Verificación:* `void main(){ int x; x = 42; }` pasó de devolver 42 a devolver 0. También
+    con una llamada previa que deja residuo, con `return;` explícito y con el cuerpo vacío.
+    Sin regresiones en `int main()` ni en métodos `void` que no son `main`.
+
+- [X] **1.6 Segmento de Datos (`emitGlobals`)**
+  - [X] Declaración de variables globales con `.globl`, `.align 4` y directiva `.long 0`.
+  - [X] Acceso mediante direccionamiento relativo a IP: `nombre(%rip)`.
+  - **Implementado y verificado** (commit `add support code for global variables`). Probado
+    ejecutando `int g; int main(){ g = 7; g = g + 3; return g; }` → devuelve 10. También se
+    verificó el caso de una global y una local con el mismo nombre: `getGlobalName()` usa
+    `symbol->id` (el nombre sin el sufijo `@uid`) para la etiqueta del dato, y el `@uid`
+    queda solo como clave de los slots del frame, así que no se pisan.
+
+---
+
+### Fase 2: Integración en el Pipeline y CLI del Compilador — COMPLETA
+- [X] **2.1 Actualización de CLI y Driver**
+  - [X] Actualizar `CURRENT_TARGET` en `src/cli.h` a `TARGET_ASSEMBLY`.
+  - [X] En `src/cli.c`: discriminar cuando el usuario no pasa `-target` (debe generar el ejecutable `.out`) de cuando pasa explícitamente `-target assembly` (genera `.ass`).
+  - [X] Respetar opción `-o <salida>` para renombrar el archivo resultante.
+  - [X] Silenciar toda salida en stdout si no se especificó `-debug`.
+
+- [X] **2.2 Conexión en `src/bison.y`**
+  - [X] Implementar `writeAssemblyOutput(const Options *options)`.
+  - [X] Si el objetivo final es el ejecutable (`.out`), generar el archivo assembly temporal o intermedio e invocar `gcc -no-pie <archivo.ass> -o <archivo.out>`.
+  - [X] Manejar errores de ensamblado/enlace y propagar el código de salida adecuado.
+
+  - **Cómo quedó.** `Options` ganó un campo `explicitTarget` y la macro
+    `BUILDS_EXECUTABLE(options)`. Sin `-target` el producto es el ejecutable `.out`; con
+    `-target assembly` el producto es el `.ass` y la compilación se detiene ahí, aunque sea
+    la misma etapa. En el camino del ejecutable el `.ass` se escribe como intermedio y se
+    borra al final, salvo con `-debug`, que lo conserva y avisa dónde quedó.
+
+  - **Esto resuelve la ambigüedad que quedó abierta en la etapa de código intermedio.** El
+    enunciado decía a la vez que sin `-target` se compila "hasta la etapa corriente" y que sin
+    `-target` se produce `nombreArchivo.out`. Con la etapa de assembly terminada las dos cosas
+    coinciden y la contradicción desaparece.
+
+  - **Prioridad de `-opt` sobre la extensión:** sin `-target`, el producto es el ejecutable
+    aunque se pase `-opt`. `-opt` dice qué transformaciones aplicar, no dónde cortar la
+    compilación.
+
+  - **Dos detalles del llamado a gcc que costaron una iteración:**
+    1. Hace falta `-x assembler`. gcc deduce el lenguaje por la extensión y no conoce `.ass`,
+       así que sin eso trata el archivo como script de enlazado y falla con
+       `file format not recognized`.
+    2. Se usa `gcc` y no `as` + `ld` porque gcc resuelve el runtime de C (`_start`, la llamada
+       a `main`, la salida del proceso), que es justamente lo que hace que el código de salida
+       de `main` llegue al shell.
+
+  - **Verificación:** 20 programas compilados con `./mi_compilador` y **ejecutados**,
+    comparando el código de salida contra el resultado esperado: aritmética, división y módulo
+    con signo, negación, relacionales, corto circuito, `if` con y sin `else`, `while` simple y
+    anidado, recursión (`factorial(5)`, `fib(12)`), llamadas anidadas, 9 parámetros, globales,
+    shadowing, `void main`, métodos `void` y evaluación de izquierda a derecha. 20 de 20.
+    Los 5 ejemplos válidos del repo generan ejecutable y corren.
+
+---
+
+### Fase 3: Soporte de Tipos Flotantes — COMPLETA
+- [X] Representación en memoria de variables `float` (4 bytes, precisión simple IEEE-754).
+- [X] Emisión de constantes flotantes en sección `.rodata` o `.data`.
+- [X] Registro y uso de registros SSE2 (`%xmm0` a `%xmm7`) para pasaje de parámetros y evaluación.
+- [X] Implementación de `TAC_INT_TO_FLOAT` con almacenamiento efectivo en slot destino.
+- [X] Operaciones flotantes: `movss`, `addss`, `subss`, `mulss`, `divss`, `comiss`.
+
+**Cierra el hallazgo 1.13.** Todo el camino de los reales está implementado en
+`src/object_code.c`, en un bloque propio separado del camino entero.
+
+- **Constantes en `.rodata`.** `movss` no acepta inmediatos, así que todo literal real vive en
+  memoria. Una pasada previa sobre el TAC recoge las constantes, las deduplica por patrón de
+  bits y emite la sección antes del código: `.LC0: .long 1075838976` para `2.5`. La pasada es
+  previa porque la sección tiene que estar completa antes de que el código la referencie.
+
+- **Por qué los reales emiten texto y no `AsmInstruction`.** El modelo de `asm_instruction.h`
+  está construido sobre `AsmRegister` = `{RAX, RDX, RCX}` y mnemónicos enteros. SSE usa otro
+  banco de registros y otro juego de instrucciones; meterlos en el mismo enum obligaría a
+  duplicarlo. El bloque de reales está aislado y documentado, y el camino entero quedó intacto.
+
+- **Comparaciones.** `comiss` deja los flags como una comparación **sin signo**, así que las
+  condiciones son `setb` / `seta` / `sete`, y no las `setl` / `setg` con signo del camino
+  entero. Usar las de entero daría resultados incorrectos. El tipo que decide cuál emitir está
+  en los **operandos**, no en el resultado, porque el resultado de un relacional es `boolean`.
+
+- **Negación.** Se emite como `0.0 - x` (`pxor` + `subss`). Un `xorps` contra la máscara de
+  signo sería una instrucción menos, pero exigiría otra constante en `.rodata`.
+
+- **Pasaje de parámetros con dos clases de registros.** System V clasifica cada argumento por
+  separado: los enteros consumen los seis registros de propósito general y los reales los ocho
+  XMM. Un argumento va a la pila solo cuando se agotaron los registros de **su** clase, así que
+  la cuenta no se puede llevar con un único índice. Se implementó en los dos lados de la
+  convención: `emitCall()` clasifica antes de cargar, y `TAC_PARAM_DECL` lleva contadores
+  separados (`integerParamCount`, `floatParamCount`, `stackParamCount`).
+
+- **Retorno.** Los reales vuelven en `%xmm0` y los enteros en `%eax`, tanto al emitir el
+  `return` como al recoger el resultado de un `call`.
+
+- **Verificación:** 15 programas compilados y **ejecutados**, comparando resultados contra la
+  aritmética real: suma, resta, multiplicación, división, los tres relacionales, negación,
+  coerción `int` → `float` (directa y dentro de una expresión), parámetros y retorno reales,
+  una firma mixta `f(int, float, int)`, global `float` y recursión con acumulador real.
+  15 de 15, y los 20 casos de enteros siguen pasando sin cambios.
+
+- **Pendiente menor:** la precisión es simple (`float` de 4 bytes, `movss`/`addss`). Si en
+  algún momento se quisiera doble precisión habría que pasar a `movsd`/`addsd` y 8 bytes por
+  slot.
+
+---
+
+### Fase 4: Pruebas Unitarias e Integración (Testing)
+- [ ] **4.1 Pruebas Unitarias de `object_code` (`tests/test_object_code.c`)**
+  - [ ] Verificar creación de frames, asignación correcta de offsets y alineación a 16 bytes.
+  - [ ] Probar traducción aislada de cada cuádrupla TAC a assembly.
+- [ ] **4.2 Pruebas de Integración de Punta a Punta**
+  - [ ] Compilar y ejecutar `examples/factorial.ctds`: verificar recursión y valor retornado.
+  - [ ] Compilar y ejecutar `examples/programa_sin_error.ctds`: verificar operaciones aritméticas combinadas y precedencia.
+  - [ ] Crear tests con llamadas anidadas: `sumar(doble(2), triple(3))`.
+  - [ ] Crear tests con más de 6 parámetros para verificar el pasaje por pila.
+  - [ ] Crear tests con variables globales y variables locales con el mismo nombre (shadowing).
+  - [ ] Integrar la ejecución de los binarios generados en `test_suite.sh`.
