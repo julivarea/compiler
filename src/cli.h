@@ -33,15 +33,26 @@ typedef enum {
  * etapa nueva, mover esta constante es lo único necesario para que el default y
  * el chequeo de "etapa no implementada" acompañen.
  */
-#define CURRENT_TARGET TARGET_CODINTER
+#define CURRENT_TARGET TARGET_ASSEMBLY
 
 typedef struct {
     const char *input;   /**< archivo .ctds de entrada (apunta a argv) */
     char *output;        /**< archivo de salida; reservado con malloc  */
     Target target;       /**< etapa hasta la que se compila            */
+    int explicitTarget;  /**< 1 si se pasó -target; 0 si es el default */
     int debug;           /**< -debug                                   */
     const char *opt;     /**< -opt <nombre>; NULL si no se pasó        */
 } Options;
+
+/**
+ * @brief Indica si la corrida debe producir el ejecutable en vez del archivo
+ *        de una etapa.
+ *
+ * El enunciado pide que sin `-target` el compilador genere `nombreArchivo.out`.
+ * Pedir explícitamente `-target assembly` produce el `.ass` y se detiene ahí,
+ * aunque sea la misma etapa.
+ */
+#define BUILDS_EXECUTABLE(options) (!(options)->explicitTarget)
 
 /**
  * @brief Interpreta argv y completa `options` con los valores por defecto de lo

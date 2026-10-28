@@ -627,4 +627,10 @@ void generateAssembly(const TACList *tacList) {
 
         instruction = instruction->next;
     }
+
+    /* Sin esta seccion el enlazador asume que el programa necesita un stack
+     * ejecutable y avisa en cada compilacion. Como la etapa de assembly invoca
+     * a gcc, ese aviso romperia el requisito de que una compilacion exitosa no
+     * imprima nada. */
+    buildStringf("\n.section .note.GNU-stack,\"\",@progbits\n");
 }

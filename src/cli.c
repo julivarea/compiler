@@ -19,6 +19,10 @@ const char *getTargetName(Target target) {
 /* Extensión del archivo de salida según la etapa. Con -opt el enunciado pide
  * .opt, así que la optimización gana sobre la etapa. */
 static const char *getTargetExtension(const Options *options) {
+    /* Sin -target el producto es el ejecutable, no el archivo de una etapa.
+     * Tiene prioridad sobre -opt, que habla de qué transformaciones aplicar y
+     * no de dónde cortar la compilación. */
+    if (BUILDS_EXECUTABLE(options)) return ".out";
     if (options->opt != NULL) return ".opt";
 
     switch (options->target) {
@@ -83,6 +87,7 @@ int parseArguments(int argc, char **argv, Options *options) {
     options->input = NULL;
     options->output = NULL;
     options->target = CURRENT_TARGET;
+    options->explicitTarget = 0;
     options->debug = 0;
     options->opt = NULL;
 
@@ -103,6 +108,7 @@ int parseArguments(int argc, char **argv, Options *options) {
                 printUsage(program);
                 return 1;
             }
+            options->explicitTarget = 1;
             if (parseTarget(argv[i], &options->target) != 0) {
                 fprintf(stderr, "Error: etapa desconocida '%s'.\n", argv[i]);
                 printUsage(program);

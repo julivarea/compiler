@@ -18,7 +18,8 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - ✅ **Pasaje de parámetros y llamadas (punto 1.4):** pila de argumentos por llamada, soporte de más de 6 parámetros en ambos lados de la convención, y evaluación de izquierda a derecha preservada. Cierra los bugs 1.2 y 1.3 de la auditoría.
   - ✅ **Stack frame, prólogo y epílogo (punto 1.5):** alineación a 16 bytes auditada, copia de registros de entrada verificada y código de salida de `main` corregido. Cierra el bug 1.7.
   - ✅ **Fase 1 completa.** Las seis secciones del núcleo de enteros y booleanos están implementadas y verificadas ejecutando los binarios generados.
-  - ⚠️ **Próximo foco crítico:** la Fase 2, conectar el generador con la CLI (`-target assembly` y el ejecutable `.out`). Hoy `generateAssembly()` no es alcanzable desde `./mi_compilador`.
+  - ✅ **Fase 2 completa:** el generador está conectado a la CLI. `./mi_compilador archivo.ctds` produce el ejecutable `.out` y `-target assembly` produce el `.ass`.
+  - ⚠️ **Próximo foco crítico:** el hallazgo 1.13. Los `float` se traducen como enteros y el compilador entrega binarios con aritmética incorrecta sin avisar. Decidir si se rechazan hasta tener la Fase 3.
   - ⚠️ **`generateAssembly()` todavía no está conectada a la CLI:** no hay forma de llegar a ella desde `./mi_compilador`, porque `CURRENT_TARGET` sigue en `TARGET_CODINTER` y `src/bison.y` no tiene el caso de la etapa. Mientras tanto, la única manera de probar el generador es con un arnés propio que llame a `generateIntermediateCode()` y después a `generateAssembly()`. Es el punto 2.1/2.2.
 
 ---
@@ -104,13 +105,45 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   incorrecto en silencio.
 - **Estado:** corregido al implementar el punto 1.1.
 
-### 1.12 El assembly emitido no declara `.note.GNU-stack`
+### 1.12 El assembly emitido no declara `.note.GNU-stack` — CORREGIDO
 - **Ubicación:** `src/object_code.c` (`generateAssembly`).
 - **Problema:** Al enlazar con `gcc` aparece en cada compilación:
   `warning: missing .note.GNU-stack section implies executable stack`. El binario queda con
   stack ejecutable, que es una mala práctica de seguridad y ensucia la salida de los tests.
 - **Acción requerida:** emitir al final del archivo
   `.section .note.GNU-stack,"",@progbits`.
+- **Estado:** corregido durante la Fase 2. Dejó de ser opcional: como ahora el compilador
+  invoca a gcc, ese aviso del enlazador se imprimía en cada compilación y rompía el requisito
+  del enunciado de que una compilación exitosa no imprima nada.
+
+---
+
+
+### 1.13 El código objeto trata los `float` como enteros y genera resultados incorrectos en silencio
+- **Ubicación:** `src/object_code.c` (`loadOperand` y todas las operaciones binarias).
+- **Problema:** `loadOperand()` lee `op->value.int_val` para cualquier `OPERAND_CONSTANT`, sin
+  mirar el tipo. Para una constante `float` eso devuelve el patrón de bits IEEE-754
+  reinterpretado como entero, y después las operaciones se emiten con instrucciones enteras.
+- **Evidencia.** El programa
+  `int main(){ float f; f = 2.5; f = f + 1.5; if (f > 3.0) { return 1; } return 0; }`
+  compila sin ninguna advertencia y genera:
+
+  ```
+      movl $1075838976, %eax     # 2.5 como patron de bits
+      movl $1069547520, %edx     # 1.5 como patron de bits
+      addl %edx, %eax            # suma de patrones de bits, no de reales
+  ```
+
+  Devuelve 1, que *parece* correcto, pero por casualidad: los `float` positivos conservan el
+  orden al compararse como enteros, así que la comparación acierta aunque la suma sea basura.
+  Con otros valores el resultado es sencillamente incorrecto.
+- **Impacto.** `examples/programa.ctds` usa `float` y hoy produce un ejecutable que corre y da
+  resultados sin sentido. Es el peor modo de falla posible para los casos de test: no hay
+  error de compilación ni caída en ejecución, solo números equivocados.
+- **Acción requerida:** mientras la Fase 3 no esté, hacer que el generador **rechace** con un
+  error explícito cualquier operando de tipo `TYPE_FLOAT`, en vez de emitir código entero.
+  Fallar ruidosamente es preferible a entregar un binario incorrecto. La decisión tiene un
+  costo: `examples/programa.ctds` pasaría a no compilar hasta que se implemente la Fase 3.
 
 ---
 
@@ -245,17 +278,47 @@ finalmente `param t0` pisa `%edi` con 6. Resultado: `sumar(6, 2) = 8`.
 
 ---
 
-### Fase 2: Integración en el Pipeline y CLI del Compilador
-- [ ] **2.1 Actualización de CLI y Driver**
-  - [ ] Actualizar `CURRENT_TARGET` en `src/cli.h` a `TARGET_ASSEMBLY`.
-  - [ ] En `src/cli.c`: discriminar cuando el usuario no pasa `-target` (debe generar el ejecutable `.out`) de cuando pasa explícitamente `-target assembly` (genera `.ass`).
-  - [ ] Respetar opción `-o <salida>` para renombrar el archivo resultante.
-  - [ ] Silenciar toda salida en stdout si no se especificó `-debug`.
+### Fase 2: Integración en el Pipeline y CLI del Compilador — COMPLETA
+- [X] **2.1 Actualización de CLI y Driver**
+  - [X] Actualizar `CURRENT_TARGET` en `src/cli.h` a `TARGET_ASSEMBLY`.
+  - [X] En `src/cli.c`: discriminar cuando el usuario no pasa `-target` (debe generar el ejecutable `.out`) de cuando pasa explícitamente `-target assembly` (genera `.ass`).
+  - [X] Respetar opción `-o <salida>` para renombrar el archivo resultante.
+  - [X] Silenciar toda salida en stdout si no se especificó `-debug`.
 
-- [ ] **2.2 Conexión en `src/bison.y`**
-  - [ ] Implementar `writeAssemblyOutput(const Options *options)`.
-  - [ ] Si el objetivo final es el ejecutable (`.out`), generar el archivo assembly temporal o intermedio e invocar `gcc -no-pie <archivo.ass> -o <archivo.out>` (o ensamblador del sistema).
-  - [ ] Manejar errores de ensamblado/enlace y propagar el código de salida adecuado.
+- [X] **2.2 Conexión en `src/bison.y`**
+  - [X] Implementar `writeAssemblyOutput(const Options *options)`.
+  - [X] Si el objetivo final es el ejecutable (`.out`), generar el archivo assembly temporal o intermedio e invocar `gcc -no-pie <archivo.ass> -o <archivo.out>`.
+  - [X] Manejar errores de ensamblado/enlace y propagar el código de salida adecuado.
+
+  - **Cómo quedó.** `Options` ganó un campo `explicitTarget` y la macro
+    `BUILDS_EXECUTABLE(options)`. Sin `-target` el producto es el ejecutable `.out`; con
+    `-target assembly` el producto es el `.ass` y la compilación se detiene ahí, aunque sea
+    la misma etapa. En el camino del ejecutable el `.ass` se escribe como intermedio y se
+    borra al final, salvo con `-debug`, que lo conserva y avisa dónde quedó.
+
+  - **Esto resuelve la ambigüedad que quedó abierta en la etapa de código intermedio.** El
+    enunciado decía a la vez que sin `-target` se compila "hasta la etapa corriente" y que sin
+    `-target` se produce `nombreArchivo.out`. Con la etapa de assembly terminada las dos cosas
+    coinciden y la contradicción desaparece.
+
+  - **Prioridad de `-opt` sobre la extensión:** sin `-target`, el producto es el ejecutable
+    aunque se pase `-opt`. `-opt` dice qué transformaciones aplicar, no dónde cortar la
+    compilación.
+
+  - **Dos detalles del llamado a gcc que costaron una iteración:**
+    1. Hace falta `-x assembler`. gcc deduce el lenguaje por la extensión y no conoce `.ass`,
+       así que sin eso trata el archivo como script de enlazado y falla con
+       `file format not recognized`.
+    2. Se usa `gcc` y no `as` + `ld` porque gcc resuelve el runtime de C (`_start`, la llamada
+       a `main`, la salida del proceso), que es justamente lo que hace que el código de salida
+       de `main` llegue al shell.
+
+  - **Verificación:** 20 programas compilados con `./mi_compilador` y **ejecutados**,
+    comparando el código de salida contra el resultado esperado: aritmética, división y módulo
+    con signo, negación, relacionales, corto circuito, `if` con y sin `else`, `while` simple y
+    anidado, recursión (`factorial(5)`, `fib(12)`), llamadas anidadas, 9 parámetros, globales,
+    shadowing, `void main`, métodos `void` y evaluación de izquierda a derecha. 20 de 20.
+    Los 5 ejemplos válidos del repo generan ejecutable y corren.
 
 ---
 
