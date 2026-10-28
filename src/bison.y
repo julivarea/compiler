@@ -285,6 +285,11 @@ static int writeIntermediateCodeOutput(const Options *options) {
     return 0;
 }
 
+/* Las rutas se acotan a PATH_MAX, que es el limite del sistema de archivos, y
+ * el comando de ensamblado necesita espacio para dos de ellas mas el resto. */
+#define MAX_PATH_LENGTH 4096
+#define MAX_COMMAND_LENGTH 8704
+
 /* Escribe el contenido acumulado en el string_builder al archivo indicado. */
 static int writeBuiltStringTo(const char *path) {
     FILE *out = fopen(path, "w");
@@ -309,12 +314,20 @@ static int writeBuiltStringTo(const char *path) {
  * acceso a globales por nombre(%rip) que emite el generador.
  */
 static int assembleAndLink(const Options *options, const char *assemblyPath) {
-    char command[1024];
+    char command[MAX_COMMAND_LENGTH];
 
-    /* -x assembler es imprescindible: gcc deduce el lenguaje de la extension y
-     * no conoce .ass, asi que sin esto trata el archivo como script de enlazado. */
-    snprintf(command, sizeof(command), "gcc -no-pie -x assembler '%s' -o '%s'",
-             assemblyPath, options->output);
+    /* -x assembler le dice explicitamente a gcc que el archivo es assembly, sin
+     * depender de que deduzca el lenguaje por la extension. */
+    int commandLength = snprintf(command, sizeof(command), "gcc -no-pie -x assembler '%s' -o '%s'",
+                                 assemblyPath, options->output);
+
+    /* snprintf trunca en silencio: si no se chequea, con rutas largas se
+     * ejecutaria un comando cortado a la mitad y el error seria incomprensible. */
+    if (commandLength < 0 || (size_t)commandLength >= sizeof(command)) {
+        fprintf(stderr, "Error: las rutas son demasiado largas para construir el comando de ensamblado"
+                        " (limite %zu caracteres).\n", sizeof(command) - 1);
+        return 1;
+    }
 
     if (options->debug) {
         printf("Ensamblando: %s\n", command);
@@ -355,13 +368,18 @@ static int writeAssemblyOutput(const Options *options) {
         return writeBuiltStringTo(options->output);
     }
 
-    /* El intermedio toma el nombre del ejecutable con extension .ass. */
-    char assemblyPath[1024];
-    size_t outputLength = strlen(options->output);
-    if (outputLength > 4 && strcmp(options->output + outputLength - 4, ".out") == 0) {
-        snprintf(assemblyPath, sizeof(assemblyPath), "%.*s.ass", (int)(outputLength - 4), options->output);
-    } else {
-        snprintf(assemblyPath, sizeof(assemblyPath), "%s.ass", options->output);
+    /*
+     * El intermedio usa la extension .tmp.s y no .ass a proposito: si usara
+     * .ass tomaria exactamente el nombre que produce `-target assembly`, de
+     * modo que compilar al ejecutable pisaria y despues borraria un archivo
+     * que el usuario pudo haber generado a mano para inspeccionarlo.
+     */
+    char assemblyPath[MAX_PATH_LENGTH];
+    int pathLength = snprintf(assemblyPath, sizeof(assemblyPath), "%s.tmp.s", options->output);
+    if (pathLength < 0 || (size_t)pathLength >= sizeof(assemblyPath)) {
+        fprintf(stderr, "Error: la ruta del archivo intermedio excede los %zu caracteres.\n",
+                sizeof(assemblyPath) - 1);
+        return 1;
     }
 
     if (writeBuiltStringTo(assemblyPath) != 0) {

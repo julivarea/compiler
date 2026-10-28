@@ -20,7 +20,7 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - ✅ **Fase 1 completa.** Las seis secciones del núcleo de enteros y booleanos están implementadas y verificadas ejecutando los binarios generados.
   - ✅ **Fase 2 completa:** el generador está conectado a la CLI. `./mi_compilador archivo.ctds` produce el ejecutable `.out` y `-target assembly` produce el `.ass`.
   - ✅ **Fase 3 completa:** soporte de `float` con SSE, constantes en `.rodata`, y pasaje de parámetros con las dos clases de registros de la convención. Cierra el hallazgo 1.13.
-  - ✅ **Auditoría cerrada:** los 13 hallazgos de la sección 1 están corregidos o auditados.
+  - ✅ **Auditoría cerrada:** los 15 hallazgos de la sección 1 están corregidos o auditados.
   - ⚠️ **Queda la Fase 4 (testing).**
   - ⚠️ **`generateAssembly()` todavía no está conectada a la CLI:** no hay forma de llegar a ella desde `./mi_compilador`, porque `CURRENT_TARGET` sigue en `TARGET_CODINTER` y `src/bison.y` no tiene el caso de la etapa. Mientras tanto, la única manera de probar el generador es con un arnés propio que llame a `generateIntermediateCode()` y después a `generateAssembly()`. Es el punto 2.1/2.2.
 
@@ -179,6 +179,36 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   error explícito cualquier operando de tipo `TYPE_FLOAT`, en vez de emitir código entero.
 - **Estado: corregido por la Fase 3**, que implementó el soporte real en vez del rechazo
   provisorio. `examples/programa.ctds` compila y su aritmética real ahora es correcta.
+
+---
+
+
+### 1.14 Compilar al ejecutable borraba un `.ass` generado por el usuario — CORREGIDO
+- **Ubicación:** `src/bison.y` (`writeAssemblyOutput`).
+- **Problema:** en el camino del ejecutable, el archivo intermedio tomaba el nombre
+  `<base>.ass`, exactamente el mismo que produce `-target assembly`. Si alguien generaba el
+  assembly para inspeccionarlo y después compilaba el programa, el intermedio lo pisaba y
+  después lo borraba al terminar.
+- **Estado: corregido.** El intermedio pasó a llamarse `<salida>.tmp.s`. El `.tmp` deja claro
+  que es transitorio y el `.s` es la extensión estándar de assembly, con lo cual el nombre ya
+  no puede colisionar con el entregable de la etapa.
+- **Verificación:** tras `-target assembly` queda el `.ass`; compilando después al ejecutable
+  sobreviven los dos (`f.ass` y `f.out`). Sin `-debug` el intermedio se borra; con `-debug` se
+  conserva y el mensaje informa que quedó en `<salida>.tmp.s`.
+
+### 1.15 El comando de ensamblado se truncaba en silencio — CORREGIDO
+- **Ubicación:** `src/bison.y` (`assembleAndLink` y `writeAssemblyOutput`).
+- **Problema:** el comando de `gcc` se armaba con `snprintf` en un buffer de 1024 caracteres y
+  no se miraba el valor de retorno. `snprintf` trunca sin avisar, así que con rutas largas se
+  habría ejecutado un comando cortado a la mitad y el error resultante no habría tenido
+  ninguna relación aparente con la causa.
+- **Estado: corregido.** Los buffers se dimensionaron contra el límite real del sistema de
+  archivos (`MAX_PATH_LENGTH` 4096, y `MAX_COMMAND_LENGTH` con lugar para dos rutas máximas
+  más el resto del comando), y ahora se chequea el valor de retorno de `snprintf`: si llegara
+  a truncar, se aborta con un mensaje explícito en vez de ejecutar un comando incompleto.
+- **Verificación:** con el buffer original de 1024 una ruta de 2572 caracteres era rechazada;
+  con los límites corregidos esa misma ruta compila y el ejecutable corre, que es el
+  comportamiento esperado porque el sistema de archivos la acepta.
 
 ---
 
