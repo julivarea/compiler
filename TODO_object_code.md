@@ -19,7 +19,8 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - ✅ **Stack frame, prólogo y epílogo (punto 1.5):** alineación a 16 bytes auditada, copia de registros de entrada verificada y código de salida de `main` corregido. Cierra el bug 1.7.
   - ✅ **Fase 1 completa.** Las seis secciones del núcleo de enteros y booleanos están implementadas y verificadas ejecutando los binarios generados.
   - ✅ **Fase 2 completa:** el generador está conectado a la CLI. `./mi_compilador archivo.ctds` produce el ejecutable `.out` y `-target assembly` produce el `.ass`.
-  - ⚠️ **Próximo foco crítico:** el hallazgo 1.13. Los `float` se traducen como enteros y el compilador entrega binarios con aritmética incorrecta sin avisar. Decidir si se rechazan hasta tener la Fase 3.
+  - ✅ **Fase 3 completa:** soporte de `float` con SSE, constantes en `.rodata`, y pasaje de parámetros con las dos clases de registros de la convención. Cierra el hallazgo 1.13.
+  - ⚠️ **Queda la Fase 4 (testing)** y dos hallazgos menores sin resolver: 1.6 (detección de globales por ausencia de slot) y 1.10 (`build.sh` devuelve 0 aunque `gcc` falle).
   - ⚠️ **`generateAssembly()` todavía no está conectada a la CLI:** no hay forma de llegar a ella desde `./mi_compilador`, porque `CURRENT_TARGET` sigue en `TARGET_CODINTER` y `src/bison.y` no tiene el caso de la etapa. Mientras tanto, la única manera de probar el generador es con un arnés propio que llame a `generateIntermediateCode()` y después a `generateAssembly()`. Es el punto 2.1/2.2.
 
 ---
@@ -119,7 +120,7 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
 ---
 
 
-### 1.13 El código objeto trata los `float` como enteros y genera resultados incorrectos en silencio
+### 1.13 El código objeto trata los `float` como enteros y genera resultados incorrectos en silencio — CORREGIDO
 - **Ubicación:** `src/object_code.c` (`loadOperand` y todas las operaciones binarias).
 - **Problema:** `loadOperand()` lee `op->value.int_val` para cualquier `OPERAND_CONSTANT`, sin
   mirar el tipo. Para una constante `float` eso devuelve el patrón de bits IEEE-754
@@ -142,8 +143,8 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   error de compilación ni caída en ejecución, solo números equivocados.
 - **Acción requerida:** mientras la Fase 3 no esté, hacer que el generador **rechace** con un
   error explícito cualquier operando de tipo `TYPE_FLOAT`, en vez de emitir código entero.
-  Fallar ruidosamente es preferible a entregar un binario incorrecto. La decisión tiene un
-  costo: `examples/programa.ctds` pasaría a no compilar hasta que se implemente la Fase 3.
+- **Estado: corregido por la Fase 3**, que implementó el soporte real en vez del rechazo
+  provisorio. `examples/programa.ctds` compila y su aritmética real ahora es correcta.
 
 ---
 
@@ -322,12 +323,53 @@ finalmente `param t0` pisa `%edi` con 6. Resultado: `sumar(6, 2) = 8`.
 
 ---
 
-### Fase 3: Soporte de Tipos Flotantes (Extensión opcional / Entrega Final)
-- [ ] Representación en memoria de variables `float` (4 bytes, precisión simple IEEE-754).
-- [ ] Emisión de constantes flotantes en sección `.rodata` o `.data`.
-- [ ] Registro y uso de registros SSE2 (`%xmm0` a `%xmm7`) para pasaje de parámetros y evaluación.
-- [ ] Implementación de `TAC_INT_TO_FLOAT` con almacenamiento efectivo en slot destino.
-- [ ] Operaciones flotantes: `movss`, `addss`, `subss`, `mulss`, `divss`, `ucomiss`.
+### Fase 3: Soporte de Tipos Flotantes — COMPLETA
+- [X] Representación en memoria de variables `float` (4 bytes, precisión simple IEEE-754).
+- [X] Emisión de constantes flotantes en sección `.rodata` o `.data`.
+- [X] Registro y uso de registros SSE2 (`%xmm0` a `%xmm7`) para pasaje de parámetros y evaluación.
+- [X] Implementación de `TAC_INT_TO_FLOAT` con almacenamiento efectivo en slot destino.
+- [X] Operaciones flotantes: `movss`, `addss`, `subss`, `mulss`, `divss`, `comiss`.
+
+**Cierra el hallazgo 1.13.** Todo el camino de los reales está implementado en
+`src/object_code.c`, en un bloque propio separado del camino entero.
+
+- **Constantes en `.rodata`.** `movss` no acepta inmediatos, así que todo literal real vive en
+  memoria. Una pasada previa sobre el TAC recoge las constantes, las deduplica por patrón de
+  bits y emite la sección antes del código: `.LC0: .long 1075838976` para `2.5`. La pasada es
+  previa porque la sección tiene que estar completa antes de que el código la referencie.
+
+- **Por qué los reales emiten texto y no `AsmInstruction`.** El modelo de `asm_instruction.h`
+  está construido sobre `AsmRegister` = `{RAX, RDX, RCX}` y mnemónicos enteros. SSE usa otro
+  banco de registros y otro juego de instrucciones; meterlos en el mismo enum obligaría a
+  duplicarlo. El bloque de reales está aislado y documentado, y el camino entero quedó intacto.
+
+- **Comparaciones.** `comiss` deja los flags como una comparación **sin signo**, así que las
+  condiciones son `setb` / `seta` / `sete`, y no las `setl` / `setg` con signo del camino
+  entero. Usar las de entero daría resultados incorrectos. El tipo que decide cuál emitir está
+  en los **operandos**, no en el resultado, porque el resultado de un relacional es `boolean`.
+
+- **Negación.** Se emite como `0.0 - x` (`pxor` + `subss`). Un `xorps` contra la máscara de
+  signo sería una instrucción menos, pero exigiría otra constante en `.rodata`.
+
+- **Pasaje de parámetros con dos clases de registros.** System V clasifica cada argumento por
+  separado: los enteros consumen los seis registros de propósito general y los reales los ocho
+  XMM. Un argumento va a la pila solo cuando se agotaron los registros de **su** clase, así que
+  la cuenta no se puede llevar con un único índice. Se implementó en los dos lados de la
+  convención: `emitCall()` clasifica antes de cargar, y `TAC_PARAM_DECL` lleva contadores
+  separados (`integerParamCount`, `floatParamCount`, `stackParamCount`).
+
+- **Retorno.** Los reales vuelven en `%xmm0` y los enteros en `%eax`, tanto al emitir el
+  `return` como al recoger el resultado de un `call`.
+
+- **Verificación:** 15 programas compilados y **ejecutados**, comparando resultados contra la
+  aritmética real: suma, resta, multiplicación, división, los tres relacionales, negación,
+  coerción `int` → `float` (directa y dentro de una expresión), parámetros y retorno reales,
+  una firma mixta `f(int, float, int)`, global `float` y recursión con acumulador real.
+  15 de 15, y los 20 casos de enteros siguen pasando sin cambios.
+
+- **Pendiente menor:** la precisión es simple (`float` de 4 bytes, `movss`/`addss`). Si en
+  algún momento se quisiera doble precisión habría que pasar a `movsd`/`addsd` y 8 bytes por
+  slot.
 
 ---
 

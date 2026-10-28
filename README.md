@@ -30,7 +30,7 @@ El proyecto se aborda de forma incremental: cada entrega agrega una fase al comp
   transforma el AST validado en instrucciones lineales de tres direcciones
 - **Código objeto x86-64**:
   traduce el TAC a assembly de GNU Assembler y lo ensambla con `gcc` para producir el
-  ejecutable. Enteros y booleanos completos; los `float` todavía no (ver Problemas conocidos)
+  ejecutable. Enteros, booleanos y reales de precisión simple (SSE)
 
 En la [Wiki de Onboarding](wiki/00-index.md) hay
 una versión navegable estructurada paso a paso.
@@ -240,13 +240,9 @@ y se borran con `rm -f examples/*.lex examples/*.sint examples/*.sem examples/*.
 
 ## Problemas conocidos
 
-- **Los `float` se traducen a código objeto como si fueran enteros.** El programa compila,
-  enlaza y corre, pero la aritmética real es incorrecta: las constantes se emiten como su
-  patrón de bits IEEE-754 y se operan con instrucciones enteras. Afecta a
-  `examples/programa.ctds`. Está documentado como hallazgo 1.13 en
-  `TODO_object_code.md`, junto con la propuesta de rechazarlos explícitamente hasta
-  implementar el soporte real.
 - **`-opt` se acepta y se ignora con un aviso**, porque todavía no hay ninguna optimización.
+- **Los `float` son de precisión simple** (4 bytes, IEEE-754, instrucciones `movss`/`addss`).
+  No hay doble precisión.
 - **Un método solo ve a los declarados antes que él.** No hay declaración
   adelantada en C-TDS, así que `main(){ g(); }` con `g` definido más abajo da
   `Método no declarado`. Es lo que pide la letra ("todo se declara antes de

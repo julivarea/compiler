@@ -59,8 +59,13 @@ typedef struct {
      * de los de la llamada que la contiene.
      */
     int pendingParamSlots[MAX_PENDING_PARAMS];
+    DataType pendingParamTypes[MAX_PENDING_PARAMS]; /**< Clase de cada argumento: entera o real */
     int pendingParamCount; /**< Argumentos apilados sin su `call` */
     int maxPendingParams;  /**< Pico de la pila, calculado antes de emitir */
+
+    int integerParamCount; /**< Parámetros formales enteros ya ubicados en el prólogo */
+    int floatParamCount;   /**< Parámetros formales reales ya ubicados en el prólogo */
+    int stackParamCount;   /**< Parámetros formales que llegaron por la pila */
 } FunctionFrame;
 
 

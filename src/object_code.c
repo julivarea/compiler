@@ -32,6 +32,9 @@ FunctionFrame *createFrame(const char *funcName) {
     frame->paramCount = 0;
     frame->pendingParamCount = 0;
     frame->maxPendingParams = 0;
+    frame->integerParamCount = 0;
+    frame->floatParamCount = 0;
+    frame->stackParamCount = 0;
 
     return frame;
 }
@@ -104,6 +107,124 @@ int getSlotOffset(const FunctionFrame *frame, const char *name) {
         }
     }
     return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Punto flotante (SSE, precision simple)                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Los reales se manejan con el banco de registros XMM y mnemonicos propios
+ * (movss, addss, comiss...), completamente separados del camino entero que
+ * modela `asm_instruction.h`. Por eso esta parte emite texto directamente en
+ * vez de construir AsmInstruction: son dos juegos de instrucciones distintos y
+ * mezclarlos en el mismo enum obligaria a duplicar el enum de registros.
+ */
+
+#define MAX_FLOAT_CONSTANTS 256
+#define MAX_XMM_ARG_REGISTERS 8
+
+static const char *XMM_ARG_REGISTERS[] = {
+    "%xmm0", "%xmm1", "%xmm2", "%xmm3", "%xmm4", "%xmm5", "%xmm6", "%xmm7"
+};
+
+typedef struct {
+    float value;
+    char label[16];
+} FloatConstant;
+
+static FloatConstant floatConstants[MAX_FLOAT_CONSTANTS];
+static int floatConstantCount = 0;
+
+/* Patron de bits IEEE-754 del real, que es lo que entiende la directiva .long */
+static unsigned int getFloatBits(float value) {
+    union { float asFloat; unsigned int asBits; } conversion;
+    conversion.asFloat = value;
+    return conversion.asBits;
+}
+
+/*
+ * Registra una constante real y devuelve la etiqueta con la que referenciarla.
+ *
+ * `movss` no acepta operandos inmediatos, asi que todo literal real tiene que
+ * vivir en memoria. Se reutiliza la etiqueta si el mismo valor ya aparecio.
+ */
+static const char *internFloatConstant(float value) {
+    for (int i = 0; i < floatConstantCount; i++) {
+        if (getFloatBits(floatConstants[i].value) == getFloatBits(value)) {
+            return floatConstants[i].label;
+        }
+    }
+
+    if (floatConstantCount >= MAX_FLOAT_CONSTANTS) {
+        return floatConstants[0].label; /* acotado por el prescan; defensivo */
+    }
+
+    FloatConstant *constant = &floatConstants[floatConstantCount];
+    constant->value = value;
+    snprintf(constant->label, sizeof(constant->label), ".LC%d", floatConstantCount);
+    floatConstantCount++;
+
+    return constant->label;
+}
+
+static int isFloatOperand(const TACOperand *op) {
+    return op != NULL && op->type == TYPE_FLOAT;
+}
+
+static const char *getGlobalName(const TACOperand *op);
+static void storeOperand(const TACOperand *op, const char *reg, const FunctionFrame *frame);
+
+/* Carga un operando real en el registro XMM indicado. */
+static void loadFloatOperand(const TACOperand *op, const char *xmmRegister, const FunctionFrame *frame) {
+    if (op == NULL) return;
+
+    if (op->kind == OPERAND_CONSTANT) {
+        buildStringf("    movss %s(%%rip), %s\n", internFloatConstant(op->value.float_val), xmmRegister);
+        return;
+    }
+
+    int offset = getSlotOffset(frame, op->name);
+    if (offset != 0) {
+        buildStringf("    movss %d(%%rbp), %s\n", offset, xmmRegister);
+    } else {
+        buildStringf("    movss %s(%%rip), %s\n", getGlobalName(op), xmmRegister);
+    }
+}
+
+/* Guarda el contenido de un registro XMM en el destino del operando. */
+static void storeFloatOperand(const TACOperand *op, const char *xmmRegister, const FunctionFrame *frame) {
+    if (op == NULL) return;
+
+    int offset = getSlotOffset(frame, op->name);
+    if (offset != 0) {
+        buildStringf("    movss %s, %d(%%rbp)\n", xmmRegister, offset);
+    } else {
+        buildStringf("    movss %s, %s(%%rip)\n", xmmRegister, getGlobalName(op));
+    }
+}
+
+/* result = arg1 <op> arg2 con aritmetica de simple precision. */
+static void emitFloatBinaryOp(const TACInstruction *inst, const char *mnemonic, const FunctionFrame *frame) {
+    loadFloatOperand(&inst->arg1, "%xmm0", frame);
+    loadFloatOperand(&inst->arg2, "%xmm1", frame);
+    buildStringf("    %s %%xmm1, %%xmm0\n", mnemonic);
+    storeFloatOperand(&inst->result, "%xmm0", frame);
+}
+
+/*
+ * Comparacion de reales. `comiss` deja el resultado en los flags igual que una
+ * comparacion sin signo, asi que las condiciones son `seta`/`setb` y no las
+ * `setg`/`setl` con signo que usa el camino entero. El resultado es un boolean,
+ * o sea un entero, y por eso se guarda con el store entero.
+ */
+static void emitFloatRelationalOp(const TACInstruction *inst, const char *setcc, const FunctionFrame *frame) {
+    loadFloatOperand(&inst->arg1, "%xmm0", frame);
+    loadFloatOperand(&inst->arg2, "%xmm1", frame);
+    buildStringf("    comiss %%xmm1, %%xmm0\n");
+    buildStringf("    %s %%al\n", setcc);
+    buildStringf("    movzbl %%al, %%eax\n");
+    storeOperand(&inst->result, "%eax", frame);
 }
 
 static const char *getGlobalName(const TACOperand *op) {
@@ -266,10 +387,16 @@ static void emitParam(const TACInstruction *inst, FunctionFrame *frame) {
 
     int slot = frame->pendingParamSlots[frame->pendingParamCount];
 
-    loadRegisterBasedOnOperand(ASM_RAX, &inst->arg1, frame);
-    AsmInstruction store = asmStore(opMem(slot), opReg(ASM_RAX));
-    emitAsm(&store);
+    if (isFloatOperand(&inst->arg1)) {
+        loadFloatOperand(&inst->arg1, "%xmm0", frame);
+        buildStringf("    movss %%xmm0, %d(%%rbp)\n", slot);
+    } else {
+        loadRegisterBasedOnOperand(ASM_RAX, &inst->arg1, frame);
+        AsmInstruction store = asmStore(opMem(slot), opReg(ASM_RAX));
+        emitAsm(&store);
+    }
 
+    frame->pendingParamTypes[frame->pendingParamCount] = inst->arg1.type;
     frame->pendingParamCount++;
 }
 
@@ -293,25 +420,54 @@ static void emitCall(const TACInstruction *inst, FunctionFrame *frame) {
     }
 
     int base = frame->pendingParamCount - argumentCount;
-    int stackArguments = (argumentCount > MAX_ARG_REGISTERS) ? argumentCount - MAX_ARG_REGISTERS : 0;
-    int padding = (stackArguments % 2 == 1) ? 8 : 0;
 
+    /* System V clasifica cada argumento por separado: los enteros consumen los
+     * seis registros de proposito general y los reales los ocho XMM. Un
+     * argumento va a la pila solo cuando se agotaron los registros de *su*
+     * clase, asi que la cuenta no se puede hacer con un unico indice. */
+    int registerIndex[MAX_PENDING_PARAMS];
+    int goesToStack[MAX_PENDING_PARAMS];
+    int integerIndex = 0;
+    int floatIndex = 0;
+    int stackArguments = 0;
+
+    for (int i = 0; i < argumentCount; i++) {
+        if (frame->pendingParamTypes[base + i] == TYPE_FLOAT) {
+            goesToStack[i] = (floatIndex >= MAX_XMM_ARG_REGISTERS);
+            registerIndex[i] = goesToStack[i] ? -1 : floatIndex++;
+        } else {
+            goesToStack[i] = (integerIndex >= MAX_ARG_REGISTERS);
+            registerIndex[i] = goesToStack[i] ? -1 : integerIndex++;
+        }
+        if (goesToStack[i]) stackArguments++;
+    }
+
+    int padding = (stackArguments % 2 == 1) ? 8 : 0;
     if (padding > 0) {
         buildStringf("    subq $%d, %%rsp\n", padding);
     }
 
-    /* Del último al séptimo: el callee espera el 7mo en 16(%rbp). */
-    for (int i = argumentCount - 1; i >= MAX_ARG_REGISTERS; i--) {
+    /* Del último al primero de los que van por pila: el callee espera el primero
+     * de ellos en 16(%rbp). */
+    for (int i = argumentCount - 1; i >= 0; i--) {
+        if (!goesToStack[i]) continue;
+
         AsmInstruction load = asmLoad(opReg(ASM_RAX), opMem(frame->pendingParamSlots[base + i]));
         emitAsm(&load);
         buildStringf("    pushq %%rax\n");
     }
 
-    /* Los primeros seis, ya sin riesgo de que una llamada intermedia los pise. */
-    int registerArguments = (argumentCount < MAX_ARG_REGISTERS) ? argumentCount : MAX_ARG_REGISTERS;
-    for (int i = 0; i < registerArguments; i++) {
-        AsmInstruction load = asmLoad(opRegStr(ARG_REGISTERS_32[i]), opMem(frame->pendingParamSlots[base + i]));
-        emitAsm(&load);
+    /* Los que van en registros, ya sin riesgo de que una llamada intermedia los pise. */
+    for (int i = 0; i < argumentCount; i++) {
+        if (goesToStack[i]) continue;
+
+        int slot = frame->pendingParamSlots[base + i];
+        if (frame->pendingParamTypes[base + i] == TYPE_FLOAT) {
+            buildStringf("    movss %d(%%rbp), %s\n", slot, XMM_ARG_REGISTERS[registerIndex[i]]);
+        } else {
+            AsmInstruction load = asmLoad(opRegStr(ARG_REGISTERS_32[registerIndex[i]]), opMem(slot));
+            emitAsm(&load);
+        }
     }
 
     buildStringf("    call %s\n", inst->arg1.name);
@@ -323,7 +479,11 @@ static void emitCall(const TACInstruction *inst, FunctionFrame *frame) {
     frame->pendingParamCount = base;
 
     if (inst->result.kind != OPERAND_NONE) {
-        storeOperand(&inst->result, "%eax", frame);
+        if (isFloatOperand(&inst->result)) {
+            storeFloatOperand(&inst->result, "%xmm0", frame);
+        } else {
+            storeOperand(&inst->result, "%eax", frame);
+        }
     }
 }
 
@@ -367,20 +527,29 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
     switch (instruction->op) {
         case TAC_PARAM_DECL: {
             int offset = getSlotOffset(frame, instruction->arg1.name);
+            int isFloat = isFloatOperand(&instruction->arg1);
+
             if (offset != 0) {
-                if (frame->paramCount < MAX_ARG_REGISTERS) {
-                    /* Los primeros seis llegan en registros. */
+                if (isFloat && frame->floatParamCount < MAX_XMM_ARG_REGISTERS) {
+                    buildStringf("    movss %s, %d(%%rbp)\n",
+                                 XMM_ARG_REGISTERS[frame->floatParamCount], offset);
+                } else if (!isFloat && frame->integerParamCount < MAX_ARG_REGISTERS) {
                     buildStringf("    movl %s, %d(%%rbp)\n",
-                                 ARG_REGISTERS_32[frame->paramCount], offset);
+                                 ARG_REGISTERS_32[frame->integerParamCount], offset);
                 } else {
-                    /* Del séptimo en adelante los dejó el llamador en su propio
-                     * frame: 16(%rbp) saltea el %rbp guardado y la direccion de
-                     * retorno, y de ahi en adelante van de a 8 bytes. */
-                    int callerOffset = 16 + (frame->paramCount - MAX_ARG_REGISTERS) * 8;
+                    /* Se agotaron los registros de su clase: el llamador lo dejó
+                     * en su propio frame. 16(%rbp) saltea el %rbp guardado y la
+                     * direccion de retorno, y de ahi en adelante van de a 8. */
+                    int callerOffset = 16 + frame->stackParamCount * 8;
                     buildStringf("    movl %d(%%rbp), %%eax\n", callerOffset);
                     buildStringf("    movl %%eax, %d(%%rbp)\n", offset);
                 }
             }
+
+            if (isFloat && frame->floatParamCount < MAX_XMM_ARG_REGISTERS) frame->floatParamCount++;
+            else if (!isFloat && frame->integerParamCount < MAX_ARG_REGISTERS) frame->integerParamCount++;
+            else frame->stackParamCount++;
+
             frame->paramCount++;
             break;
         }
@@ -389,25 +558,34 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_ASSIGN:
-            loadRegisterBasedOnOperand(ASM_RAX, &instruction->arg1, frame);
-            storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+            if (isFloatOperand(&instruction->result)) {
+                loadFloatOperand(&instruction->arg1, "%xmm0", frame);
+                storeFloatOperand(&instruction->result, "%xmm0", frame);
+            } else {
+                loadRegisterBasedOnOperand(ASM_RAX, &instruction->arg1, frame);
+                storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+            }
             break;
 
         case TAC_ADD:
-            emitBinaryOp(instruction, ASM_ADD, frame);
+            if (isFloatOperand(&instruction->result)) emitFloatBinaryOp(instruction, "addss", frame);
+            else emitBinaryOp(instruction, ASM_ADD, frame);
             break;
 
         case TAC_SUB:
-            emitBinaryOp(instruction, ASM_SUB, frame);
+            if (isFloatOperand(&instruction->result)) emitFloatBinaryOp(instruction, "subss", frame);
+            else emitBinaryOp(instruction, ASM_SUB, frame);
             break;
 
         case TAC_MUL:
-            emitBinaryOp(instruction, ASM_IMUL, frame);
+            if (isFloatOperand(&instruction->result)) emitFloatBinaryOp(instruction, "mulss", frame);
+            else emitBinaryOp(instruction, ASM_IMUL, frame);
             break;
 
         case TAC_DIV:
-            /* El cociente queda en %eax */
-            emitDivisionOp(instruction, frame, ASM_RAX);
+            /* En enteros el cociente queda en %eax; en reales es una division directa */
+            if (isFloatOperand(&instruction->result)) emitFloatBinaryOp(instruction, "divss", frame);
+            else emitDivisionOp(instruction, frame, ASM_RAX);
             break;
 
         case TAC_MOD:
@@ -416,6 +594,16 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_NEG: {
+            if (isFloatOperand(&instruction->result)) {
+                /* Se niega restando desde cero: xorps con la mascara de signo
+                 * seria una instruccion menos, pero exigiria otra constante en
+                 * .rodata y aca pesa mas la claridad que el ciclo de mas. */
+                buildStringf("    pxor %%xmm0, %%xmm0\n");
+                loadFloatOperand(&instruction->arg1, "%xmm1", frame);
+                buildStringf("    subss %%xmm1, %%xmm0\n");
+                storeFloatOperand(&instruction->result, "%xmm0", frame);
+                break;
+            }
             loadRegisterBasedOnOperand(ASM_RAX, &instruction->arg1, frame);
             AsmInstruction negate = asmOpUnary(ASM_NEG, ASM_RAX);
             emitAsm(&negate);
@@ -431,16 +619,21 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
         }
 
+        /* El resultado de un relacional es boolean, asi que el tipo que decide
+         * como compararlos esta en los operandos, no en el destino. */
         case TAC_LT:
-            emitRelationalOp(instruction, "setl", frame);
+            if (isFloatOperand(&instruction->arg1)) emitFloatRelationalOp(instruction, "setb", frame);
+            else emitRelationalOp(instruction, "setl", frame);
             break;
 
         case TAC_GT:
-            emitRelationalOp(instruction, "setg", frame);
+            if (isFloatOperand(&instruction->arg1)) emitFloatRelationalOp(instruction, "seta", frame);
+            else emitRelationalOp(instruction, "setg", frame);
             break;
 
         case TAC_EQ:
-            emitRelationalOp(instruction, "sete", frame);
+            if (isFloatOperand(&instruction->arg1)) emitFloatRelationalOp(instruction, "sete", frame);
+            else emitRelationalOp(instruction, "sete", frame);
             break;
 
         case TAC_AND:
@@ -454,6 +647,7 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
         case TAC_INT_TO_FLOAT:
             loadOperand(&instruction->arg1, "%eax", frame);
             buildStringf("    cvtsi2ss %%eax, %%xmm0\n");
+            storeFloatOperand(&instruction->result, "%xmm0", frame);
             break;
 
         case TAC_LABEL:
@@ -486,7 +680,12 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
 
         case TAC_RETURN:
             if (instruction->arg1.kind != OPERAND_NONE) {
-                loadOperand(&instruction->arg1, "%eax", frame);
+                /* La convencion devuelve los enteros en %eax y los reales en %xmm0 */
+                if (isFloatOperand(&instruction->arg1)) {
+                    loadFloatOperand(&instruction->arg1, "%xmm0", frame);
+                } else {
+                    loadOperand(&instruction->arg1, "%eax", frame);
+                }
             }
             buildStringf("    jmp .L_%s_epilogue\n", frame->functionName);
             break;
@@ -519,10 +718,42 @@ static void emitGlobals(const TACList *tacList) {
     }
 }
 
+/*
+ * Recorre el TAC registrando todas las constantes reales y emite la seccion de
+ * solo lectura con sus patrones de bits.
+ *
+ * Se hace en una pasada previa porque la seccion tiene que estar completa antes
+ * de empezar a emitir codigo que la referencie.
+ */
+static void emitFloatConstantPool(const TACList *tacList) {
+    floatConstantCount = 0;
+
+    for (const TACInstruction *inst = tacList->head; inst != NULL; inst = inst->next) {
+        const TACOperand *operands[] = { &inst->arg1, &inst->arg2, &inst->result };
+
+        for (int i = 0; i < 3; i++) {
+            if (operands[i]->kind == OPERAND_CONSTANT && operands[i]->type == TYPE_FLOAT) {
+                internFloatConstant(operands[i]->value.float_val);
+            }
+        }
+    }
+
+    if (floatConstantCount == 0) return;
+
+    buildStringf(".section .rodata\n");
+    for (int i = 0; i < floatConstantCount; i++) {
+        buildStringf(".align 4\n");
+        buildStringf("%s:\n", floatConstants[i].label);
+        buildStringf("    .long %u\n", getFloatBits(floatConstants[i].value));
+    }
+    buildStringf("\n");
+}
+
 void generateAssembly(const TACList *tacList) {
     if (tacList == NULL) return;
 
-    /* Emisión de variables globales si existen */
+    /* Constantes reales y variables globales, antes del codigo */
+    emitFloatConstantPool(tacList);
     emitGlobals(tacList);
 
     buildStringf(".text\n");
