@@ -10,8 +10,6 @@ static const char *ARG_REGISTERS_32[] = {
 };
 static const int MAX_ARG_REGISTERS = 6; // implements extra variables in frames
 
-static int callArgIndex = 0;
-
 FunctionFrame *createFrame(const char *funcName) {
     FunctionFrame *frame = (FunctionFrame *)malloc(sizeof(FunctionFrame));
     if (frame == NULL) {
@@ -31,6 +29,8 @@ FunctionFrame *createFrame(const char *funcName) {
     frame->nextOffset = 0;
     frame->frameSize = 0;
     frame->paramCount = 0;
+    frame->pendingParamCount = 0;
+    frame->maxPendingParams = 0;
 
     return frame;
 }
@@ -76,6 +76,22 @@ int addSlot(FunctionFrame *frame, const TACOperand *operand) {
     frame->slotCount++;
 
     return slot->offset;
+}
+
+/**
+ * @brief Reserva un slot anónimo en el frame, sin nombre asociado.
+ *
+ * Lo usan los argumentos pendientes de una llamada: no son variables ni
+ * temporales del TAC, así que no se buscan por nombre, solo por posición.
+ *
+ * @param frame Frame de la función.
+ * @return Desplazamiento relativo a %rbp del slot reservado.
+ */
+static int addAnonymousSlot(FunctionFrame *frame) {
+    if (frame == NULL) return 0;
+
+    frame->nextOffset += 4;
+    return -frame->nextOffset;
 }
 
 int getSlotOffset(const FunctionFrame *frame, const char *name) {
@@ -231,6 +247,85 @@ static void emitDivisionOp(const TACInstruction *inst, const FunctionFrame *fram
     storeRegisterToOperand(&inst->result, resultReg, frame);
 }
 
+/**
+ * @brief Traduce un `param` del TAC: copia el valor del argumento a un slot
+ *        propio del frame y lo apila como pendiente.
+ *
+ * El valor se copia **en el momento**, no se recuerda el operando para leerlo
+ * recién antes del `call`. La diferencia importa cuando un argumento posterior
+ * tiene efectos colaterales sobre uno anterior: en `f(g, modifica())`, donde
+ * `modifica()` escribe la global `g`, la letra exige que los argumentos se
+ * evalúen de izquierda a derecha, así que `g` tiene que leerse antes de que
+ * `modifica()` corra.
+ */
+static void emitParam(const TACInstruction *inst, FunctionFrame *frame) {
+    if (frame->pendingParamCount >= MAX_PENDING_PARAMS) {
+        return; /* el prescan ya acotó esto; defensivo */
+    }
+
+    int slot = frame->pendingParamSlots[frame->pendingParamCount];
+
+    loadRegisterBasedOnOperand(ASM_RAX, &inst->arg1, frame);
+    AsmInstruction store = asmStore(opMem(slot), opReg(ASM_RAX));
+    emitAsm(&store);
+
+    frame->pendingParamCount++;
+}
+
+/**
+ * @brief Traduce un `call` del TAC siguiendo la convención System V AMD64.
+ *
+ * Consume los últimos N argumentos pendientes, siendo N la aridad que trae la
+ * propia instrucción TAC: eso es lo que hace que las llamadas anidadas no se
+ * pisen entre sí, porque los argumentos de la llamada interna siempre son los
+ * más recientes cuando aparece su `call`.
+ *
+ * Los primeros seis argumentos van en `%edi, %esi, %edx, %ecx, %r8d, %r9d` y
+ * el resto por la pila, en orden inverso. El stack tiene que quedar alineado a
+ * 16 bytes en el momento del `call`, así que si la cantidad de argumentos
+ * empujados es impar se agrega un relleno de 8 bytes.
+ */
+static void emitCall(const TACInstruction *inst, FunctionFrame *frame) {
+    int argumentCount = (inst->arg2.kind == OPERAND_CONSTANT) ? inst->arg2.value.int_val : 0;
+    if (argumentCount > frame->pendingParamCount) {
+        argumentCount = frame->pendingParamCount;
+    }
+
+    int base = frame->pendingParamCount - argumentCount;
+    int stackArguments = (argumentCount > MAX_ARG_REGISTERS) ? argumentCount - MAX_ARG_REGISTERS : 0;
+    int padding = (stackArguments % 2 == 1) ? 8 : 0;
+
+    if (padding > 0) {
+        buildStringf("    subq $%d, %%rsp\n", padding);
+    }
+
+    /* Del último al séptimo: el callee espera el 7mo en 16(%rbp). */
+    for (int i = argumentCount - 1; i >= MAX_ARG_REGISTERS; i--) {
+        AsmInstruction load = asmLoad(opReg(ASM_RAX), opMem(frame->pendingParamSlots[base + i]));
+        emitAsm(&load);
+        buildStringf("    pushq %%rax\n");
+    }
+
+    /* Los primeros seis, ya sin riesgo de que una llamada intermedia los pise. */
+    int registerArguments = (argumentCount < MAX_ARG_REGISTERS) ? argumentCount : MAX_ARG_REGISTERS;
+    for (int i = 0; i < registerArguments; i++) {
+        AsmInstruction load = asmLoad(opRegStr(ARG_REGISTERS_32[i]), opMem(frame->pendingParamSlots[base + i]));
+        emitAsm(&load);
+    }
+
+    buildStringf("    call %s\n", inst->arg1.name);
+
+    if (stackArguments > 0 || padding > 0) {
+        buildStringf("    addq $%d, %%rsp\n", stackArguments * 8 + padding);
+    }
+
+    frame->pendingParamCount = base;
+
+    if (inst->result.kind != OPERAND_NONE) {
+        storeOperand(&inst->result, "%eax", frame);
+    }
+}
+
 void emitPrologue(const FunctionFrame *frame) {
     if (frame == NULL) return;
 
@@ -256,16 +351,25 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
     if (instruction == NULL || frame == NULL) return;
 
     switch (instruction->op) {
-        case TAC_PARAM_DECL:
-            if (frame->paramCount < MAX_ARG_REGISTERS) {
-                int offset = getSlotOffset(frame, instruction->arg1.name);
-                if (offset != 0) {
+        case TAC_PARAM_DECL: {
+            int offset = getSlotOffset(frame, instruction->arg1.name);
+            if (offset != 0) {
+                if (frame->paramCount < MAX_ARG_REGISTERS) {
+                    /* Los primeros seis llegan en registros. */
                     buildStringf("    movl %s, %d(%%rbp)\n",
                                  ARG_REGISTERS_32[frame->paramCount], offset);
+                } else {
+                    /* Del séptimo en adelante los dejó el llamador en su propio
+                     * frame: 16(%rbp) saltea el %rbp guardado y la direccion de
+                     * retorno, y de ahi en adelante van de a 8 bytes. */
+                    int callerOffset = 16 + (frame->paramCount - MAX_ARG_REGISTERS) * 8;
+                    buildStringf("    movl %d(%%rbp), %%eax\n", callerOffset);
+                    buildStringf("    movl %%eax, %d(%%rbp)\n", offset);
                 }
-                frame->paramCount++;
             }
+            frame->paramCount++;
             break;
+        }
 
         case TAC_LOCAL_DECL:
             break;
@@ -359,18 +463,11 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_PARAM:
-            if (callArgIndex < MAX_ARG_REGISTERS) {
-                loadOperand(&instruction->arg1, ARG_REGISTERS_32[callArgIndex], frame);
-                callArgIndex++;
-            }
+            emitParam(instruction, frame);
             break;
 
         case TAC_CALL:
-            buildStringf("    call %s\n", instruction->arg1.name);
-            callArgIndex = 0;
-            if (instruction->result.kind != OPERAND_NONE) {
-                storeOperand(&instruction->result, "%eax", frame);
-            }
+            emitCall(instruction, frame);
             break;
 
         case TAC_RETURN:
@@ -462,6 +559,32 @@ void generateAssembly(const TACList *tacList) {
                 }
 
                 current = current->next;
+            }
+
+            /* Pico de argumentos acumulados sin su call: define cuantos slots
+             * scratch hace falta reservar para el pasaje de parametros. */
+            int pending = 0;
+            for (const TACInstruction *scan = instruction->next;
+                 scan != NULL && scan->op != TAC_END_FUNC;
+                 scan = scan->next) {
+
+                if (scan->op == TAC_PARAM) {
+                    pending++;
+                    if (pending > frame->maxPendingParams) {
+                        frame->maxPendingParams = pending;
+                    }
+                } else if (scan->op == TAC_CALL) {
+                    int arity = (scan->arg2.kind == OPERAND_CONSTANT) ? scan->arg2.value.int_val : 0;
+                    pending -= arity;
+                    if (pending < 0) pending = 0;
+                }
+            }
+
+            if (frame->maxPendingParams > MAX_PENDING_PARAMS) {
+                frame->maxPendingParams = MAX_PENDING_PARAMS;
+            }
+            for (int i = 0; i < frame->maxPendingParams; i++) {
+                frame->pendingParamSlots[i] = addAnonymousSlot(frame);
             }
 
             frame->frameSize = ALIGN_UP(frame->nextOffset, 16);

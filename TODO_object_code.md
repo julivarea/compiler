@@ -15,7 +15,8 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - ✅ **Negación booleana y aritmética:** `TAC_NOT` implementado vía `xorl $1, %eax` (los bools son estrictamente `{0, 1}`) y `TAC_NEG` vía `negl %eax`.
   - ✅ **División, módulo y negación aritmética (`TAC_DIV`, `TAC_MOD`, `TAC_NEG`):** cierran el punto 1.1. Verificados ejecutando los binarios generados, incluidos los casos con signo.
   - ✅ **Control de flujo y variables globales:** auditados y funcionando (puntos 1.3 y 1.6).
-  - ⚠️ **Próximo foco crítico:** pasaje de parámetros en llamadas a métodos (bug 1.2, con reproducción en la sección 1.bis), parámetros 7+ (bug 1.3) y código de salida de `main` (bug 1.7).
+  - ✅ **Pasaje de parámetros y llamadas (punto 1.4):** pila de argumentos por llamada, soporte de más de 6 parámetros en ambos lados de la convención, y evaluación de izquierda a derecha preservada. Cierra los bugs 1.2 y 1.3 de la auditoría.
+  - ⚠️ **Próximo foco crítico:** código de salida de `main` (bug 1.7, con reproducción en la sección 1.bis) y el resto del punto 1.5 (alineación y prólogo).
   - ⚠️ **`generateAssembly()` todavía no está conectada a la CLI:** no hay forma de llegar a ella desde `./mi_compilador`, porque `CURRENT_TARGET` sigue en `TARGET_CODINTER` y `src/bison.y` no tiene el caso de la etapa. Mientras tanto, la única manera de probar el generador es con un arnés propio que llame a `generateIntermediateCode()` y después a `generateAssembly()`. Es el punto 2.1/2.2.
 
 ---
@@ -27,12 +28,12 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
 - **Problema:** Los casos `TAC_ASSIGN`, `TAC_ADD`, `TAC_SUB`, `TAC_MUL`, `TAC_DIV`, `TAC_MOD`, `TAC_NEG`, `TAC_NOT`, `TAC_LT`, `TAC_GT`, `TAC_EQ`, `TAC_AND` contienen únicamente un `break;`. Solo `TAC_OR` tenía código provisional.
 - **Acción requerida:** Implementar la secuencia de instrucciones assembly GAS para cada operador.
 
-### 1.2 Bug Crítico en Pasaje de Argumentos (`callArgIndex` global y llamadas anidadas)
+### 1.2 Bug Crítico en Pasaje de Argumentos (`callArgIndex` global y llamadas anidadas) — CORREGIDO
 - **Ubicación:** `src/object_code.c` (`TAC_PARAM` y `TAC_CALL`).
 - **Problema:** Se utiliza una variable global `static int callArgIndex = 0`. Cuando un argumento es una expresión que contiene otra llamada a función (por ejemplo `foo(bar(1), 2)` o `factorial(a - 1)` dentro de una expresión compuesta), la llamada interna emite sus propios `TAC_PARAM` y `TAC_CALL`, reseteando `callArgIndex = 0` y pisando los registros `%edi`, `%esi`, etc. de la función externa.
 - **Acción requerida:** Implementar una estructura de pila de parámetros (`CallParamBuffer` o `ParamStack`) que acumule los operandos de los `param` y los cargue a los registros correspondientes inmediatamente antes del `call`, utilizando la cantidad de argumentos indicada en `instruction->arg2`.
 
-### 1.3 Límite estricto de 6 parámetros y descarte silencioso de argumentos 7+
+### 1.3 Límite estricto de 6 parámetros y descarte silencioso de argumentos 7+ — CORREGIDO
 - **Ubicación:** `src/object_code.c` (`TAC_PARAM` y `TAC_PARAM_DECL`).
 - **Problema:** `if (callArgIndex < MAX_ARG_REGISTERS)` y `if (frame->paramCount < MAX_ARG_REGISTERS)` descartan silenciosamente cualquier parámetro más allá del 6to.
 - **Acción requerida:**
@@ -118,8 +119,8 @@ con el resultado real medido. Sirven como casos de test para quien los corrija.
 
 | Bug | Programa | Esperado | Obtenido |
 | --- | --- | --- | --- |
-| 1.2 `callArgIndex` | `int doble(int x){return x*2;} int sumar(int a,int b){return a+b;} int main(){ return sumar(3, doble(2)); }` | 7 | **8** |
-| 1.3 más de 6 parámetros | `int f(int a,int b,int c,int d,int e,int g,int h){return h;} int main(){ return f(1,2,3,4,5,6,99); }` | 99 | **0** |
+| ~~1.2 `callArgIndex`~~ CORREGIDO | `int doble(int x){return x*2;} int sumar(int a,int b){return a+b;} int main(){ return sumar(3, doble(2)); }` | 7 | 7 ✅ |
+| ~~1.3 más de 6 parámetros~~ CORREGIDO | `int f(int a,int b,int c,int d,int e,int g,int h){return h;} int main(){ return f(1,2,3,4,5,6,99); }` | 99 | 99 ✅ |
 | 1.7 exit code de `main` void | `void main(){ int x; x = 42; }` | 0 | **42** |
 
 Detalle del 1.2, que es el menos evidente: con la llamada interna en el **primer** argumento
@@ -163,17 +164,46 @@ finalmente `param t0` pisa `%edi` con 6. Resultado: `sumar(6, 2) = 8`.
     mismo formato, así que no hay desalineación. Verificado ejecutando un `while` que suma
     `0..4` (devuelve 10) y el `if` de `factorial`.
 
-- [ ] **1.4 Pasaje de Parámetros y Llamadas a Métodos (Auditoría de `callParams`)**
-  - [ ] Reemplazar `callArgIndex` global por un buffer o pila de argumentos para la llamada activa.
-  - [ ] Asociar los argumentos al `TAC_CALL` respectivo mediante la aridad provista en TAC (`instruction->arg2.value.int_val`).
-  - [ ] Cargar registros `%edi, %esi, %edx, %ecx, %r8d, %r9d` justo antes de emitir `call`.
-  - [ ] Manejar retorno en `%eax` y almacenar en `result` si la llamada no es `void`.
-  - [ ] Soporte para funciones con > 6 argumentos (pasaje por pila según System V ABI).
+- [X] **1.4 Pasaje de Parámetros y Llamadas a Métodos (Auditoría de `callParams`)**
+  - [X] Reemplazar `callArgIndex` global por un buffer o pila de argumentos para la llamada activa.
+  - [X] Asociar los argumentos al `TAC_CALL` respectivo mediante la aridad provista en TAC (`instruction->arg2.value.int_val`).
+  - [X] Cargar registros `%edi, %esi, %edx, %ecx, %r8d, %r9d` justo antes de emitir `call`.
+  - [X] Manejar retorno en `%eax` y almacenar en `result` si la llamada no es `void`.
+  - [X] Soporte para funciones con > 6 argumentos (pasaje por pila según System V ABI).
+
+  - **Resuelto** con `emitParam()` y `emitCall()` en `src/object_code.c`, más tres campos
+    nuevos en `FunctionFrame` (`pendingParamSlots`, `pendingParamCount`, `maxPendingParams`).
+
+  - **Por qué una pila y no un contador.** Cada `param` copia su valor a un slot propio del
+    frame y apila el desplazamiento; el `call` consume los **últimos N**, siendo N la aridad
+    que trae la propia instrucción TAC. Eso resuelve el anidamiento sin casos especiales,
+    porque los argumentos de la llamada interna son siempre los más recientes cuando aparece
+    su `call`.
+
+  - **Por qué se copia el valor en el `param` y no se recuerda el operando.** Si solo se
+    guardara "de dónde leer", un argumento posterior con efectos colaterales corrompería a
+    uno anterior. La letra exige evaluación de izquierda a derecha, así que en
+    `suma(g, modifica())` —con `modifica()` escribiendo la global `g`— hay que leer `g`
+    **antes** de que `modifica()` corra. Verificado: devuelve 6 y no 101.
+
+  - **Más de 6 argumentos.** Del séptimo en adelante van a la pila en orden inverso con
+    `pushq`, y se limpia con `addq` después del `call`. Si la cantidad empujada es impar se
+    agrega un relleno de 8 bytes, porque el stack tiene que estar alineado a 16 en el momento
+    del `call`. El lado del callee se resolvió en `TAC_PARAM_DECL`: los parámetros 7+ no
+    llegan en registros sino desde el frame del llamador, en `16(%rbp)`, `24(%rbp)`, etc.
+    (el 16 saltea el `%rbp` guardado y la dirección de retorno).
+
+  - **Verificación, ejecutando los binarios generados:** `sumar(3, doble(2))` = 7 y
+    `sumar(doble(2), 3)` = 7 (los dos órdenes), `sumar(doble(2), triple(3))` = 13,
+    `doble(doble(doble(2)))` = 16, 7 / 8 / 9 parámetros (incluido el caso impar que fuerza el
+    padding), `fib(10)` = 55, `factorial(10)`, llamada `void` como sentencia, y
+    `doble(doble(3) + 1)` = 14. Sin regresiones en `factorial`, `while`, globales ni
+    división/módulo.
 
 - [ ] **1.5 Gestión del Stack Frame y Prólogo/Epílogo (Auditoría de `FunctionFrame`)**
   - [ ] Garantizar alineación del stack a 16 bytes (`frameSize = ALIGN_UP(nextOffset, 16)`) antes de cualquier instrucción `call`.
   - [ ] Registrar en el prólogo la copia de los registros de entrada (`%edi..%r9d`) a sus respectivos slots locales en el stack.
-  - [ ] Manejar lectura de parámetros 7+ desde offsets positivos (`+16(%rbp)`, `+24(%rbp)`).
+  - [X] Manejar lectura de parámetros 7+ desde offsets positivos (`+16(%rbp)`, `+24(%rbp)`). *(resuelto junto con el punto 1.4, es el lado callee del mismo mecanismo)*
   - [ ] Emitir `movl $0, %eax` en `main` antes del epílogo si el tipo de retorno es `void`.
 
 - [X] **1.6 Segmento de Datos (`emitGlobals`)**

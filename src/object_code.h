@@ -29,6 +29,14 @@ typedef struct {
 } StackSlot;
 
 /**
+ * @brief Cantidad máxima de argumentos acumulados sin su `call` correspondiente.
+ *
+ * Acota el anidamiento de llamadas dentro de los argumentos de otra llamada.
+ * Con 64 entran casos como `f(g(h(...)), ...)` con mucho margen.
+ */
+#define MAX_PENDING_PARAMS 64
+
+/**
  * @brief Información del stack frame de una función.
  */
 typedef struct {
@@ -39,6 +47,19 @@ typedef struct {
     int nextOffset;   /**< Acumulador de bytes ocupados en el stack */
     int frameSize;    /**< Tamaño total del frame alineado a 16 bytes */
     int paramCount;   /**< Contador de parámetros procesados en el prólogo */
+
+    /**
+     * Pila de argumentos pendientes de la llamada en curso.
+     *
+     * Cada `param` del TAC copia su valor a un slot propio del frame y apila
+     * aquí el desplazamiento de ese slot; el `call` consume los últimos N,
+     * siendo N la aridad que trae la propia instrucción. Es una pila y no un
+     * contador porque los argumentos de una llamada anidada se emiten en medio
+     * de los de la llamada que la contiene.
+     */
+    int pendingParamSlots[MAX_PENDING_PARAMS];
+    int pendingParamCount; /**< Argumentos apilados sin su `call` */
+    int maxPendingParams;  /**< Pico de la pila, calculado antes de emitir */
 } FunctionFrame;
 
 
