@@ -1,3 +1,10 @@
+#!/bin/bash
+# set -e aborta el script apenas falla bison, flex o gcc. Sin esto, el codigo de
+# salida del script era el del ultimo echo, siempre 0, y una build rota se veia
+# como exitosa: rompia el "./build.sh && ./test_suite.sh" del README, porque el
+# && nunca cortaba.
+set -e
+
 # Crear directorio de compilación si no existe
 mkdir -p build
 

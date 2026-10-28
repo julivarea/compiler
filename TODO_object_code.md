@@ -88,7 +88,7 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
 - **Estado:** corregido junto con el punto 1.1, porque sin eso no se podía compilar ni probar
   nada. Es el único cambio de esta tanda fuera de `object_code.c`.
 
-### 1.10 `build.sh` termina con código de salida 0 aunque `gcc` falle
+### 1.10 `build.sh` termina con código de salida 0 aunque `gcc` falle — CORREGIDO
 - **Ubicación:** `build.sh`.
 - **Problema:** La última línea del script es un `echo`, así que el código de salida del
   script es el del `echo` y no el del `gcc`. Un build roto se ve como exitoso: fue lo que
@@ -96,6 +96,13 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   el `&&` nunca corta.
 - **Acción requerida:** mover el `echo` antes del `gcc`, o terminar el script con `exit $?`
   tras la compilación.
+- **Estado: corregido.** Se agregó `set -e` al principio del script, que aborta apenas falla
+  cualquiera de los tres pasos (bison, flex o gcc) y no solo el último. También se le puso el
+  `#!/bin/bash` que le faltaba: sin shebang, `./build.sh` dependía de con qué intérprete lo
+  levantara el sistema.
+- **Verificación:** con el proyecto sano el script sigue devolviendo 0; introduciendo un error
+  de sintaxis en un `.c` devuelve 1, y el `./build.sh && ./test_suite.sh` del README corta
+  como corresponde en vez de seguir con un binario viejo.
 
 ### 1.11 Fallthrough en `TAC_DIV`, `TAC_MOD` y `TAC_NEG` (CORREGIDO)
 - **Ubicación:** `src/object_code.c` (`generateInstruction`).
