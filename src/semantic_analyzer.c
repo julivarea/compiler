@@ -10,7 +10,6 @@ static Symbol *current_function = NULL;
 
 static void analyzeNodeSemantics(NodeAST *node, Scope *current_scope);
 static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type);
-static void analyzeBlockNode(NodeAST *node, Scope *current_scope);
 static void analyzeVariableDeclarationNode(NodeAST *node, Scope *current_scope);
 static void analyzeAssignmentNode(NodeAST *node, Scope *current_scope);
 static void analyzeReturnNode(NodeAST *node, Scope *current_scope);
@@ -98,11 +97,6 @@ static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type
     appendChildScope(current_scope, method_scope);
 
     current_function = prev_function;
-}
-
-static void analyzeBlockNode(NodeAST *node, Scope *current_scope) {
-    Scope *child_scope = analyzeSemantics(node, current_scope, current_scope->returnType);
-    appendChildScope(current_scope, child_scope);
 }
 
 static void analyzeVariableDeclarationNode(NodeAST *node, Scope *current_scope) {
@@ -209,7 +203,7 @@ static void analyzeNodeSemantics(NodeAST *node, Scope *current_scope) {
     
     switch (node->nodeType) {
         case BLOCK_NODE:
-            analyzeBlockNode(node, current_scope);
+            analyzeSemantics(node, current_scope, current_scope->returnType);
             break;
 
         case METHOD_DECLARATION_NODE:
@@ -256,6 +250,10 @@ Scope* analyzeSemantics(NodeAST *root, Scope *parent, DataType returnType) {
     if (!current_scope) {
         semanticError(root->line, "Error: no se pudo reservar memoria para el ambito.");
         return NULL;
+    }
+
+    if (parent != NULL) {
+        appendChildScope(parent, current_scope);
     }
     
     for (int i = 0; i < root->childCount; i++) {
