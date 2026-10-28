@@ -23,6 +23,7 @@ FunctionFrame *createFrame(const char *funcName) {
         frame->functionName[0] = '\0';
     }
 
+    frame->returnType = TYPE_VOID;
     frame->slotCapacity = 16;
     frame->slotCount = 0;
     frame->slots = (StackSlot *)malloc(sizeof(StackSlot) * frame->slotCapacity);
@@ -343,6 +344,19 @@ void emitEpilogue(const FunctionFrame *frame) {
     if (frame != NULL && frame->functionName[0] != '\0') {
         buildStringf(".L_%s_epilogue:\n", frame->functionName);
     }
+
+    /* El sistema operativo toma %eax como codigo de salida del proceso. En un
+     * `void main()` nadie escribio ese registro con un valor deliberado, asi
+     * que conservaria el residuo de la ultima operacion y un programa correcto
+     * terminaria con un exit code distinto de cero. El resto de los metodos no
+     * necesitan esto: los no-void siempre retornan un valor, y en los void el
+     * llamador ignora %eax. */
+    if (frame != NULL && frame->returnType == TYPE_VOID
+        && strcmp(frame->functionName, "main") == 0) {
+        AsmInstruction zero = asmLoadImm(ASM_RAX, 0);
+        emitAsm(&zero);
+    }
+
     buildStringf("    leave\n");
     buildStringf("    ret\n");
 }
@@ -520,6 +534,8 @@ void generateAssembly(const TACList *tacList) {
         if (instruction->op == TAC_BEGIN_FUNC) {
 
             FunctionFrame *frame = createFrame(instruction->result.name);
+            /* tacMethod() guarda el tipo de retorno en el operando del begin_func */
+            frame->returnType = instruction->result.type;
             const TACInstruction *current = instruction->next; // recorrer cuerpo de la funcion
 
             while (current != NULL && current->op != TAC_END_FUNC) {

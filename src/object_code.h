@@ -41,6 +41,7 @@ typedef struct {
  */
 typedef struct {
     char functionName[TAC_NAME_LENGTH];
+    DataType returnType; /**< Tipo de retorno del método, necesario en el epílogo */
     StackSlot *slots;
     int slotCount;
     int slotCapacity;

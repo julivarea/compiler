@@ -16,7 +16,9 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - ✅ **División, módulo y negación aritmética (`TAC_DIV`, `TAC_MOD`, `TAC_NEG`):** cierran el punto 1.1. Verificados ejecutando los binarios generados, incluidos los casos con signo.
   - ✅ **Control de flujo y variables globales:** auditados y funcionando (puntos 1.3 y 1.6).
   - ✅ **Pasaje de parámetros y llamadas (punto 1.4):** pila de argumentos por llamada, soporte de más de 6 parámetros en ambos lados de la convención, y evaluación de izquierda a derecha preservada. Cierra los bugs 1.2 y 1.3 de la auditoría.
-  - ⚠️ **Próximo foco crítico:** código de salida de `main` (bug 1.7, con reproducción en la sección 1.bis) y el resto del punto 1.5 (alineación y prólogo).
+  - ✅ **Stack frame, prólogo y epílogo (punto 1.5):** alineación a 16 bytes auditada, copia de registros de entrada verificada y código de salida de `main` corregido. Cierra el bug 1.7.
+  - ✅ **Fase 1 completa.** Las seis secciones del núcleo de enteros y booleanos están implementadas y verificadas ejecutando los binarios generados.
+  - ⚠️ **Próximo foco crítico:** la Fase 2, conectar el generador con la CLI (`-target assembly` y el ejecutable `.out`). Hoy `generateAssembly()` no es alcanzable desde `./mi_compilador`.
   - ⚠️ **`generateAssembly()` todavía no está conectada a la CLI:** no hay forma de llegar a ella desde `./mi_compilador`, porque `CURRENT_TARGET` sigue en `TARGET_CODINTER` y `src/bison.y` no tiene el caso de la etapa. Mientras tanto, la única manera de probar el generador es con un arnés propio que llame a `generateIntermediateCode()` y después a `generateAssembly()`. Es el punto 2.1/2.2.
 
 ---
@@ -65,7 +67,7 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
 - **Problema:** Actualmente se asume que si `getSlotOffset(frame, op->name) == 0`, el símbolo es automáticamente global y emite `movl nombre(%rip), %reg`. Si una variable local o temporal no se registró en los slots por un bug, no emite advertencia y genera assembly inválido que falla recién en el linker (`undefined reference to 't0'`).
 - **Acción requerida:** Utilizar la información del símbolo (`op->kind == OPERAND_VARIABLE` y el alcance en la tabla de símbolos) para validar si efectivamente es global. Si es `OPERAND_TEMP` o variable local y no tiene slot, registrar error interno del compilador.
 
-### 1.7 Código de Salida y Retorno de `main`
+### 1.7 Código de Salida y Retorno de `main` — CORREGIDO
 - **Ubicación:** `src/object_code.c` (`emitEpilogue`, `TAC_RETURN`).
 - **Problema:** C-TDS permite métodos `void main()`. Si `main` finaliza sin valor de retorno explícito, el registro `%eax` contendrá el residuo de la última operación ejecutada. Al enlazar con `gcc`, el sistema operativo tomará `%eax` como código de salida del proceso, haciendo que pruebas válidas reporten un exit code distinto de 0.
 - **Acción requerida:** Asegurar que si la función es `main`, se emita `movl $0, %eax` antes del epílogo si no hubo un retorno con valor.
@@ -121,7 +123,7 @@ con el resultado real medido. Sirven como casos de test para quien los corrija.
 | --- | --- | --- | --- |
 | ~~1.2 `callArgIndex`~~ CORREGIDO | `int doble(int x){return x*2;} int sumar(int a,int b){return a+b;} int main(){ return sumar(3, doble(2)); }` | 7 | 7 ✅ |
 | ~~1.3 más de 6 parámetros~~ CORREGIDO | `int f(int a,int b,int c,int d,int e,int g,int h){return h;} int main(){ return f(1,2,3,4,5,6,99); }` | 99 | 99 ✅ |
-| 1.7 exit code de `main` void | `void main(){ int x; x = 42; }` | 0 | **42** |
+| ~~1.7 exit code de `main` void~~ CORREGIDO | `void main(){ int x; x = 42; }` | 0 | 0 ✅ |
 
 Detalle del 1.2, que es el menos evidente: con la llamada interna en el **primer** argumento
 (`sumar(doble(2), 3)`) el resultado sale bien de casualidad, porque los `param` de la interna
@@ -200,11 +202,37 @@ finalmente `param t0` pisa `%edi` con 6. Resultado: `sumar(6, 2) = 8`.
     `doble(doble(3) + 1)` = 14. Sin regresiones en `factorial`, `while`, globales ni
     división/módulo.
 
-- [ ] **1.5 Gestión del Stack Frame y Prólogo/Epílogo (Auditoría de `FunctionFrame`)**
-  - [ ] Garantizar alineación del stack a 16 bytes (`frameSize = ALIGN_UP(nextOffset, 16)`) antes de cualquier instrucción `call`.
-  - [ ] Registrar en el prólogo la copia de los registros de entrada (`%edi..%r9d`) a sus respectivos slots locales en el stack.
+- [X] **1.5 Gestión del Stack Frame y Prólogo/Epílogo (Auditoría de `FunctionFrame`)**
+  - [X] Garantizar alineación del stack a 16 bytes (`frameSize = ALIGN_UP(nextOffset, 16)`) antes de cualquier instrucción `call`.
+  - [X] Registrar en el prólogo la copia de los registros de entrada (`%edi..%r9d`) a sus respectivos slots locales en el stack.
   - [X] Manejar lectura de parámetros 7+ desde offsets positivos (`+16(%rbp)`, `+24(%rbp)`). *(resuelto junto con el punto 1.4, es el lado callee del mismo mecanismo)*
-  - [ ] Emitir `movl $0, %eax` en `main` antes del epílogo si el tipo de retorno es `void`.
+  - [X] Emitir `movl $0, %eax` en `main` antes del epílogo si el tipo de retorno es `void`.
+
+  - **Alineación: auditada y correcta, no hizo falta cambiar nada.** La cadena de invariantes
+    es: al entrar a una función `%rsp ≡ 8 (mod 16)`, porque el `call` apiló la dirección de
+    retorno sobre un stack alineado; `pushq %rbp` lo lleva a `≡ 0`; y `subq $frameSize` lo
+    mantiene porque `frameSize` siempre es múltiplo de 16 por el `ALIGN_UP`. Cuando
+    `frameSize` es 0 no se emite el `subq` y el invariante igual se conserva. El pasaje de
+    argumentos por pila del punto 1.4 lo respeta agregando 8 bytes de relleno cuando empuja
+    una cantidad impar de argumentos.
+    *Verificación:* sobre un programa con funciones de 1, 6 y 9 parámetros, los cuatro
+    `subq` de frame emitidos fueron 16, 32, 48 y 80 —todos múltiplos de 16— y el único
+    `subq $8` del archivo es el relleno de alineación, emitido justo antes de los `pushq`.
+
+  - **Copia de registros en el prólogo: ya estaba implementada** vía `TAC_PARAM_DECL`, que el
+    TAC emite inmediatamente después del `begin_func`, así que las copias quedan al principio
+    de la función. Verificado en el prólogo de una función de 9 parámetros: los seis primeros
+    salen de `%edi, %esi, %edx, %ecx, %r8d, %r9d` y los tres restantes de `16(%rbp)`,
+    `24(%rbp)` y `32(%rbp)`.
+
+  - **Código de salida de `main` (bug 1.7): corregido.** `FunctionFrame` ganó un campo
+    `returnType`, que se toma del operando del `begin_func` —`tacMethod()` guarda ahí el tipo
+    de retorno—, y `emitEpilogue()` emite `movl $0, %eax` solo cuando la función es `main` y
+    es `void`. Se acota a `main` a propósito: en los demás métodos `void` el llamador ignora
+    `%eax`, y en los no-void el valor de retorno tiene que sobrevivir.
+    *Verificación:* `void main(){ int x; x = 42; }` pasó de devolver 42 a devolver 0. También
+    con una llamada previa que deja residuo, con `return;` explícito y con el cuerpo vacío.
+    Sin regresiones en `int main()` ni en métodos `void` que no son `main`.
 
 - [X] **1.6 Segmento de Datos (`emitGlobals`)**
   - [X] Declaración de variables globales con `.globl`, `.align 4` y directiva `.long 0`.
