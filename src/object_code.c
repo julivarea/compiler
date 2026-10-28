@@ -199,6 +199,38 @@ static void emitRelationalOp(const TACInstruction *inst, const char *setcc, cons
     storeRegisterToOperand(&inst->result, ASM_RAX, frame);
 }
 
+/**
+ * @brief Abstracción para división entera y módulo, que en x86-64 son la misma
+ * instrucción leída desde registros distintos.
+ *
+ * `idivl divisor` divide el par %edx:%eax por el divisor, deja el cociente en
+ * %eax y el resto en %edx. De ahí tres condiciones que hay que respetar:
+ *
+ * 1. El dividendo va en %eax.
+ * 2. Antes de dividir hay que extender su signo a %edx con `cltd`; sin eso,
+ *    %edx conserva basura y el cociente de cualquier división sale mal.
+ * 3. El divisor nunca puede ir en %edx, justamente porque `cltd` lo pisa. Por
+ *    eso se usa %ecx como registro auxiliar, y no el %edx que usan el resto de
+ *    las operaciones binarias.
+ *
+ * @param inst Instrucción TAC de división o módulo.
+ * @param frame Marco de pila actual.
+ * @param resultReg Registro del que se toma el resultado: ASM_RAX para el
+ *        cociente (TAC_DIV) o ASM_RDX para el resto (TAC_MOD).
+ */
+static void emitDivisionOp(const TACInstruction *inst, const FunctionFrame *frame, AsmRegister resultReg) {
+    loadRegisterBasedOnOperand(ASM_RAX, &inst->arg1, frame); /* dividendo */
+    loadRegisterBasedOnOperand(ASM_RCX, &inst->arg2, frame); /* divisor */
+
+    AsmInstruction signExtend = asmCltd();
+    emitAsm(&signExtend);
+
+    AsmInstruction divide = asmOpUnary(ASM_IDIV, ASM_RCX);
+    emitAsm(&divide);
+
+    storeRegisterToOperand(&inst->result, resultReg, frame);
+}
+
 void emitPrologue(const FunctionFrame *frame) {
     if (frame == NULL) return;
 
@@ -255,16 +287,22 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             emitBinaryOp(instruction, ASM_IMUL, frame);
             break;
 
-        case TAC_DIV: {
-            // todo
-        }
+        case TAC_DIV:
+            /* El cociente queda en %eax */
+            emitDivisionOp(instruction, frame, ASM_RAX);
+            break;
 
-        case TAC_MOD: {
-            // todo
-        }
+        case TAC_MOD:
+            /* El resto queda en %edx */
+            emitDivisionOp(instruction, frame, ASM_RDX);
+            break;
 
         case TAC_NEG: {
-            // todo
+            loadRegisterBasedOnOperand(ASM_RAX, &instruction->arg1, frame);
+            AsmInstruction negate = asmOpUnary(ASM_NEG, ASM_RAX);
+            emitAsm(&negate);
+            storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+            break;
         }
 
         case TAC_NOT: {
