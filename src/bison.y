@@ -436,7 +436,7 @@ int main(int argc, char** argv) {
         goto cleanup;
     }
 
-    boolean hasSyntaxError = (yyparse() != 0);
+    int hasSyntaxError = (yyparse() != 0);
     if (hasSyntaxError) {
         exit_code = 1;
         goto cleanup;
@@ -453,7 +453,7 @@ int main(int argc, char** argv) {
         goto cleanup;
     }
 
-    analyzeSemantics(raizAST, NULL, TYPE_VOID);
+    analyzeSemantics(raizAST, NULL);
 
     if (semantic_errors > 0) {
         fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores semanticos.\033[0m\n", semantic_errors);
