@@ -127,7 +127,7 @@ NodeAST *raizAST = NULL;
     ;
 
     Statement
-    : ID '=' Expression ';' { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), newNode(ID_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL), NULL, $3); }
+    : ID '=' Expression ';' { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), $3, NULL, NULL); }
     | MethodCall ';' {$$ = $1; }
     | RETURN Expression ';' { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); }
     | RETURN ';' { $$ = newNode(RETURN_NODE, NULL, NULL, NULL, NULL); }
@@ -436,7 +436,7 @@ int main(int argc, char** argv) {
         goto cleanup;
     }
 
-    boolean hasSyntaxError = (yyparse() != 0);
+    int hasSyntaxError = (yyparse() != 0);
     if (hasSyntaxError) {
         exit_code = 1;
         goto cleanup;
@@ -453,7 +453,7 @@ int main(int argc, char** argv) {
         goto cleanup;
     }
 
-    analyzeSemantics(raizAST, NULL, TYPE_VOID);
+    analyzeSemantics(raizAST, NULL);
 
     if (semantic_errors > 0) {
         fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores semanticos.\033[0m\n", semantic_errors);
