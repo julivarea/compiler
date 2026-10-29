@@ -12,3 +12,7 @@ site/
 *.ci
 *.ass
 *.opt
+*.o
+mi_compilador
+*.out
+*.tmp.s
