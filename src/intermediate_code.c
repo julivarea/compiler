@@ -8,6 +8,9 @@ static DataType current_method_type = TYPE_VOID;
 static int temp_count = 0;
 static int label_count = 0;
 
+static TACOperand generateExpressionCode(NodeAST *node);
+static void generateStatementCode(NodeAST *node);
+
 
 static TACOperand newTemp(DataType type) {
     char name[TAC_NAME_LENGTH];
@@ -162,7 +165,7 @@ static TACOperand generateConstantOperand(NodeAST *node) {
     }
 }
 
-TACOperand generateExpressionCode(NodeAST *node) {
+static TACOperand generateExpressionCode(NodeAST *node) {
     if (node == NULL) {
         return tacNone();
     }
@@ -212,7 +215,7 @@ TACOperand generateExpressionCode(NodeAST *node) {
     }
 }
 
-void generateStatementCode(NodeAST *node) {
+static void generateStatementCode(NodeAST *node) {
     if (node == NULL) {
         return;
     }

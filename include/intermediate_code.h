@@ -3,44 +3,32 @@
 
 /**
  * @file intermediate_code.h
- * @brief Recorrido del AST que construye el código de tres direcciones.
- *
- * La estructura de datos del TAC vive en `tac_list.h`, `tac_instruction.h` y `tac_operand.h`; este módulo solo la llena.
- * El resultado se obtiene con getIntermediateCode() y lo consumen las etapas
- * siguientes (intérprete, optimizador, generador x86-64) o printTACList() si
- * lo que se quiere es la versión en texto.
+ * @brief Pase de generación de código intermedio (TAC) sobre el Árbol de Sintaxis Abstracta (AST).
  */
 
 #include "ast.h"
-#include "types.h"
 #include "tac_list.h"
 
 /**
- * @brief Genera el código intermedio del programa completo.
+ * @brief Genera el código intermedio de tres direcciones para el programa completo.
  *
- * Descarta el código generado en una invocación anterior y reinicia los
- * contadores de temporales y etiquetas.
+ * Recorre el AST a partir del bloque raíz, descarta cualquier secuencia de código
+ * generada en una invocación previa y reinicia los contadores internos de
+ * temporales y etiquetas.
  *
- * @param root Nodo raíz del AST (el bloque de declaraciones del programa).
+ * @param root Nodo raíz del AST a procesar (acepta NULL, en cuyo caso no emite código).
  */
 void generateIntermediateCode(NodeAST *root);
 
 /**
- * @brief Devuelve el código intermedio de la última generación.
- * @return La lista de instrucciones, o NULL si todavía no se generó ninguna.
+ * @brief Devuelve la lista de instrucciones TAC generada en la última invocación.
+ *
+ * Permite acceder a la estructura de código intermedio producida por @ref generateIntermediateCode
+ * para su posterior procesamiento por las fases subsiguientes del compilador
+ * (intérprete, optimizador o generador de código de máquina x86-64).
+ *
+ * @return Puntero constante a la lista de instrucciones TAC, o NULL si todavía no se ejecutó la generación.
  */
 const TACList *getIntermediateCode(void);
-
-/**
- * @brief Genera el código de una expresión.
- * @return El operando donde quedó el resultado (un temporal, una variable o
- *         una constante).
- */
-TACOperand generateExpressionCode(NodeAST *node);
-
-/**
- * @brief Genera el código de una sentencia.
- */
-void generateStatementCode(NodeAST *node);
 
 #endif // INTERMEDIATE_CODE_H

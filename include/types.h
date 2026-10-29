@@ -3,11 +3,16 @@
 
 /**
  * @file types.h
- * @brief Definiciones de tipos de datos y operadores para el compilador.
+ * @brief Definiciones de tipos de datos semánticos y operadores de expresiones.
  */
 
-/* Tipos semanticos */
-typedef enum {
+/**
+ * @brief Tipos de datos primitivos y de control semántico del lenguaje.
+ *
+ * Representa los tipos deducidos o declarados durante las fases de análisis
+ * semántico y verificación de tipos en el AST y en la tabla de símbolos.
+ */
+typedef enum DataType {
     TYPE_INT,
     TYPE_BOOL,
     TYPE_FLOAT,
@@ -15,8 +20,25 @@ typedef enum {
     TYPE_ERROR
 } DataType;
 
-/* Operadores de expresiones */
-typedef enum {
+/**
+ * @brief Obtiene la representación textual legible de un tipo de datos semántico.
+ *
+ * Convierte el enumerador @p type a su cadena constante representativa
+ * ("INT", "BOOL", "FLOAT", "VOID" o "ERROR"). Si el tipo no es reconocido,
+ * retorna "UNKNOWN".
+ *
+ * @param type Tipo de dato semántico a convertir en texto.
+ * @return Cadena constante con el nombre legible del tipo de dato.
+ */
+const char *getDataTypeName(DataType type);
+
+/**
+ * @brief Operadores admitidos en nodos de expresiones del AST.
+ *
+ * Clasifica los distintos tipos de operadores aritméticos, relacionales,
+ * lógicos y unarios que pueden conformar una expresión binaria o unaria.
+ */
+typedef enum OperationType {
     OP_ADD,
     OP_NEGATIVE,
     OP_NEGATION,
@@ -30,10 +52,5 @@ typedef enum {
     OP_AND,
     OP_OR
 } OperationType;
-
-/**
- * @brief Obtiene el nombre legible de un DataType.
- */
-const char* getDataTypeName(DataType type);
 
 #endif // TYPES_H

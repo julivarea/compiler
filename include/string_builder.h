@@ -1,50 +1,49 @@
 #ifndef STRING_BUILDER_H
 #define STRING_BUILDER_H
 
-#include <stddef.h>
-#include <stdarg.h>
-
 /**
- * Append a null-terminated C string to the internal buffer.
- *
- * Uso:
- *   buildString("LABEL_1:");
- *   buildString(node->symbol->id);
- *   buildString("\n");
- *
- *   // Se pueden encadenar llamadas; todo queda en el mismo buffer:
- *   buildString(node->symbol->id);   // "foo"
- *   buildString(":");                // "foo:"
- *   buildString("int");              // "foo:int"
+ * @file string_builder.h
+ * @brief Acumulador dinámico de cadenas y formateador de texto en memoria.
  */
-void buildString(const char *s);
 
 /**
- * Append a formatted string (printf-style) to the internal buffer.
- * Both buildString and buildStringf share the same buffer — output
- * accumulates across any mix of calls.
+ * @brief Agrega una cadena de caracteres terminada en nulo al búfer acumulador.
  *
- * Uso:
- *   buildStringf("%s:", node->symbol->id);          // "foo:"
- *   buildStringf("t%d = %s + %s", tmp, l, r);      // "t0 = a + b"
- *   buildStringf("if %s goto L%d\n", cond, label); // "if t1 goto L3\n"
+ * Reserva o expande dinámicamente el búfer interno según sea necesario y
+ * concatena el contenido provisto, garantizando la terminación en nulo.
  *
- *   // Mezcla con buildString sin perder contenido:
- *   buildString("// metodo: ");
- *   buildStringf("%s/%d params\n", node->symbol->id, paramCount);
+ * @param string Cadena constante a concatenar (si es NULL no realiza acción).
  */
-void buildStringf(const char *fmt, ...);
+void buildString(const char *string);
 
 /**
- * Retrieve the accumulated string (read-only).
- * Returns "" if nothing has been written yet.
+ * @brief Agrega texto con formato estilo printf al búfer acumulador.
+ *
+ * Calcula la longitud requerida, redimensiona la capacidad del búfer dinámico
+ * y escribe los argumentos formateados según el especificador. Comparte el
+ * mismo acumulador interno que @p buildString.
+ *
+ * @param format Cadena de control de formato con especificadores estilo printf (si es NULL no realiza acción).
+ * @param ... Argumentos variables correspondientes a los especificadores de formato.
+ */
+void buildStringf(const char *format, ...);
+
+/**
+ * @brief Obtiene la cadena acumulada completa de sólo lectura.
+ *
+ * Proporciona acceso directo al búfer dinámico generado hasta el momento.
+ * La cadena devuelta pertenece al acumulador y no debe ser liberada por el llamador.
+ *
+ * @return Puntero constante a la cadena acumulada, o cadena vacía "" si no se ha emitido texto.
  */
 const char *getBuiltString(void);
 
 /**
- * Reset the internal buffer, freeing allocated memory.
- * Call this before starting a new generation pass.
+ * @brief Restablece el acumulador liberando la memoria dinámica reservada.
+ *
+ * Libera el búfer interno y reinicia la longitud y la capacidad a cero,
+ * dejando el acumulador listo para un nuevo ciclo de emisión.
  */
 void resetBuildString(void);
 
-#endif /* STRING_BUILDER_H */
+#endif // STRING_BUILDER_H

@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "object_code.h"
+#include "asm_instruction.h"
 #include "string_builder.h"
 
 

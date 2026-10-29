@@ -3,6 +3,13 @@
 #include "type_checker.h"
 #include "error_handler.h"
 
+static int isNumeric(DataType type);
+static int isBasicType(DataType type);
+static DataType resolveNumericOperation(DataType left, DataType right);
+static DataType resolveBinaryOperation(OperationType operator, DataType left, DataType right);
+static DataType analyzeIdentifier(NodeAST *node, Scope *scope);
+static DataType analyzeBinaryOperator(NodeAST *node, Scope *scope);
+
 int isAssignable(DataType expected, DataType actual) {
     if (expected == actual) return 1;
     if (expected == TYPE_FLOAT && actual == TYPE_INT) return 1;
@@ -12,7 +19,6 @@ static int isNumeric(DataType type) {
     return type == TYPE_INT || type == TYPE_FLOAT;
 }
 
-/* Tipos basicos del lenguaje (los unicos comparables con ==). */
 static int isBasicType(DataType type) {
     return type == TYPE_INT || type == TYPE_FLOAT || type == TYPE_BOOL;
 }
@@ -21,16 +27,15 @@ static DataType resolveNumericOperation(DataType left, DataType right) {
     if (!isNumeric(left) || !isNumeric(right))
         return TYPE_ERROR;
 
-    return (left == TYPE_FLOAT || right == TYPE_FLOAT)
-        ? TYPE_FLOAT
-        : TYPE_INT;
+    int coalesceToFloat = (left == TYPE_FLOAT || right == TYPE_FLOAT);
+    
+    if (coalesceToFloat) {
+        return TYPE_FLOAT;
+    }
+    return TYPE_INT;
 }
 
-DataType resolveBinaryOperation(
-    OperationType operator,
-    DataType left,
-    DataType right
-) {
+static DataType resolveBinaryOperation(OperationType operator, DataType left, DataType right) {
     switch (operator) {
         case OP_ADD:
         case OP_SUB:
@@ -38,10 +43,8 @@ DataType resolveBinaryOperation(
         case OP_DIV:
             return resolveNumericOperation(left, right);
 
+        // division solo aplica a enteros, cualquier otra combinacion provoca un fallo
         case OP_MOD:
-            // % computa el resto de una division de numeros enteros, asi que
-            // ambos operandos deben ser int. Es el unico aritmetico que no
-            // admite float ni aplica la coercion int/float.
             if (left == TYPE_INT && right == TYPE_INT)
                 return TYPE_INT;
             return TYPE_ERROR;
@@ -51,11 +54,9 @@ DataType resolveBinaryOperation(
             if (isNumeric(left) && isNumeric(right))
                 return TYPE_BOOL;
             return TYPE_ERROR;
-
+                    
+        // no se aplica la coercion para la igualdad
         case OP_EQ:
-            // los operandos de == deben tener el mismo tipo basico.
-            // A diferencia de los relacionales, aca NO se aplica la coercion
-            // int/float. Unicamente se pueden comparar expresiones del mismo tipo.
             if (left == right && isBasicType(left))
                 return TYPE_BOOL;
 
@@ -82,7 +83,7 @@ DataType resolveBinaryOperation(
     }
 }
 
-DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
+static DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
     Symbol *symbol = lookupVariable(scope, node->symbol->id);
 
     if (symbol == NULL) {
@@ -142,7 +143,7 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
     return method->type;
 }
 
-DataType analyzeBinaryOperator(NodeAST *node, Scope *scope) {
+static DataType analyzeBinaryOperator(NodeAST *node, Scope *scope) {
     DataType leftType = analyzeExpression(GET_LEFT(node), scope); //
     DataType rightType = TYPE_VOID; // default
     

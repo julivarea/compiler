@@ -26,10 +26,18 @@ void freeTACList(TACList *list) {
     free(list);
 }
 
-TACInstruction *appendInstruction(TACList *list, TACOperation op, TACOperand result, TACOperand arg1, TACOperand arg2) {
+void printTACList(const TACList *list) {
+    if (list == NULL) return;
+
+    for (const TACInstruction *current = list->head; current != NULL; current = current->next) {
+        printTACInstruction(current);
+    }
+}
+
+TACInstruction *appendInstruction(TACList *list, TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
     if (list == NULL) return NULL;
 
-    TACInstruction *instruction = createTACInstruction(op, result, arg1, arg2);
+    TACInstruction *instruction = createTACInstruction(operation, result, firstOperand, secondOperand);
     if (instruction == NULL) return NULL;
 
     if (list->tail == NULL) {
@@ -41,12 +49,4 @@ TACInstruction *appendInstruction(TACList *list, TACOperation op, TACOperand res
     list->count++;
 
     return instruction;
-}
-
-void printTACList(const TACList *list) {
-    if (list == NULL) return;
-
-    for (const TACInstruction *current = list->head; current != NULL; current = current->next) {
-        printTACInstruction(current);
-    }
 }

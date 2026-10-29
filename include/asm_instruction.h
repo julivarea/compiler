@@ -1,8 +1,6 @@
 #ifndef ASM_INSTRUCTION_H
 #define ASM_INSTRUCTION_H
 
-#include <string.h>
-
 /**
  * @file asm_instruction.h
  * @brief Estructuras y constructores de instrucciones x86-64 para carga, guardado y operaciones aritmético-lógicas.
@@ -11,63 +9,65 @@
  * orientadas a operaciones sobre registros, constantes numéricas y accesos al stack frame.
  */
 
+#include <string.h>
+
 /**
  * @brief Códigos de operación (opcodes) de Assembly x86-64 soportados.
  */
-typedef enum {
-    ASM_MOV,    /**< Movimiento / transferencia de datos: movl src, dest */
-    ASM_ADD,    /**< Suma entera: addl src, dest */
-    ASM_SUB,    /**< Resta entera: subl src, dest */
-    ASM_IMUL,   /**< Multiplicación entera con signo: imull src, dest */
-    ASM_IDIV,   /**< División entera con signo: idivl src */
-    ASM_NEG,    /**< Negación aritmética a complemento a dos: negl dest */
-    ASM_AND,    /**< Conjunción a nivel de bits: andl src, dest */
-    ASM_OR,     /**< Disyunción a nivel de bits: orl src, dest */
-    ASM_XOR,    /**< Disyunción exclusiva (útil para negación booleana): xorl src, dest */
-    ASM_NOT,    /**< Negación a nivel de bits complemento a uno: notl dest */
-    ASM_CMP,    /**< Comparación entera (modifica flags): cmpl src, dest */
-    ASM_SETE,   /**< Seteo condicional si igual / cero (ZF=1): sete dest (8 bits) */
-    ASM_SETNE,  /**< Seteo condicional si distinto / no cero (ZF=0): setne dest (8 bits) */
-    ASM_SETL,   /**< Seteo condicional si menor con signo: setl dest (8 bits) */
-    ASM_SETLE,  /**< Seteo condicional si menor o igual con signo: setle dest (8 bits) */
-    ASM_SETG,   /**< Seteo condicional si mayor con signo: setg dest (8 bits) */
-    ASM_SETGE,  /**< Seteo condicional si mayor o igual con signo: setge dest (8 bits) */
-    ASM_MOVZBL, /**< Extensión de cero de byte a doubleword: movzbl src8, dest32 */
-    ASM_CLTD    /**< Extensión de signo de %eax a %edx:%eax para división idivl: cltd */
+typedef enum AsmOpcode {
+    ASM_MOV,    /**< Movimiento o transferencia de datos: movl src, dest. */
+    ASM_ADD,    /**< Suma entera: addl src, dest. */
+    ASM_SUB,    /**< Resta entera: subl src, dest. */
+    ASM_IMUL,   /**< Multiplicación entera con signo: imull src, dest. */
+    ASM_IDIV,   /**< División entera con signo: idivl src. */
+    ASM_NEG,    /**< Negación aritmética a complemento a dos: negl dest. */
+    ASM_AND,    /**< Conjunción a nivel de bits: andl src, dest. */
+    ASM_OR,     /**< Disyunción a nivel de bits: orl src, dest. */
+    ASM_XOR,    /**< Disyunción exclusiva (útil para negación booleana): xorl src, dest. */
+    ASM_NOT,    /**< Negación a nivel de bits complemento a uno: notl dest. */
+    ASM_CMP,    /**< Comparación entera (modifica flags): cmpl src, dest. */
+    ASM_SETE,   /**< Seteo condicional si igual o cero (ZF=1): sete dest (8 bits). */
+    ASM_SETNE,  /**< Seteo condicional si distinto o no cero (ZF=0): setne dest (8 bits). */
+    ASM_SETL,   /**< Seteo condicional si menor con signo: setl dest (8 bits). */
+    ASM_SETLE,  /**< Seteo condicional si menor o igual con signo: setle dest (8 bits). */
+    ASM_SETG,   /**< Seteo condicional si mayor con signo: setg dest (8 bits). */
+    ASM_SETGE,  /**< Seteo condicional si mayor o igual con signo: setge dest (8 bits). */
+    ASM_MOVZBL, /**< Extensión de cero de byte a doubleword: movzbl src8, dest32. */
+    ASM_CLTD    /**< Extensión de signo de %eax a %edx:%eax para división idivl: cltd. */
 } AsmOpcode;
 
 /**
  * @brief Registros x86-64 (en su variante de 32 bits) empleados en operaciones.
  */
-typedef enum {
-    ASM_RAX, /**< %eax: registro acumulador / destino principal de operaciones */
-    ASM_RDX, /**< %edx: segundo operando en operaciones binarias */
-    ASM_RCX  /**< %ecx: divisor en idivl / registro auxiliar */
+typedef enum AsmRegister {
+    ASM_RAX, /**< %eax: registro acumulador o destino principal de operaciones. */
+    ASM_RDX, /**< %edx: segundo operando en operaciones binarias. */
+    ASM_RCX  /**< %ecx: divisor en idivl o registro auxiliar. */
 } AsmRegister;
 
 /**
  * @brief Discriminador para el tipo de operando en Assembly.
  */
-typedef enum {
-    ASM_OP_NONE = 0, /**< Operando ausente (para instrucciones unarias como negl) */
-    ASM_OP_REG,      /**< Operando ubicado en un registro de la CPU (%eax, %edx, etc.) */
-    ASM_OP_MEM,      /**< Operando en memoria relativo al marco de pila (offset(%rbp)) */
-    ASM_OP_GLOBAL,   /**< Operando en memoria para variable global (nombre(%rip)) */
-    ASM_OP_IMM       /**< Valor constante numérico inmediato ($val) */
+typedef enum AsmOperandType {
+    ASM_OP_NONE = 0, /**< Operando ausente (para instrucciones unarias como negl). */
+    ASM_OP_REG,      /**< Operando ubicado en un registro de la CPU (%eax, %edx, etc.). */
+    ASM_OP_MEM,      /**< Operando en memoria relativo al marco de pila (offset(%rbp)). */
+    ASM_OP_GLOBAL,   /**< Operando en memoria para variable global (nombre(%rip)). */
+    ASM_OP_IMM       /**< Valor constante numérico inmediato ($val). */
 } AsmOperandType;
 
 /**
  * @brief Representa un operando individual de una instrucción Assembly.
  */
-typedef struct {
-    AsmOperandType type; /**< Tipo de operando */
+typedef struct AsmOperand {
+    AsmOperandType type; /**< Tipo de operando. */
     union {
-        AsmRegister reg;        /**< Identificador del registro cuando type == ASM_OP_REG */
-        int offset;            /**< Desplazamiento respecto a %rbp cuando type == ASM_OP_MEM (ej: -4) */
-        int immediate;         /**< Valor numérico constante cuando type == ASM_OP_IMM (ej: 1, 42) */
-        const char *globalName; /**< Nombre de la variable global cuando type == ASM_OP_GLOBAL */
+        AsmRegister reg;        /**< Identificador del registro cuando type == ASM_OP_REG. */
+        int offset;             /**< Desplazamiento respecto a %rbp cuando type == ASM_OP_MEM (ej: -4). */
+        int immediate;          /**< Valor numérico constante cuando type == ASM_OP_IMM (ej: 1, 42). */
+        const char *globalName; /**< Nombre de la variable global cuando type == ASM_OP_GLOBAL. */
     };
-    char customReg[16]; /**< Nombre explícito del registro (ej: "%edi", "%esi", etc.) */
+    char customReg[16]; /**< Nombre explícito del registro (ej: "%edi", "%esi", etc.). */
 } AsmOperand;
 
 /**
@@ -76,16 +76,17 @@ typedef struct {
  * En sintaxis AT&T (GNU Assembler / GAS), el formato de emisión textual es:
  *     <mnemonic> <src>, <dest>
  */
-typedef struct {
-    AsmOpcode opcode;  /**< Código de operación a ejecutar */
-    AsmOperand dest;   /**< Operando destino (registro o memoria) */
-    AsmOperand src;    /**< Operando origen (registro, memoria, inmediato o NONE) */
+typedef struct AsmInstruction {
+    AsmOpcode opcode;  /**< Código de operación a ejecutar. */
+    AsmOperand dest;   /**< Operando destino (registro o memoria). */
+    AsmOperand src;    /**< Operando origen (registro, memoria, inmediato o NONE). */
 } AsmInstruction;
-
-/* --- Helpers rápidos de construcción de operandos --- */
 
 /**
  * @brief Construye un operando de tipo registro mediante enum.
+ *
+ * Configura la estructura @p AsmOperand como registro y asigna el identificador.
+ *
  * @param r Registro x86 seleccionado.
  * @return AsmOperand configurado como registro.
  */
@@ -99,8 +100,11 @@ static inline AsmOperand opReg(AsmRegister r) {
 
 /**
  * @brief Construye un operando de tipo registro por nombre de cadena (ej: "%edi", "%eax").
+ *
+ * Copia el nombre del registro en el campo de texto @p customReg.
+ *
  * @param name Nombre del registro con prefijo '%'.
- * @return AsmOperand configurado como registro.
+ * @return AsmOperand configurado como registro por nombre.
  */
 static inline AsmOperand opRegStr(const char *name) {
     AsmOperand op;
@@ -114,6 +118,9 @@ static inline AsmOperand opRegStr(const char *name) {
 
 /**
  * @brief Construye un operando de memoria relativo a %rbp.
+ *
+ * Asigna el desplazamiento en la pila correspondiente al marco de activación actual.
+ *
  * @param offset Desplazamiento en bytes respecto a %rbp (ej: -4, -8).
  * @return AsmOperand configurado como memoria de stack.
  */
@@ -127,6 +134,9 @@ static inline AsmOperand opMem(int offset) {
 
 /**
  * @brief Construye un operando inmediato constante.
+ *
+ * Almacena el valor numérico en el campo de valor inmediato.
+ *
  * @param val Valor numérico entero.
  * @return AsmOperand configurado como constante inmediata.
  */
@@ -140,6 +150,9 @@ static inline AsmOperand opImm(int val) {
 
 /**
  * @brief Construye un operando de memoria relativo a %rip para variables globales.
+ *
+ * Configura la referencia simbólica a la etiqueta global para direccionamiento por IP.
+ *
  * @param name Nombre del identificador global.
  * @return AsmOperand configurado como global.
  */
@@ -151,13 +164,11 @@ static inline AsmOperand opGlobal(const char *name) {
     return op;
 }
 
-/** Alias para compatibilidad */
-static inline AsmOperand opConstant(const char *globalVariable) {
-    return opGlobal(globalVariable);
-}
-
 /**
- * @brief Construye un operando vacío (sin uso).
+ * @brief Construye un operando vacío sin valor asociado.
+ *
+ * Empleado para instrucciones unarias o nulas que no requieren segundo operando.
+ *
  * @return AsmOperand de tipo ASM_OP_NONE.
  */
 static inline AsmOperand opNone(void) {
@@ -169,6 +180,7 @@ static inline AsmOperand opNone(void) {
 
 /**
  * @brief Crea una instrucción de carga genérica (movl src, dest).
+ *
  * @param dest Operando destino (generalmente un registro).
  * @param src Operando origen (inmediato, memoria o global).
  * @return AsmInstruction configurada para carga.
@@ -178,7 +190,7 @@ AsmInstruction asmLoad(AsmOperand dest, AsmOperand src);
 /**
  * @brief Crea una instrucción de carga de un valor inmediato a un registro.
  *
- * Genera la instrucción: `movl $val, destReg`.
+ * Genera la instrucción: movl $val, destReg.
  *
  * @param destReg Registro destino donde se almacenará la constante.
  * @param val Valor entero constante.
@@ -188,6 +200,7 @@ AsmInstruction asmLoadImm(AsmRegister destReg, int val);
 
 /**
  * @brief Crea una instrucción de guardado genérica (movl src, dest).
+ *
  * @param dest Operando destino (memoria o global).
  * @param src Operando origen (generalmente un registro).
  * @return AsmInstruction configurada para escribir en memoria.
@@ -197,7 +210,7 @@ AsmInstruction asmStore(AsmOperand dest, AsmOperand src);
 /**
  * @brief Crea una operación binaria entre dos registros de la CPU.
  *
- * Genera la instrucción: `<op> srcReg, destReg` (destReg = destReg <op> srcReg).
+ * Genera la instrucción: <op> srcReg, destReg.
  *
  * @param op Código de operación (ej. ASM_ADD, ASM_SUB, ASM_OR).
  * @param dest Registro destino que se modifica con el resultado.
@@ -209,7 +222,7 @@ AsmInstruction asmOpReg(AsmOpcode op, AsmRegister dest, AsmRegister src);
 /**
  * @brief Crea una operación aritmética o lógica con una constante inmediata.
  *
- * Genera la instrucción: `<op> $imm, destReg` (destReg = destReg <op> imm).
+ * Genera la instrucción: <op> $imm, destReg.
  *
  * @param op Código de operación (ej. ASM_XOR para negación booleana con $1).
  * @param dest Registro destino modificado por la operación.
@@ -221,7 +234,7 @@ AsmInstruction asmOpImm(AsmOpcode op, AsmRegister dest, int imm);
 /**
  * @brief Crea una operación unaria sobre un registro.
  *
- * Genera la instrucción: `<op> destReg` (ej. negl %eax, idivl %ecx).
+ * Genera la instrucción: <op> destReg (ej. negl %eax, idivl %ecx).
  *
  * @param op Código de operación unaria (ej. ASM_NEG, ASM_NOT, ASM_IDIV).
  * @param dest Registro objetivo sobre el cual se aplica la operación.
@@ -232,7 +245,7 @@ AsmInstruction asmOpUnary(AsmOpcode op, AsmRegister dest);
 /**
  * @brief Crea una instrucción de seteo condicional (sete, setne, setl, setle, setg, setge).
  *
- * Genera la instrucción: `<setcc> %reg8` (ej: sete %al).
+ * Genera la instrucción: <setcc> %reg8 (ej: sete %al).
  *
  * @param op Código de operación de seteo condicional (ej. ASM_SETE, ASM_SETL).
  * @param dest Registro cuyo byte inferior se asignará (ej: ASM_RAX -> %al).
@@ -243,7 +256,7 @@ AsmInstruction asmSetCC(AsmOpcode op, AsmRegister dest);
 /**
  * @brief Crea una instrucción de extensión de cero de byte a long (32 bits).
  *
- * Genera la instrucción: `movzbl %src8, %dest32` (ej: movzbl %al, %eax).
+ * Genera la instrucción: movzbl %src8, %dest32 (ej: movzbl %al, %eax).
  *
  * @param dest Registro de destino de 32 bits (ej: ASM_RAX -> %eax).
  * @param src Registro de origen de 8 bits (ej: ASM_RAX -> %al).
@@ -254,7 +267,7 @@ AsmInstruction asmMovzbl(AsmRegister dest, AsmRegister src);
 /**
  * @brief Crea una instrucción de extensión de signo cltd (%eax a %edx:%eax).
  *
- * Genera la instrucción: `cltd`.
+ * Genera la instrucción: cltd.
  *
  * @return AsmInstruction configurada para cltd.
  */
@@ -263,8 +276,10 @@ AsmInstruction asmCltd(void);
 /**
  * @brief Emite la representación textual de una AsmInstruction al string_builder en sintaxis AT&T (GAS).
  *
- * @param inst Puntero a la instrucción a emitir.
+ * Formatea el mnemónico y los operandos escribiendo la línea resultante en el acumulador.
+ *
+ * @param inst Puntero a la instrucción a emitir (si es NULL no realiza acción).
  */
 void emitAsm(const AsmInstruction *inst);
 
-#endif /* ASM_INSTRUCTION_H */
+#endif // ASM_INSTRUCTION_H

@@ -22,8 +22,8 @@
  *
  * @param root Nodo raíz del AST a analizar.
  * @param parent Scope padre (NULL para el scope global).
- * @return Scope* Ámbito resultante creado para la raíz analizada.
+ * @return Ámbito resultante creado para la raíz analizada, o NULL en caso de error.
  */
-Scope* analyzeSemantics(NodeAST *root, Scope *parent);
+Scope *analyzeSemantics(NodeAST *root, Scope *parent);
 
 #endif // SEMANTIC_ANALYZER_H

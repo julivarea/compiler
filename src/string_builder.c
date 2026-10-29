@@ -19,29 +19,29 @@ static void sb_ensure_capacity(size_t needed) {
     code_cap = new_cap;
 }
 
-void buildString(const char *s) {
-    if (!s) return;
-    size_t add_len = strlen(s);
+void buildString(const char *string) {
+    if (!string) return;
+    size_t add_len = strlen(string);
     sb_ensure_capacity(add_len);
-    memcpy(code_buffer + code_len, s, add_len);
+    memcpy(code_buffer + code_len, string, add_len);
     code_len += add_len;
     code_buffer[code_len] = '\0';
 }
 
-void buildStringf(const char *fmt, ...) {
-    if (!fmt) return;
+void buildStringf(const char *format, ...) {
+    if (!format) return;
 
     va_list ap;
-    va_start(ap, fmt);
+    va_start(ap, format);
     va_list ap_copy;
     va_copy(ap_copy, ap);
-    int len = vsnprintf(NULL, 0, fmt, ap_copy);
+    int len = vsnprintf(NULL, 0, format, ap_copy);
     va_end(ap_copy);
     if (len < 0) { va_end(ap); return; }
 
     sb_ensure_capacity((size_t)len);
 
-    vsnprintf(code_buffer + code_len, code_cap - code_len, fmt, ap);
+    vsnprintf(code_buffer + code_len, code_cap - code_len, format, ap);
     code_len += (size_t)len;
     code_buffer[code_len] = '\0';
     va_end(ap);

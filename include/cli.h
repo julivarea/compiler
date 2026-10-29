@@ -3,70 +3,93 @@
 
 /**
  * @file cli.h
- * @brief Parseo de la línea de comandos exigida por el enunciado del proyecto:
+ * @brief Parseo y configuración de la línea de comandos del compilador.
  *
- *     c-tds [opcion] nombreArchivo.ctds
- *
+ * Procesa los argumentos recibidos por la invocación del compilador (ej. c-tds [opciones] archivo.ctds),
+ * valida extensiones y banderas, y completa la estructura Options con la configuración resultante.
  * Esta unidad solo interpreta argumentos: no abre archivos ni ejecuta etapas.
- * Decidir qué fases correr y dónde escribir es responsabilidad del driver
- * (la función `main()` de `src/bison.y`), de modo que el parseo se pueda probar
- * sin compilar nada.
  */
 
 /**
- * @brief Etapas hasta las que se puede compilar (`-target`), en el orden del
- *        pipeline. El orden importa: el driver compara con `>` para saber si la
- *        etapa pedida todavía no está implementada.
+ * @brief Etapas del pipeline de compilación hasta las que se puede procesar el código.
+ *
+ * El orden de los enumeradores respeta estrictamente el pipeline del compilador,
+ * permitiendo comparar etapas con operadores relacionales para verificar disponibilidad.
  */
-typedef enum {
-    TARGET_SCAN,      /**< análisis léxico           -> .lex   */
-    TARGET_PARSE,     /**< análisis sintáctico       -> .sint  */
-    TARGET_SEM,       /**< análisis semántico        -> .sem   */
-    TARGET_CODINTER,  /**< código intermedio (TAC)   -> .ci    */
-    TARGET_ASSEMBLY   /**< código objeto x86-64      -> .ass   */
+typedef enum Target {
+    TARGET_SCAN,      /**< Análisis léxico (produce .lex). */
+    TARGET_PARSE,     /**< Análisis sintáctico (produce .sint). */
+    TARGET_SEM,       /**< Análisis semántico (produce .sem). */
+    TARGET_CODINTER,  /**< Generación de código intermedio TAC (produce .ci). */
+    TARGET_ASSEMBLY   /**< Generación de código objeto x86-64 (produce .ass). */
 } Target;
 
 /**
- * @brief Etapa más avanzada que el compilador implementa hoy.
+ * @brief Etapa más avanzada que el compilador implementa actualmente.
  *
- * Es también la etapa por defecto cuando no se pasa `-target`. Al terminar cada
- * etapa nueva, mover esta constante es lo único necesario para que el default y
- * el chequeo de "etapa no implementada" acompañen.
+ * Corresponde a la etapa por defecto cuando no se pasa la opción `-target`.
  */
 #define CURRENT_TARGET TARGET_ASSEMBLY
 
-typedef struct {
-    const char *input;   /**< archivo .ctds de entrada (apunta a argv) */
-    char *output;        /**< archivo de salida; reservado con malloc  */
-    Target target;       /**< etapa hasta la que se compila            */
-    int explicitTarget;  /**< 1 si se pasó -target; 0 si es el default */
-    int debug;           /**< -debug                                   */
-    const char *opt;     /**< -opt <nombre>; NULL si no se pasó        */
+/**
+ * @brief Opciones de configuración resultantes del procesamiento de la línea de comandos.
+ *
+ * Agrupa las rutas de entrada y salida, la etapa del compilador objetivo
+ * y las banderas de diagnóstico y optimización especificadas por el usuario.
+ */
+typedef struct Options {
+    const char *input;   /**< Archivo .ctds de entrada (apunta a argv). */
+    char *output;        /**< Archivo de salida (reservado dinámicamente con malloc). */
+    Target target;       /**< Etapa objetivo hasta la que compila el pipeline. */
+    int explicitTarget;  /**< 1 si se especificó explícitamente -target; 0 si es el default. */
+    int debug;           /**< 1 si se activó la bandera -debug; 0 en caso contrario. */
+    const char *opt;     /**< Nombre de optimización (-opt); "all", nombre o NULL si se omitió. */
 } Options;
 
 /**
- * @brief Indica si la corrida debe producir el ejecutable en vez del archivo
- *        de una etapa.
+ * @brief Indica si la corrida debe producir el ejecutable en vez del archivo de una etapa.
  *
- * El enunciado pide que sin `-target` el compilador genere `nombreArchivo.out`.
- * Pedir explícitamente `-target assembly` produce el `.ass` y se detiene ahí,
- * aunque sea la misma etapa.
+ * El enunciado exige que sin `-target` se genere `nombreArchivo.out`. Si se pide explícitamente
+ * `-target assembly`, se produce el `.ass` y se detiene ahí.
+ *
+ * @param options Puntero a la estructura de opciones evaluada.
+ * @return 1 si debe generarse el ejecutable final, 0 si debe generarse el archivo de etapa.
  */
 #define BUILDS_EXECUTABLE(options) (!(options)->explicitTarget)
 
 /**
- * @brief Interpreta argv y completa `options` con los valores por defecto de lo
- *        que no se haya pasado. Los errores se reportan por stderr junto con el
- *        modo de uso.
+ * @brief Interpreta los argumentos de línea de comandos y completa la estructura de opciones.
  *
- * @return 0 si los argumentos son válidos, 1 si no.
+ * Procesa @p argv configurando @p options con los valores suministrados o sus valores por defecto.
+ * Si ocurre un error de sintaxis o falta un argumento requerido, reporta el mensaje de error
+ * y el modo de uso por stderr.
+ *
+ * @param argc Cantidad de argumentos pasados al programa.
+ * @param argv Vector de cadenas con los argumentos de la línea de comandos.
+ * @param options Puntero a la estructura de opciones que será completada.
+ * @return 0 si los argumentos son válidos, 1 en caso de error.
  */
 int parseArguments(int argc, char **argv, Options *options);
 
-/** @brief Libera la memoria reservada por parseArguments. */
+/**
+ * @brief Libera la memoria reservada dinámicamente por la estructura de opciones.
+ *
+ * Libera el búfer de la cadena de salida reservado durante el parseo y restablece
+ * el puntero a NULL.
+ *
+ * @param options Puntero a la estructura de opciones a liberar (acepta NULL).
+ */
 void freeOptions(Options *options);
 
-/** @brief Nombre de la etapa tal como se escribe en `-target`, para mensajes. */
+/**
+ * @brief Obtiene la representación textual de una etapa para mensajes informativos.
+ *
+ * Retorna el nombre literal correspondiente al identificador de la etapa @p target,
+ * coincidente con el valor esperado por el parámetro `-target`.
+ *
+ * @param target Etapa del compilador a consultar.
+ * @return Cadena constante con el nombre de la etapa, o "?" si no es reconocida.
+ */
 const char *getTargetName(Target target);
 
-#endif /* CLI_H */
+#endif // CLI_H
