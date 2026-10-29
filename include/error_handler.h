@@ -7,6 +7,9 @@
  *
  * Todos los errores se escriben por stderr, así que la salida de una etapa
  * (que va a stdout o a su archivo) nunca queda contaminada con mensajes.
+ * Cada error sale con el mismo formato: "Error <etapa> en la linea N: mensaje".
+ * El módulo recuerda además el último error informado, para poder verificarlo
+ * desde los tests.
  */
 
 /**
@@ -22,6 +25,19 @@
 void lexicalError(int line, const char *format, ...);
 
 /**
+ * @brief Reporta un error sintáctico detectado por el parser.
+ *
+ * Imprime el mensaje formateado en stderr indicando la línea y el detalle del
+ * fallo. No lleva contador: el parser se detiene en el primer error, así que
+ * alcanza con el resultado de yyparse().
+ *
+ * @param line Número de línea del código fuente donde el parser detectó el error.
+ * @param format Cadena de control de formato estilo printf con la descripción del error.
+ * @param ... Argumentos variables para la cadena de formato.
+ */
+void syntaxError(int line, const char *format, ...);
+
+/**
  * @brief Reporta un error semántico durante el análisis semántico o verificación de tipos.
  *
  * Imprime el mensaje formateado en stderr indicando la línea y el detalle del
@@ -32,6 +48,25 @@ void lexicalError(int line, const char *format, ...);
  * @param ... Argumentos variables para la cadena de formato.
  */
 void semanticError(int line, const char *format, ...);
+
+/**
+ * @brief Línea del último error informado, de cualquier etapa.
+ *
+ * @return Número de línea, o 0 si todavía no hubo ningún error.
+ */
+int getLastErrorLine(void);
+
+/**
+ * @brief Mensaje del último error informado, sin el prefijo de etapa y línea.
+ *
+ * @return Texto del mensaje, o cadena vacía si todavía no hubo ningún error.
+ */
+const char *getLastErrorMessage(void);
+
+/**
+ * @brief Pone en cero los contadores de errores y olvida el último error.
+ */
+void resetErrorHandler(void);
 
 /**
  * @brief Cantidad acumulada de errores léxicos detectados durante el escaneo.

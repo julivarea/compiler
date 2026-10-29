@@ -16,7 +16,8 @@ extern char *yytext;
 extern FILE *yyin;
 extern int yylineno;
 void yyerror(const char *s) {
-    fprintf(stderr, "[Linea %d] Error sintactico: %s\n", yylineno, s);
+    (void)s; /* el mensaje de Bison esta en ingles y no aporta nada mas que la linea */
+    syntaxError(yylineno, "error de sintaxis");
 }
 
 NodeAST *raizAST = NULL;

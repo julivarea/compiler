@@ -27,9 +27,10 @@ step "compilacion de tests del parser" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_parser.c src/ast.c src/parser_helpers.c src/symbol_table.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_parser_tests
 
 # Convierte la salida de Unity a una linea por test y descarta los mensajes
-# de error que imprime el propio compilador ("[Linea N] ...") en los casos invalidos.
+# de error que imprime el propio compilador ("Error <etapa> en la linea N: ...")
+# en los casos invalidos.
 format() {
-    grep -v '^\[Linea' | sed -E \
+    grep -v 'Error [a-z]* en la linea' | sed -E \
         -e 's/^[^:]+:[0-9]+:([^:]+):PASS$/  [PASS] \1/' \
         -e 's/^[^:]+:([0-9]+):([^:]+):FAIL: ?(.*)$/  [FAIL] \2\n         -> linea \1: \3/' \
         -e 's/^[^:]+:[0-9]+:([^:]+):IGNORE.*$/  [SKIP] \1/' \
