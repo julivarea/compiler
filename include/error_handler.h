@@ -50,6 +50,17 @@ void syntaxError(int line, const char *format, ...);
 void semanticError(int line, const char *format, ...);
 
 /**
+ * @brief Indica el archivo fuente del que se muestra la línea de cada error.
+ *
+ * Después de cada mensaje de error se imprime la línea del código fuente donde
+ * ocurrió. Sin archivo fuente (por ejemplo, en los tests que parsean un string)
+ * solo se imprime el mensaje.
+ *
+ * @param path Ruta del archivo fuente (NULL para no mostrar la línea). No se copia: debe seguir válida mientras se informen errores.
+ */
+void setErrorSource(const char *path);
+
+/**
  * @brief Línea del último error informado, de cualquier etapa.
  *
  * @return Número de línea, o 0 si todavía no hubo ningún error.

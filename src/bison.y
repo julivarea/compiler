@@ -425,6 +425,7 @@ int main(int argc, char** argv) {
         freeOptions(&options);
         return 1;
     }
+    setErrorSource(options.input);
 
     if (options.debug) {
         printf("Entrada: %s\n", options.input);
