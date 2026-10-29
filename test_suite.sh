@@ -22,9 +22,9 @@ echo "Generando Flex y Bison y compilando tests..."
 step "bison" bison -d src/bison.y -o build/bison.tab.c
 step "flex" flex -o build/lex.yy.c src/lexer.l
 step "compilacion de tests del lexer" \
-    gcc -DUNITY_TESTING -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_lexer.c build/bison.tab.c build/lex.yy.c src/ast.c src/symbol_table.c src/error_handler.c -o build/run_lexer_tests
+    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_lexer.c build/bison.tab.c build/lex.yy.c src/ast.c src/symbol_table.c src/error_handler.c -o build/run_lexer_tests
 step "compilacion de tests del parser" \
-    gcc -DUNITY_TESTING -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_parser.c src/ast.c src/symbol_table.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_parser_tests
+    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_parser.c src/ast.c src/symbol_table.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_parser_tests
 
 # Convierte la salida de Unity a una linea por test y descarta los mensajes
 # de error que imprime el propio compilador ("[Linea N] ...") en los casos invalidos.

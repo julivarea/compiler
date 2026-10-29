@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "intermediate_code.h"
-#include "tac_list.h"
 
 static TACList *current_code = NULL;
 static DataType current_method_type = TYPE_VOID;
@@ -31,7 +30,7 @@ static void emit(TACOperation op, TACOperand result, TACOperand arg1, TACOperand
 static int lastInstructionIsReturn(void) {
     return current_code != NULL
         && current_code->tail != NULL
-        && current_code->tail->op == TAC_RETURN;
+        && current_code->tail->operation == TAC_RETURN;
 }
 
 /*

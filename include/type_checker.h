@@ -41,4 +41,4 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression);
  */
 DataType analyzeIdentifier(NodeAST *node, Scope *scope);
 
-#endif // TYPE_CHECKER_H
+#endif 

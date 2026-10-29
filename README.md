@@ -39,19 +39,37 @@ una versión navegable estructurada paso a paso.
 
 ```
 .
-├── src/
-│   ├── cli.h / cli.c                                # parseo de la línea de comandos
-│   ├── lexer.l                                      # analizador léxico
-│   ├── bison.y                                      # analizador sintáctico
-│   ├── ast.h / ast.c                                # interfaz e implementación del AST
-│   ├── types.h                                      # enumerados 
-│   ├── symbol_table.h / symbol_table.c              # gestión de scopes y symbols
-│   ├── type_checker.h / type_checker.c              # inferencia, chequeo y compatibilidad de tipos
-│   ├── semantic_analyzer.h / semantic_analyzer.c    # recorrido semántico y validaciones del lenguaje
-│   ├── tac.h / tac.c                                # estructura del código de tres direcciones
-│   ├── intermediate_code.h / intermediate_code.c    # recorrido del AST que construye el TAC
-│   ├── string_builder.h / string_builder.c          # buffer dinámico de cadenas para la salida TAC
-│   └── error_handler.h / error_handler.c            # reporte y conteo de errores léxicos y semánticos
+├── include/                                         # archivos de cabecera (.h)
+│   ├── cli.h                                        # parseo de la línea de comandos
+│   ├── ast.h                                        # interfaz del AST
+│   ├── types.h                                      # enumerados y tipos de datos
+│   ├── symbol_table.h                               # gestión de scopes y símbolos
+│   ├── type_checker.h                               # inferencia y chequeo de tipos
+│   ├── semantic_analyzer.h                          # análisis semántico
+│   ├── tac_operand.h                                # representación y constructores de operandos TAC
+│   ├── tac_instruction.h                            # cuádruplas e instrucciones TAC
+│   ├── tac_list.h                                   # lista enlazada de instrucciones TAC
+│   ├── intermediate_code.h                          # generación de código intermedio
+│   ├── asm_instruction.h                            # instrucciones de ensamblador x86-64
+│   ├── object_code.h                                # generación de código objeto
+│   ├── string_builder.h                             # buffer dinámico de cadenas
+│   └── error_handler.h                              # reporte de errores
+├── src/                                             # implementaciones (.c, .l, .y)
+│   ├── cli.c
+│   ├── lexer.l
+│   ├── bison.y
+│   ├── ast.c
+│   ├── symbol_table.c
+│   ├── type_checker.c
+│   ├── semantic_analyzer.c
+│   ├── tac_operand.c
+│   ├── tac_instruction.c
+│   ├── tac_list.c
+│   ├── intermediate_code.c
+│   ├── asm_instruction.c
+│   ├── object_code.c
+│   ├── string_builder.c
+│   └── error_handler.c
 ├── tests/                                           # tests unitarios de lexer y parser
 ├── build/                                           # archivos de compilacion
 ├── build.sh                                         # compilar proyecto
@@ -84,15 +102,19 @@ El script `build.sh` ejecuta las siguientes operaciones en orden:
 1. **Crea el directorio de salida:** Crea la carpeta `build/` si aún no existe.
 2. **Genera el parser sintáctico:** Corre `bison -d src/bison.y -o build/bison.tab.c`, generando el analizador sintáctico y el archivo de cabecera con los tokens (`build/bison.tab.h`).
 3. **Genera el scanner léxico:** Corre `flex -o build/lex.yy.c src/lexer.l`, generando el analizador léxico a partir de las expresiones regulares de tokens.
-4. **Compila y enlaza:** Invoca `gcc` con las rutas de inclusión `-Isrc -Ibuild`, compilando los dos archivos generados junto con todos los módulos de `src/`:
+4. **Compila y enlaza:** Invoca `gcc` con las rutas de inclusión `-Iinclude -Isrc -Ibuild`, compilando los dos archivos generados junto con todos los módulos de `src/`:
    - `src/ast.c` (Árbol de Sintaxis Abstracta)
    - `src/symbol_table.c` (Gestión de ámbitos y tabla de símbolos)
    - `src/type_checker.c` (Inferencia, reglas de tipos y coerción)
    - `src/semantic_analyzer.c` (Recorrido y validaciones semánticas)
    - `src/error_handler.c` (Formateo y reporte de errores)
    - `src/string_builder.c` (Buffer dinámico para código intermedio)
-   - `src/tac.c` (Estructura de datos del Código de Tres Direcciones)
+   - `src/tac_operand.c` (Estructura y constructores de operandos TAC)
+   - `src/tac_instruction.c` (Estructura de instrucciones TAC)
+   - `src/tac_list.c` (Lista enlazada de cuádruplas TAC)
    - `src/intermediate_code.c` (Recorrido del AST que construye el TAC)
+   - `src/asm_instruction.c` (Instrucciones x86-64)
+   - `src/object_code.c` (Generador de código objeto)
    - `src/cli.c` (Parseo de los argumentos de la línea de comandos)
 5. **Genera el binario final:** Produce el ejecutable `./mi_compilador` en la raíz del repositorio.
 

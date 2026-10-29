@@ -288,8 +288,8 @@ static void storeFloatOperand(const TACOperand *op, const char *xmmRegister, con
 
 /* result = arg1 <op> arg2 con aritmetica de simple precision. */
 static void emitFloatBinaryOp(const TACInstruction *inst, const char *mnemonic, const FunctionFrame *frame) {
-    loadFloatOperand(&inst->arg1, "%xmm0", frame);
-    loadFloatOperand(&inst->arg2, "%xmm1", frame);
+    loadFloatOperand(&inst->firstOperand, "%xmm0", frame);
+    loadFloatOperand(&inst->secondOperand, "%xmm1", frame);
     buildStringf("    %s %%xmm1, %%xmm0\n", mnemonic);
     storeFloatOperand(&inst->result, "%xmm0", frame);
 }
@@ -301,8 +301,8 @@ static void emitFloatBinaryOp(const TACInstruction *inst, const char *mnemonic, 
  * o sea un entero, y por eso se guarda con el store entero.
  */
 static void emitFloatRelationalOp(const TACInstruction *inst, const char *setcc, const FunctionFrame *frame) {
-    loadFloatOperand(&inst->arg1, "%xmm0", frame);
-    loadFloatOperand(&inst->arg2, "%xmm1", frame);
+    loadFloatOperand(&inst->firstOperand, "%xmm0", frame);
+    loadFloatOperand(&inst->secondOperand, "%xmm1", frame);
     buildStringf("    comiss %%xmm1, %%xmm0\n");
     buildStringf("    %s %%al\n", setcc);
     buildStringf("    movzbl %%al, %%eax\n");
@@ -391,8 +391,8 @@ static void storeRegisterToOperand(const TACOperand *op, AsmRegister reg, const 
  * @param frame Marco de pila actual.
  */
 static void emitBinaryOp(const TACInstruction *inst, AsmOpcode op, const FunctionFrame *frame) {
-    loadRegisterBasedOnOperand(ASM_RAX, &inst->arg1, frame);
-    loadRegisterBasedOnOperand(ASM_RDX, &inst->arg2, frame);
+    loadRegisterBasedOnOperand(ASM_RAX, &inst->firstOperand, frame);
+    loadRegisterBasedOnOperand(ASM_RDX, &inst->secondOperand, frame);
     AsmInstruction asmInst = asmOpReg(op, ASM_RAX, ASM_RDX);
     emitAsm(&asmInst);
     storeRegisterToOperand(&inst->result, ASM_RAX, frame);
@@ -410,8 +410,8 @@ static void emitBinaryOp(const TACInstruction *inst, AsmOpcode op, const Functio
  * @param frame Marco de pila actual.
  */
 static void emitRelationalOp(const TACInstruction *inst, const char *setcc, const FunctionFrame *frame) {
-    loadRegisterBasedOnOperand(ASM_RAX, &inst->arg1, frame);
-    loadRegisterBasedOnOperand(ASM_RDX, &inst->arg2, frame);
+    loadRegisterBasedOnOperand(ASM_RAX, &inst->firstOperand, frame);
+    loadRegisterBasedOnOperand(ASM_RDX, &inst->secondOperand, frame);
     AsmInstruction cmpInst = asmOpReg(ASM_CMP, ASM_RAX, ASM_RDX);
     emitAsm(&cmpInst);
     buildStringf("    %s %%al\n", setcc);
@@ -439,8 +439,8 @@ static void emitRelationalOp(const TACInstruction *inst, const char *setcc, cons
  *        cociente (TAC_DIV) o ASM_RDX para el resto (TAC_MOD).
  */
 static void emitDivisionOp(const TACInstruction *inst, const FunctionFrame *frame, AsmRegister resultReg) {
-    loadRegisterBasedOnOperand(ASM_RAX, &inst->arg1, frame); /* dividendo */
-    loadRegisterBasedOnOperand(ASM_RCX, &inst->arg2, frame); /* divisor */
+    loadRegisterBasedOnOperand(ASM_RAX, &inst->firstOperand, frame); /* dividendo */
+    loadRegisterBasedOnOperand(ASM_RCX, &inst->secondOperand, frame); /* divisor */
 
     AsmInstruction signExtend = asmCltd();
     emitAsm(&signExtend);
@@ -469,16 +469,16 @@ static void emitParam(const TACInstruction *inst, FunctionFrame *frame) {
 
     int slot = frame->pendingParamSlots[frame->pendingParamCount];
 
-    if (isFloatOperand(&inst->arg1)) {
-        loadFloatOperand(&inst->arg1, "%xmm0", frame);
+    if (isFloatOperand(&inst->firstOperand)) {
+        loadFloatOperand(&inst->firstOperand, "%xmm0", frame);
         buildStringf("    movss %%xmm0, %d(%%rbp)\n", slot);
     } else {
-        loadRegisterBasedOnOperand(ASM_RAX, &inst->arg1, frame);
+        loadRegisterBasedOnOperand(ASM_RAX, &inst->firstOperand, frame);
         AsmInstruction store = asmStore(opMem(slot), opReg(ASM_RAX));
         emitAsm(&store);
     }
 
-    frame->pendingParamTypes[frame->pendingParamCount] = inst->arg1.type;
+    frame->pendingParamTypes[frame->pendingParamCount] = inst->firstOperand.type;
     frame->pendingParamCount++;
 }
 
@@ -496,7 +496,7 @@ static void emitParam(const TACInstruction *inst, FunctionFrame *frame) {
  * empujados es impar se agrega un relleno de 8 bytes.
  */
 static void emitCall(const TACInstruction *inst, FunctionFrame *frame) {
-    int argumentCount = (inst->arg2.kind == OPERAND_CONSTANT) ? inst->arg2.value.int_val : 0;
+    int argumentCount = (inst->secondOperand.kind == OPERAND_CONSTANT) ? inst->secondOperand.value.int_val : 0;
     if (argumentCount > frame->pendingParamCount) {
         argumentCount = frame->pendingParamCount;
     }
@@ -552,7 +552,7 @@ static void emitCall(const TACInstruction *inst, FunctionFrame *frame) {
         }
     }
 
-    buildStringf("    call %s\n", inst->arg1.name);
+    buildStringf("    call %s\n", inst->firstOperand.name);
 
     if (stackArguments > 0 || padding > 0) {
         buildStringf("    addq $%d, %%rsp\n", stackArguments * 8 + padding);
@@ -606,10 +606,10 @@ void emitEpilogue(const FunctionFrame *frame) {
 void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame) {
     if (instruction == NULL || frame == NULL) return;
 
-    switch (instruction->op) {
+    switch (instruction->operation) {
         case TAC_PARAM_DECL: {
-            int offset = getSlotOffset(frame, instruction->arg1.name);
-            int isFloat = isFloatOperand(&instruction->arg1);
+            int offset = getSlotOffset(frame, instruction->firstOperand.name);
+            int isFloat = isFloatOperand(&instruction->firstOperand);
 
             if (offset != 0) {
                 if (isFloat && frame->floatParamCount < MAX_XMM_ARG_REGISTERS) {
@@ -641,10 +641,10 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
 
         case TAC_ASSIGN:
             if (isFloatOperand(&instruction->result)) {
-                loadFloatOperand(&instruction->arg1, "%xmm0", frame);
+                loadFloatOperand(&instruction->firstOperand, "%xmm0", frame);
                 storeFloatOperand(&instruction->result, "%xmm0", frame);
             } else {
-                loadRegisterBasedOnOperand(ASM_RAX, &instruction->arg1, frame);
+                loadRegisterBasedOnOperand(ASM_RAX, &instruction->firstOperand, frame);
                 storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
             }
             break;
@@ -681,12 +681,12 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
                  * seria una instruccion menos, pero exigiria otra constante en
                  * .rodata y aca pesa mas la claridad que el ciclo de mas. */
                 buildStringf("    pxor %%xmm0, %%xmm0\n");
-                loadFloatOperand(&instruction->arg1, "%xmm1", frame);
+                loadFloatOperand(&instruction->firstOperand, "%xmm1", frame);
                 buildStringf("    subss %%xmm1, %%xmm0\n");
                 storeFloatOperand(&instruction->result, "%xmm0", frame);
                 break;
             }
-            loadRegisterBasedOnOperand(ASM_RAX, &instruction->arg1, frame);
+            loadRegisterBasedOnOperand(ASM_RAX, &instruction->firstOperand, frame);
             AsmInstruction negate = asmOpUnary(ASM_NEG, ASM_RAX);
             emitAsm(&negate);
             storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
@@ -694,7 +694,7 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
         }
 
         case TAC_NOT: {
-            loadRegisterBasedOnOperand(ASM_RAX, &instruction->arg1, frame);
+            loadRegisterBasedOnOperand(ASM_RAX, &instruction->firstOperand, frame);
             AsmInstruction inst = asmOpImm(ASM_XOR, ASM_RAX, 1);
             emitAsm(&inst);
             storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
@@ -704,17 +704,17 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
         /* El resultado de un relacional es boolean, asi que el tipo que decide
          * como compararlos esta en los operandos, no en el destino. */
         case TAC_LT:
-            if (isFloatOperand(&instruction->arg1)) emitFloatRelationalOp(instruction, "setb", frame);
+            if (isFloatOperand(&instruction->firstOperand)) emitFloatRelationalOp(instruction, "setb", frame);
             else emitRelationalOp(instruction, "setl", frame);
             break;
 
         case TAC_GT:
-            if (isFloatOperand(&instruction->arg1)) emitFloatRelationalOp(instruction, "seta", frame);
+            if (isFloatOperand(&instruction->firstOperand)) emitFloatRelationalOp(instruction, "seta", frame);
             else emitRelationalOp(instruction, "setg", frame);
             break;
 
         case TAC_EQ:
-            if (isFloatOperand(&instruction->arg1)) emitFloatRelationalOp(instruction, "sete", frame);
+            if (isFloatOperand(&instruction->firstOperand)) emitFloatRelationalOp(instruction, "sete", frame);
             else emitRelationalOp(instruction, "sete", frame);
             break;
 
@@ -727,7 +727,7 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_INT_TO_FLOAT:
-            loadOperand(&instruction->arg1, "%eax", frame);
+            loadOperand(&instruction->firstOperand, "%eax", frame);
             buildStringf("    cvtsi2ss %%eax, %%xmm0\n");
             storeFloatOperand(&instruction->result, "%xmm0", frame);
             break;
@@ -737,19 +737,19 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_GOTO:
-            buildStringf("    jmp .%s\n", instruction->arg1.name);
+            buildStringf("    jmp .%s\n", instruction->firstOperand.name);
             break;
 
         case TAC_IF_FALSE:
-            loadOperand(&instruction->arg1, "%eax", frame);
+            loadOperand(&instruction->firstOperand, "%eax", frame);
             buildStringf("    cmpl $0, %%eax\n");
-            buildStringf("    je .%s\n", instruction->arg2.name);
+            buildStringf("    je .%s\n", instruction->secondOperand.name);
             break;
 
         case TAC_IF_TRUE:
-            loadOperand(&instruction->arg1, "%eax", frame);
+            loadOperand(&instruction->firstOperand, "%eax", frame);
             buildStringf("    cmpl $0, %%eax\n");
-            buildStringf("    jne .%s\n", instruction->arg2.name);
+            buildStringf("    jne .%s\n", instruction->secondOperand.name);
             break;
 
         case TAC_PARAM:
@@ -761,12 +761,12 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_RETURN:
-            if (instruction->arg1.kind != OPERAND_NONE) {
+            if (instruction->firstOperand.kind != OPERAND_NONE) {
                 /* La convencion devuelve los enteros en %eax y los reales en %xmm0 */
-                if (isFloatOperand(&instruction->arg1)) {
-                    loadFloatOperand(&instruction->arg1, "%xmm0", frame);
+                if (isFloatOperand(&instruction->firstOperand)) {
+                    loadFloatOperand(&instruction->firstOperand, "%xmm0", frame);
                 } else {
-                    loadOperand(&instruction->arg1, "%eax", frame);
+                    loadOperand(&instruction->firstOperand, "%eax", frame);
                 }
             }
             buildStringf("    jmp .L_%s_epilogue\n", frame->functionName);
@@ -782,14 +782,14 @@ static void emitGlobals(const TACList *tacList) {
 
     int hasGlobals = 0;
     for (const TACInstruction *inst = tacList->head; inst != NULL; inst = inst->next) {
-        if (inst->op == TAC_GLOBAL_DECL) {
+        if (inst->operation == TAC_GLOBAL_DECL) {
             if (!hasGlobals) {
                 buildStringf(".data\n");
                 hasGlobals = 1;
             }
-            registerGlobalVariable(&inst->arg1);
+            registerGlobalVariable(&inst->firstOperand);
 
-            const char *name = getGlobalName(&inst->arg1);
+            const char *name = getGlobalName(&inst->firstOperand);
             buildStringf(".globl %s\n", name); // emite para poder usado de forma global
             buildStringf(".align 4\n"); // guarda 4 bytes de lugar
             buildStringf("%s:\n", name);
@@ -813,7 +813,7 @@ static void emitFloatConstantPool(const TACList *tacList) {
     floatConstantCount = 0;
 
     for (const TACInstruction *inst = tacList->head; inst != NULL; inst = inst->next) {
-        const TACOperand *operands[] = { &inst->arg1, &inst->arg2, &inst->result };
+        const TACOperand *operands[] = { &inst->firstOperand, &inst->secondOperand, &inst->result };
 
         for (int i = 0; i < 3; i++) {
             if (operands[i]->kind == OPERAND_CONSTANT && operands[i]->type == TYPE_FLOAT) {
@@ -849,23 +849,23 @@ void generateAssembly(const TACList *tacList) {
 
     while (instruction != NULL) {
 
-        if (instruction->op == TAC_BEGIN_FUNC) {
+        if (instruction->operation == TAC_BEGIN_FUNC) {
 
             FunctionFrame *frame = createFrame(instruction->result.name);
             /* tacMethod() guarda el tipo de retorno en el operando del begin_func */
             frame->returnType = instruction->result.type;
             const TACInstruction *current = instruction->next; // recorrer cuerpo de la funcion
 
-            while (current != NULL && current->op != TAC_END_FUNC) {
+            while (current != NULL && current->operation != TAC_END_FUNC) {
 
-                switch (current->op) {
+                switch (current->operation) {
 
                     case TAC_PARAM_DECL:
-                        addSlot(frame, &current->arg1);
+                        addSlot(frame, &current->firstOperand);
                         break;
 
                     case TAC_LOCAL_DECL:
-                        addSlot(frame, &current->arg1);
+                        addSlot(frame, &current->firstOperand);
                         break;
 
                     case TAC_ASSIGN:
@@ -899,16 +899,16 @@ void generateAssembly(const TACList *tacList) {
              * scratch hace falta reservar para el pasaje de parametros. */
             int pending = 0;
             for (const TACInstruction *scan = instruction->next;
-                 scan != NULL && scan->op != TAC_END_FUNC;
+                 scan != NULL && scan->operation != TAC_END_FUNC;
                  scan = scan->next) {
 
-                if (scan->op == TAC_PARAM) {
+                if (scan->operation == TAC_PARAM) {
                     pending++;
                     if (pending > frame->maxPendingParams) {
                         frame->maxPendingParams = pending;
                     }
-                } else if (scan->op == TAC_CALL) {
-                    int arity = (scan->arg2.kind == OPERAND_CONSTANT) ? scan->arg2.value.int_val : 0;
+                } else if (scan->operation == TAC_CALL) {
+                    int arity = (scan->secondOperand.kind == OPERAND_CONSTANT) ? scan->secondOperand.value.int_val : 0;
                     pending -= arity;
                     if (pending < 0) pending = 0;
                 }
@@ -927,7 +927,7 @@ void generateAssembly(const TACList *tacList) {
 
             current = instruction->next;
 
-            while (current != NULL && current->op != TAC_END_FUNC) {
+            while (current != NULL && current->operation != TAC_END_FUNC) {
                 generateInstruction(current, frame);
                 current = current->next;
             }
