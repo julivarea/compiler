@@ -111,6 +111,16 @@ static int guaranteesReturn(NodeAST *node) {
     }
 }
 
+/**
+ * @brief Analiza semanticamente la declaracion de un metodo.
+ *
+ * Registra el metodo en el ambito actual, crea su ambito lexico local,
+ * analiza recursivamente sus parametros y cuerpo, y verifica que
+ * los metodos con retorno, lo aseguren en todos sus caminos
+ *
+ * @param node Nodo del AST que representa la declaracion del metodo.
+ * @param current_scope Ambito actual en el que se declara el metodo.
+ */
 static void analyzeMethodNode(NodeAST *node, Scope *current_scope) {
     Symbol *existing = lookupVariableCurrentScope(current_scope, node->symbol->id);
     if (existing != NULL) {
@@ -149,47 +159,74 @@ static void analyzeMethodNode(NodeAST *node, Scope *current_scope) {
     appendChildScope(current_scope, method_scope);
 }
 
+/**
+ * @brief Analiza semanticamente la declaracion de una variable.
+ *
+ * Verifica que el identificador no haya sido declarado previamente
+ * en el ambito actual y lo registra en la tabla de simbolos.
+ *
+ * @param node Nodo del AST que representa la declaracion de la variable.
+ * @param current_scope Ambito actual donde se declara la variable.
+ */
 static void analyzeVariableDeclarationNode(NodeAST *node, Scope *current_scope) {
     Symbol *existing = lookupVariableCurrentScope(current_scope, node->symbol->id);
     if (existing != NULL) {
         semanticError(node->line, "La variable '%s' ya fue declarada previamente en este ambito.", node->symbol->id);
-    } else {
-        appendSymbol(current_scope, node->symbol);
+        return;
     }
+    appendSymbol(current_scope, node->symbol);
 }
 
+/**
+ * @brief Analiza semanticamente una sentencia de asignacion.
+ *
+ * Verifica que la variable receptora exista y no sea un metodo,
+ * evalua el tipo de la expresion asignada y comprueba la compatibilidad
+ * de tipos antes de confirmar el tipo de la asignacion.
+ *
+ * @param node Nodo del AST que representa la asignacion.
+ * @param current_scope Ambito actual donde se produce la asignacion.
+ */
 static void analyzeAssignmentNode(NodeAST *node, Scope *current_scope) {
-    DataType varType = TYPE_ERROR;
+    node->type = TYPE_ERROR;
 
     Symbol *resolvedSymbol = lookupVariable(current_scope, node->symbol->id);
     if (!resolvedSymbol) {
         semanticError(node->line, "Asignacion a variable no declarada '%s'.", node->symbol->id);
-    } else {
-        if (resolvedSymbol->symbolType != ID_SYMBOL) {
-            semanticError(node->line, "Ese nombre de simbolo corresponde al metodo '%s'.", node->symbol->id);
-        }
-
-        varType = resolvedSymbol->type;
-        node->symbol = resolvedSymbol;
-        node->type = varType;
-
-        NodeAST *target = GET_LEFT(node);
-        if (target != NULL && target->nodeType == ID_NODE) {
-            target->symbol = resolvedSymbol;
-            target->type = varType;
-        }
+        return;
     }
 
-    // Verifica la expresion y que los tipos coincidan
-    if (node->childCount > 1 && node->children[1] != NULL) {
-        DataType exprType = analyzeExpression(node->children[1], current_scope);
-        
-        if (varType != TYPE_ERROR && exprType != TYPE_ERROR && !isAssignable(varType, exprType)) {
-             semanticError(node->line, "El tipo de la expresion no coincide con la variable '%s'.", node->symbol->id);
+    if (resolvedSymbol->symbolType != ID_SYMBOL) {
+        semanticError(node->line, "Ese nombre de simbolo corresponde al metodo '%s'.", node->symbol->id);
+        return;
+    }
+
+    node->symbol = resolvedSymbol;
+
+    NodeAST *expression = GET_EXPRESSION(node);
+    if (expression != NULL) {
+        DataType exprType = analyzeExpression(expression, current_scope);
+
+        if (exprType != TYPE_ERROR) {
+            if (!isAssignable(resolvedSymbol->type, exprType)) {
+                semanticError(node->line, "El tipo de la expresion no coincide con la variable '%s'.", node->symbol->id);
+            } else {
+                node->type = resolvedSymbol->type;
+            }
         }
     }
 }
 
+/**
+ * @brief Analiza semanticamente una sentencia de retorno.
+ *
+ * Verifica que la sentencia se encuentre dentro del cuerpo de una funcion,
+ * que los metodos void no retornen expresiones con valor, y que los metodos
+ * con tipo de retorno devuelvan una expresion de tipo compatible.
+ *
+ * @param node Nodo del AST que representa la sentencia return.
+ * @param current_scope Ambito actual, utilizado para identificar la funcion contenedora.
+ */
 static void analyzeReturnNode(NodeAST *node, Scope *current_scope) {
     if (current_scope == NULL || current_scope->function == NULL) {
         semanticError(node->line, "Sentencia 'return' fuera del cuerpo de una funcion.");
@@ -202,13 +239,14 @@ static void analyzeReturnNode(NodeAST *node, Scope *current_scope) {
 
     NodeAST *expression = GET_EXPRESSION(node);
 
-    if (expression == NULL) {
+    int hasReturn = (expression != NULL);
+
+    if (!hasReturn) {
         if (expectedType != TYPE_VOID) {
             semanticError(node->line, "El metodo '%s' espera un valor de retorno de tipo %s, pero no se especifico ninguno.", funcName, getDataTypeName(expectedType));
         }
         return;
     }
-
     if (expectedType == TYPE_VOID) {
         semanticError(node->line, "El metodo '%s' es void y no deberia retornar un valor.", funcName);
         return;
@@ -221,6 +259,14 @@ static void analyzeReturnNode(NodeAST *node, Scope *current_scope) {
     }
 }
 
+/**
+ * @brief Analiza semanticamente una sentencia de control while
+ *
+ * Evalua la condicion verificando que sea de tipo bool y analiza  recursivamente el cuerpo del bucle en el ambito actual.
+ *
+ * @param node Nodo del AST que representa el bucle while.
+ * @param current_scope Ambito actual donde se evalua el while.
+ */
 static void analyzeWhileNode(NodeAST *node, Scope *current_scope) {
     NodeAST *condition = GET_CONDITION(node);
     DataType conditionType = analyzeExpression(condition, current_scope);
@@ -233,6 +279,15 @@ static void analyzeWhileNode(NodeAST *node, Scope *current_scope) {
     analyzeNodeSemantics(body, current_scope);
 }
 
+/**
+ * @brief Analiza semanticamente una sentencia condicional if o if/else
+ *
+ * Verifica que la condicion evaluada sea de tipo bool y analiza
+ * recursivamente los bloques then y else (en caso de existir)
+ *
+ * @param node Nodo del AST que representa la estructura if-else.
+ * @param current_scope Ambito actual donde se evalua la sentencia.
+ */
 static void analyzeIfElseNode(NodeAST *node, Scope *current_scope) {
     NodeAST *condition = GET_CONDITION(node);
     DataType conditionType = analyzeExpression(condition, current_scope);
@@ -250,6 +305,14 @@ static void analyzeIfElseNode(NodeAST *node, Scope *current_scope) {
     }
 }
 
+/**
+ * @brief Delega recursivamente el analisis semantico segun el tipo de nodo.
+ *
+ * Direcciona cada nodo del AST a su funcion analizadora correspondiente
+ *
+ * @param node Nodo del AST a analizar.
+ * @param current_scope Ambito actual bajo el cual se procesa el nodo.
+ */
 static void analyzeNodeSemantics(NodeAST *node, Scope *current_scope) {
     if (!node) return;
     
