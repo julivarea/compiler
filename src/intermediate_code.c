@@ -1,38 +1,28 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "intermediate_code.h"
-#include "tac.h"
+#include "tac_list.h"
 
-/* Lista que se está construyendo. Es estado de módulo para que el recorrido
- * del AST no tenga que arrastrarla por cada llamada recursiva. */
 static TACList *current_code = NULL;
-
-/* Tipo de retorno del metodo que se esta generando: lo necesita RETURN_NODE
- * para saber si hay que coercionar el valor devuelto. */
 static DataType current_method_type = TYPE_VOID;
 
 static int temp_count = 0;
 static int label_count = 0;
 
-/* Los temporales y las etiquetas se devuelven ya envueltos en un TACOperand,
- * que copia el nombre a un buffer propio. Así no hay punteros a buffers
- * estáticos compartidos ni cadenas reservadas con strdup que haya que liberar. */
+
 static TACOperand newTemp(DataType type) {
     char name[TAC_NAME_LENGTH];
-
     snprintf(name, sizeof(name), "t%d", temp_count++);
     return tacTemp(name, type);
 }
 
 static TACOperand newLabel(void) {
     char name[TAC_NAME_LENGTH];
-
     snprintf(name, sizeof(name), "L%d", label_count++);
     return tacLabel(name);
 }
 
-static void emit(TACOp op, TACOperand result, TACOperand arg1, TACOperand arg2) {
+static void emit(TACOperation op, TACOperand result, TACOperand arg1, TACOperand arg2) {
     appendInstruction(current_code, op, result, arg1, arg2);
 }
 
@@ -78,7 +68,7 @@ static void coerceBinaryOperands(TACOperand *left, TACOperand *right) {
     }
 }
 
-static TACOp getTACOpForOperation(OperationType operation) {
+static TACOperation getTACOpForOperation(OperationType operation) {
     switch (operation) {
         case OP_ADD:      return TAC_ADD;
         case OP_SUB:      return TAC_SUB;
@@ -143,11 +133,11 @@ static void generateCallArguments(NodeAST *node) {
 static TACOperand generateShortCircuitCode(NodeAST *node) {
     TACOperand left = generateExpressionCode(GET_LEFT(node));
     TACOperand result = newTemp(node->type);
-    TACOperand endLabel = newLabel();
 
     emit(TAC_ASSIGN, result, left, tacNone());
 
-    TACOp shortCircuitJump = (node->operationType == OP_AND) ? TAC_IF_FALSE : TAC_IF_TRUE;
+    TACOperation shortCircuitJump = (node->operationType == OP_AND) ? TAC_IF_FALSE : TAC_IF_TRUE;
+    TACOperand endLabel = newLabel();
     emit(shortCircuitJump, tacNone(), result, endLabel);
 
     TACOperand right = generateExpressionCode(GET_RIGHT(node));
@@ -269,7 +259,7 @@ void generateStatementCode(NodeAST *node) {
 
         case ASSIGNMENT_NODE:
             if (node->symbol && node->symbol->id) {
-                TACOperand value = generateExpressionCode(GET_RIGHT(node));
+                TACOperand value = generateExpressionCode(GET_EXPRESSION(node));
 
                 if (node->symbol->type == TYPE_FLOAT) {
                     value = coerceToFloat(value);

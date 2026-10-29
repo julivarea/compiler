@@ -11,7 +11,7 @@
  * parámetros y temporales) y la emisión de datos globales y código.
  */
 
-#include "tac.h"
+#include "tac_list.h"
 #include "asm_instruction.h"
 
 /**

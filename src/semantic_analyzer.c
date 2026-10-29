@@ -205,10 +205,10 @@ static void analyzeAssignmentNode(NodeAST *node, Scope *current_scope) {
 
     NodeAST *expression = GET_EXPRESSION(node);
     if (expression != NULL) {
-        DataType exprType = analyzeExpression(expression, current_scope);
+        DataType expressionType = analyzeExpression(expression, current_scope);
 
-        if (exprType != TYPE_ERROR) {
-            if (!isAssignable(resolvedSymbol->type, exprType)) {
+        if (expressionType != TYPE_ERROR) {
+            if (!isAssignable(resolvedSymbol->type, expressionType)) {
                 semanticError(node->line, "El tipo de la expresion no coincide con la variable '%s'.", node->symbol->id);
             } else {
                 node->type = resolvedSymbol->type;
