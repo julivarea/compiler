@@ -3,8 +3,6 @@
 #include <string.h>
 #include "tac_operand.h"
 
-/* Constructores de operandos */
-
 static TACOperand makeOperand(OperandKind kind, DataType type, const char *name) {
     TACOperand operand;
     memset(&operand, 0, sizeof(operand));
