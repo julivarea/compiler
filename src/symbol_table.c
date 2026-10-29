@@ -21,13 +21,13 @@ void freeSymbol(Symbol *symbol) {
     free(symbol);
 }
 
-Scope* createScope(int level, Scope *parent, DataType returnType) {
+Scope* createScope(int level, Scope *parent, Symbol *function) {
     Scope *scope = malloc(sizeof(Scope));
     if (!scope) return NULL;
     
     scope->level = level;
     scope->parent = parent; 
-    scope->returnType = returnType;
+    scope->function = function;
     
     scope->symbol_capacity = 8;
     scope->symbol_count = 0;

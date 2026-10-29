@@ -6,10 +6,8 @@
 #include "error_handler.h"
 #include "string_builder.h"
 
-static Symbol *current_function = NULL;
-
 static void analyzeNodeSemantics(NodeAST *node, Scope *current_scope);
-static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type);
+static void analyzeMethodNode(NodeAST *node, Scope *current_scope);
 static void analyzeVariableDeclarationNode(NodeAST *node, Scope *current_scope);
 static void analyzeAssignmentNode(NodeAST *node, Scope *current_scope);
 static void analyzeReturnNode(NodeAST *node, Scope *current_scope);
@@ -17,19 +15,76 @@ static void analyzeIfElseNode(NodeAST *node, Scope *current_scope);
 static void analyzeWhileNode(NodeAST *node, Scope *current_scope);
 static void checkMainMethodExists(Scope *globalScope);
 
+/**
+ * @brief Realiza el analisis semantico de un arbol AST
+ *
+ * Esta estructura permite determinar si las variables y demás símbolos
+ * referenciados son accesibles desde el ámbito en el que se utilizan.
+ *
+ * @param root Raíz del árbol AST que se va a analizar.
+ * @param parent Ámbito padre del que se está analizando (NULL para global).
+ * @return Árbol de ámbitos generado a partir del árbol AST.
+ */
+
+Scope* analyzeSemantics(NodeAST *root, Scope *parent) {
+    if (!root) return NULL;
+    
+    int isScopeGlobal = (parent == NULL);
+
+    int level = !isScopeGlobal ? parent->level + 1 : 0;
+    Symbol *function = !isScopeGlobal ? parent->function : NULL;
+    Scope *current_scope = createScope(level, parent, function);
+    if (!current_scope) {
+        semanticError(root->line, "Error: no se pudo reservar memoria para el ambito.");
+        return NULL;
+    }
+
+    if (!isScopeGlobal) {
+        appendChildScope(parent, current_scope);
+    }
+    
+    for (int i = 0; i < root->childCount; i++) {
+        analyzeNodeSemantics(root->children[i], current_scope);
+    }
+
+    if (isScopeGlobal) {
+        checkMainMethodExists(current_scope);
+    }
+
+    return current_scope;
+}
+/**
+ * @brief Verifica que exista el main en el ambito global
+ *
+ * @param globalScope scope del ambito global
+ */
+
+static void checkMainMethodExists(Scope *globalScope) {
+    Symbol *mainSymbol = lookupVariableCurrentScope(globalScope, "main");
+
+    if (mainSymbol == NULL) {
+        semanticError(0, "El programa no contiene la definicion del metodo 'main'.");
+        return;
+    }
+
+    if (mainSymbol->symbolType != METHOD_SYMBOL) {
+        semanticError(0, "'main' debe ser un metodo, no una variable.");
+        return;
+    }
+
+    NodeAST *parametersNode = mainSymbol->parameters;
+    int paramCount = parametersNode ? parametersNode->childCount : 0;
+
+    if (paramCount != 0) {
+        semanticError(0, "El metodo 'main' no debe tener parametros.");
+    }
+}
+
 
 /**
- * Determina si una sentencia garantiza que la ejecucion retorna antes de
- * alcanzar el fin del metodo. La letra exige esto de todo metodo no-void: no
- * alcanza con que exista un return en algun lado, tienen que retornar todos
- * los caminos de ejecucion.
- *
- * - Un return siempre garantiza.
- * - Un bloque garantiza si alguna de sus sentencias garantiza (lo que venga
- *   despues de ese punto es inalcanzable).
- * - Un if garantiza solo si tiene else y ambas ramas garantizan.
- * - Un while nunca garantiza: su condicion puede ser falsa en la primera
- *   evaluacion y el cuerpo no ejecutarse nunca.
+ * @brief Determina si un nodo del AST garantiza un retorno en todos los caminos de ejecución.
+ * @param node Nodo del AST a analizar.
+ * @return true si garantiza un retorno en todos los caminos; false en caso contrario.
  */
 static int guaranteesReturn(NodeAST *node) {
     if (node == NULL) return 0;
@@ -56,22 +111,19 @@ static int guaranteesReturn(NodeAST *node) {
     }
 }
 
-static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type) {
+static void analyzeMethodNode(NodeAST *node, Scope *current_scope) {
     Symbol *existing = lookupVariableCurrentScope(current_scope, node->symbol->id);
     if (existing != NULL) {
         semanticError(node->line, "El metodo '%s' ya fue declarado previamente en este ambito.", node->symbol->id);
-    } else {
-        appendSymbol(current_scope, node->symbol);
+        return;
     }
 
-    Symbol *prev_function = current_function;
-    current_function = node->symbol;
+    appendSymbol(current_scope, node->symbol);
 
-    int level = current_scope ? current_scope->level + 1 : 0;
-    Scope *method_scope = createScope(level, current_scope, type);
+    int level = current_scope->level + 1;
+    Scope *method_scope = createScope(level, current_scope, node->symbol);
     if (!method_scope) {
         semanticError(node->line, "Error: no se pudo reservar memoria para el ambito del metodo.");
-        current_function = prev_function;
         return;
     }
 
@@ -95,8 +147,6 @@ static void analyzeMethodNode(NodeAST *node, Scope *current_scope, DataType type
     }
 
     appendChildScope(current_scope, method_scope);
-
-    current_function = prev_function;
 }
 
 static void analyzeVariableDeclarationNode(NodeAST *node, Scope *current_scope) {
@@ -141,14 +191,16 @@ static void analyzeAssignmentNode(NodeAST *node, Scope *current_scope) {
 }
 
 static void analyzeReturnNode(NodeAST *node, Scope *current_scope) {
-    if (current_function == NULL) {
+    if (current_scope == NULL || current_scope->function == NULL) {
         semanticError(node->line, "Sentencia 'return' fuera del cuerpo de una funcion.");
         return;
     }
 
+    Symbol *function = current_scope->function;
+    DataType expectedType = function->type;
+    const char *funcName = function->id ? function->id : "anonima";
+
     NodeAST *expression = GET_EXPRESSION(node);
-    DataType expectedType = current_scope->returnType;
-    const char *funcName = current_function->id ? current_function->id : "anonima";
 
     if (expression == NULL) {
         if (expectedType != TYPE_VOID) {
@@ -203,11 +255,11 @@ static void analyzeNodeSemantics(NodeAST *node, Scope *current_scope) {
     
     switch (node->nodeType) {
         case BLOCK_NODE:
-            analyzeSemantics(node, current_scope, current_scope->returnType);
+            analyzeSemantics(node, current_scope);
             break;
 
         case METHOD_DECLARATION_NODE:
-            analyzeMethodNode(node, current_scope, node->type);
+            analyzeMethodNode(node, current_scope);
             break;
             
         case METHOD_CALL_NODE:
@@ -239,55 +291,5 @@ static void analyzeNodeSemantics(NodeAST *node, Scope *current_scope) {
                 analyzeNodeSemantics(node->children[i], current_scope);
             }
             break;
-    }
-}
-
-Scope* analyzeSemantics(NodeAST *root, Scope *parent, DataType returnType) {
-    if (!root) return NULL;
-    
-    int level = parent ? parent->level + 1 : 0;
-    Scope *current_scope = createScope(level, parent, returnType);
-    if (!current_scope) {
-        semanticError(root->line, "Error: no se pudo reservar memoria para el ambito.");
-        return NULL;
-    }
-
-    if (parent != NULL) {
-        appendChildScope(parent, current_scope);
-    }
-    
-    for (int i = 0; i < root->childCount; i++) {
-        analyzeNodeSemantics(root->children[i], current_scope);
-    }
-
-    // El scope global es el unico que puede declarar 'main', y se reconoce por
-    // no tener padre. Validarlo aca hace que cualquier invocacion del analisis
-    // -- el compilador o un test unitario -- verifique su presencia y su firma
-    // sin tener que acordarse de pedirlo por separado.
-    if (parent == NULL) {
-        checkMainMethodExists(current_scope);
-    }
-
-    return current_scope;
-}
-
-static void checkMainMethodExists(Scope *globalScope) {
-    Symbol *mainSymbol = lookupVariableCurrentScope(globalScope, "main");
-
-    if (mainSymbol == NULL) {
-        semanticError(0, "El programa no contiene la definicion del metodo 'main'.");
-        return;
-    }
-
-    if (mainSymbol->symbolType != METHOD_SYMBOL) {
-        semanticError(0, "'main' debe ser un metodo, no una variable.");
-        return;
-    }
-
-    NodeAST *parametersNode = mainSymbol->parameters;
-    int paramCount = parametersNode ? parametersNode->childCount : 0;
-
-    if (paramCount != 0) {
-        semanticError(0, "El metodo 'main' no debe tener parametros.");
     }
 }

@@ -33,7 +33,7 @@ typedef struct Scope {
     struct Symbol **symbols; 
     int symbol_count;
     int symbol_capacity;
-    DataType returnType;
+    Symbol *function;
     struct Scope *parent; 
     struct Scope **childrens;  
     int children_count;
@@ -74,9 +74,9 @@ Symbol *newSymbol(const char *id, SymbolType symbolType, DataType type, struct N
 void freeSymbol(Symbol *symbol);
 
 /**
- * @brief Crea un nuevo ámbito (scope) hijo de parent con un tipo de retorno esperado.
+ * @brief Crea un nuevo ámbito (scope) hijo de parent asociado a una función.
  */
-Scope* createScope(int level, Scope *parent, DataType returnType);
+Scope* createScope(int level, Scope *parent, Symbol *function);
 
 /**
  * @brief Agrega un símbolo al scope actual asignándole un UID único si no lo tenía.
