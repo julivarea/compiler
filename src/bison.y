@@ -429,37 +429,75 @@ int main(int argc, char** argv) {
         printf("Salida:  %s\n\n", options.output);
     }
 
-    // Una sola salida al final, asi el archivo se cierra en todos los caminos
+    // Una sola salida al final (cleanup), asi el archivo se cierra en todos los caminos
     // y cualquier fase que falle termina con codigo distinto de 0.
     int exit_code = 0;
 
+    /*
+     * =========================================================================
+     * PIPELINE DE COMPILACION (Puntos de entrada de cada etapa)
+     * =========================================================================
+     */
+
+    // --- ETAPA 1: Solo Escaneo Lexico (-target scan) ---
     if (options.target == TARGET_SCAN) {
         exit_code = runScan(&options);
-    } else if (yyparse() != 0) {
+        goto cleanup;
+    }
+
+    // --- ETAPA 2: Analisis Lexico y Sintactico (Construccion del AST) ---
+    // Punto de entrada: yyparse()
+    // Durante la ejecucion de yyparse(), el lexer (yylex) tokeniza la entrada y
+    // las reglas de Bison van creando y enlazando los nodos del AST hasta dejar
+    // armado el arbol completo en la variable global 'raizAST'.
+    if (yyparse() != 0) {
         // yyerror ya reporto el error sintactico por stderr
         exit_code = 1;
-    } else if (lexical_errors > 0) {
+        goto cleanup;
+    }
+
+    if (lexical_errors > 0) {
         // El lexer descarta los simbolos invalidos, asi que el parseo puede
         // terminar bien sobre una entrada que igual era incorrecta.
         fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores lexicos.\033[0m\n", lexical_errors);
         exit_code = 1;
-    } else if (options.target == TARGET_PARSE) {
-        exit_code = writeASTOutput(&options);
-    } else {
-        analyzeSemantics(raizAST, NULL, TYPE_VOID);
-
-        if (semantic_errors > 0) {
-            fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores semanticos.\033[0m\n", semantic_errors);
-            exit_code = 1;
-        } else if (options.target == TARGET_SEM) {
-            exit_code = writeASTOutput(&options);
-        } else if (options.target == TARGET_CODINTER) {
-            exit_code = writeIntermediateCodeOutput(&options);
-        } else {
-            exit_code = writeAssemblyOutput(&options);
-        }
+        goto cleanup;
     }
 
+    if (options.target == TARGET_PARSE) {
+        exit_code = writeASTOutput(&options);
+        goto cleanup;
+    }
+
+    // --- ETAPA 3: Analisis Semantico ---
+    // Punto de entrada: analyzeSemantics(...)
+    // Toma el AST ya construido ('raizAST') y recorre sus nodos validando
+    // ambitos, tipos, variables/metodos y la presencia obligatoria de 'main'.
+    analyzeSemantics(raizAST, NULL, TYPE_VOID);
+
+    if (semantic_errors > 0) {
+        fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores semanticos.\033[0m\n", semantic_errors);
+        exit_code = 1;
+        goto cleanup;
+    }
+
+    if (options.target == TARGET_SEM) {
+        exit_code = writeASTOutput(&options);
+        goto cleanup;
+    }
+
+    // --- ETAPA 4: Generacion de Codigo Intermedio (-target codinter) ---
+    // Punto de entrada: generateIntermediateCode(...) dentro de writeIntermediateCodeOutput
+    if (options.target == TARGET_CODINTER) {
+        exit_code = writeIntermediateCodeOutput(&options);
+        goto cleanup;
+    }
+
+    // --- ETAPA 5: Generacion de Codigo Objeto / Ensamblador y Enlazado ---
+    // Punto de entrada: generateObjectCode(...) dentro de writeAssemblyOutput
+    exit_code = writeAssemblyOutput(&options);
+
+cleanup:
     if (options.debug && exit_code == 0) {
         printf("\nSalida escrita en %s\n", options.output);
     }
