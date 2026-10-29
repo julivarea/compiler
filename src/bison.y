@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ast.h"
+#include "parser_helpers.h"
 #include "symbol_table.h"
 #include "semantic_analyzer.h"
 #include "error_handler.h"
@@ -23,6 +24,7 @@ NodeAST *raizAST = NULL;
 
 %code requires {
 #include "ast.h"
+#include "parser_helpers.h"
 }
 
 %union {
