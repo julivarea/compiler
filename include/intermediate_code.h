@@ -5,7 +5,7 @@
  * @file intermediate_code.h
  * @brief Recorrido del AST que construye el código de tres direcciones.
  *
- * La estructura de datos del TAC vive en `tac.h`; este módulo solo la llena.
+ * La estructura de datos del TAC vive en `tac_list.h`, `tac_instruction.h` y `tac_operand.h`; este módulo solo la llena.
  * El resultado se obtiene con getIntermediateCode() y lo consumen las etapas
  * siguientes (intérprete, optimizador, generador x86-64) o printTACList() si
  * lo que se quiere es la versión en texto.
@@ -13,7 +13,7 @@
 
 #include "ast.h"
 #include "types.h"
-#include "tac.h"
+#include "tac_list.h"
 
 /**
  * @brief Genera el código intermedio del programa completo.
