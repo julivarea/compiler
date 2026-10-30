@@ -49,9 +49,9 @@ extern NodeAST *raizAST;
 %left '*' '/' '%'  /* multiplicación, división, resto */
 %right NOT UMINUS  /* negación lógica ! y menos unario */
 
-%type <node> Program Statement Expression MethodCall Block MethodDeclaration
+%type <node> Program Statement Expression MethodCall Block MethodDeclaration ParameterList
 %type <dtype> Type 
-%type <array> VariableDeclaration IdentifierList ListArguments VariableDeclarations Statements ParameterList Parameters Declarations Declaration
+%type <array> VariableDeclaration IdentifierList ListArguments VariableDeclarations Statements Parameters Declarations Declaration
 
 %%
     Program
@@ -76,20 +76,24 @@ extern NodeAST *raizAST;
     ;
     MethodDeclaration
     : Type ID '(' ParameterList ')' Block { 
-        NodeAST *parameters = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL); 
-        resolveNodeArray(parameters, $4); 
-        $$ = newMethodDeclaration($1, $2, parameters, $6); 
+        $$ = newMethodDeclaration($1, $2, $4, $6); 
+        if ($4 != NULL) $$->line = $4->line;
     }
     | VOID ID '(' ParameterList ')' Block { 
-        NodeAST *parameters = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL); 
-        resolveNodeArray(parameters, $4); 
-        $$ = newMethodDeclaration(TYPE_VOID, $2, parameters, $6); 
+        $$ = newMethodDeclaration(TYPE_VOID, $2, $4, $6); 
+        if ($4 != NULL) $$->line = $4->line;
     }
     ;
 
     ParameterList
-    : /* empty */ { $$ = NULL; }
-    | Parameters { $$ = $1; }
+    : /* empty */ {
+        $$ = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL);
+    }
+    | Parameters {
+        NodeAST *parameters = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL);
+        resolveNodeArray(parameters, $1);
+        $$ = parameters;
+    }
     ;
 
     Parameters
