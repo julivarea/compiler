@@ -11,6 +11,32 @@ static DataType currentMethodType = TYPE_VOID;
 static int temporaryCount = 0;
 static int labelCount = 0;
 
+static void generateGlobalDeclarationCode(NodeAST *node);
+static void generateStatementCode(NodeAST *node);
+static void generateMethodDeclarationCode(NodeAST *node);
+static void generateBlockCode(NodeAST *node);
+static void generateVariableDeclarationCode(NodeAST *node);
+static void generateAssignmentCode(NodeAST *node);
+static void generateCallStatementCode(NodeAST *node);
+static void generateReturnCode(NodeAST *node);
+static void generateIfElseCode(NodeAST *node);
+static void generateWhileCode(NodeAST *node);
+
+static TACOperand generateExpressionCode(NodeAST *node);
+static TACOperand generateBinaryOperatorCode(NodeAST *node);
+static TACOperand generateShortCircuitCode(NodeAST *node);
+static TACOperand generateCallExpressionCode(NodeAST *node);
+static TACOperand generateConstantOperand(NodeAST *node);
+static void generateCallArguments(NodeAST *node);
+
+static void coerceBinaryOperands(TACOperand *left, TACOperand *right);
+static TACOperand coerceToFloat(TACOperand operand);
+static TACOperation getTACOperation(OperationType operation);
+static bool lastInstructionIsReturn(void);
+static void emit(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand);
+static TACOperand newTemporary(DataType type);
+static TACOperand newLabel(void);
+
 const TACList *generateIntermediateCode(NodeAST *root) {
     if (root == NULL) {
         return NULL;
