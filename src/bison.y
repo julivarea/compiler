@@ -5,7 +5,7 @@
 #include "error_handler.h"
 extern int yylex(void);
 extern int yylineno;
-void yyerror(const char *s) {
+static void yyerror(const char *s) {
     (void)s; /* el mensaje de Bison esta en ingles y no aporta nada mas que la linea */
     syntaxError(yylineno, "error de sintaxis");
 }
@@ -47,7 +47,7 @@ extern NodeAST *raizAST;
 %left '<' '>'      /* relacionales (menor, mayor) */
 %left '+' '-'      /* suma y resta */
 %left '*' '/' '%'  /* multiplicación, división, resto */
-%right NOT UMINUS  /* negación lógica ! y menos unario */
+%precedence NOT UMINUS  /* negación lógica ! y menos unario */
 
 %type <node> Program Statement Expression MethodCall Block MethodDeclaration ParameterList
 %type <dtype> Type 
@@ -59,7 +59,7 @@ extern NodeAST *raizAST;
     ;
 
     Declarations
-    : /* empty */ { $$ = NULL; }
+    : %empty { $$ = NULL; }
     | Declaration Declarations { $$ = mergeNodeArrays($1, $2); } 
     ;
 
@@ -86,7 +86,7 @@ extern NodeAST *raizAST;
     ;
 
     ParameterList
-    : /* empty */ {
+    : %empty {
         $$ = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL);
     }
     | Parameters {
@@ -125,7 +125,7 @@ extern NodeAST *raizAST;
     ;
 
     Statements
-    : /* empty */                  { $$ = NULL; }
+    : %empty                       { $$ = NULL; }
     | Statement Statements         { $$ = prependNode($2, $1); }
     ;
 
@@ -196,7 +196,7 @@ extern NodeAST *raizAST;
 
 
     VariableDeclarations
-    : /* empty */                                { $$ = NULL; } 
+    : %empty                                     { $$ = NULL; } 
     | VariableDeclaration VariableDeclarations   { $$ = mergeNodeArrays($1, $2); } 
     ;
 
