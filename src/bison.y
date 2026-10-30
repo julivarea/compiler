@@ -131,9 +131,18 @@ extern NodeAST *raizAST;
     | RETURN Expression ';' { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); }
     | RETURN ';' { $$ = newNode(RETURN_NODE, NULL, NULL, NULL, NULL); }
     | Block { $$ = $1; }
-    | WHILE '(' Expression ')' Block { $$ = newNode(WHILE_NODE, NULL, $3, NULL, $5); }
-    | IF '(' Expression ')' Block { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, NULL); }
-    | IF '(' Expression ')' Block ELSE Block { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, $7); }
+    | WHILE '(' Expression ')' Block {
+        $$ = newNode(WHILE_NODE, NULL, $3, NULL, $5);
+        if ($3 != NULL) $$->line = $3->line;
+    }
+    | IF '(' Expression ')' Block {
+        $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, NULL);
+        if ($3 != NULL) $$->line = $3->line;
+    }
+    | IF '(' Expression ')' Block ELSE Block {
+        $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, $7);
+        if ($3 != NULL) $$->line = $3->line;
+    }
     | ';' { $$ = NULL; }
     ;
 
