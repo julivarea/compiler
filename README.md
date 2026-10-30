@@ -51,6 +51,7 @@ una versión navegable estructurada paso a paso.
 │   ├── tac_list.h                                   # lista enlazada de instrucciones TAC
 │   ├── intermediate_code.h                          # generación de código intermedio
 │   ├── asm_instruction.h                            # instrucciones de ensamblador x86-64
+│   ├── function_frame.h                             # gestión del marco de pila (stack frame)
 │   ├── object_code.h                                # generación de código objeto
 │   ├── string_builder.h                             # buffer dinámico de cadenas
 │   └── error_handler.h                              # reporte de errores
@@ -67,6 +68,7 @@ una versión navegable estructurada paso a paso.
 │   ├── tac_list.c
 │   ├── intermediate_code.c
 │   ├── asm_instruction.c
+│   ├── function_frame.c
 │   ├── object_code.c
 │   ├── string_builder.c
 │   └── error_handler.c
