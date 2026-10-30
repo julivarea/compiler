@@ -1,106 +1,135 @@
-#include <stdlib.h>
 #include "parser_helpers.h"
+
+#include <stdlib.h>
+#include <string.h>
 #include "ast.h"
 #include "symbol_table.h"
 
-NodeList *initializeTemporaryList(NodeAST *node, NodeList *next) {
-    NodeList *list = malloc(sizeof(NodeList));
-    if (list == NULL) return NULL;
+NodeArray *createNodeArray(int initialCapacity) {
+    NodeArray *array = malloc(sizeof(NodeArray));
+    if (array == NULL) return NULL;
 
-    list->node = node;
-    list->next = next;
-
-    list->tail = (next != NULL) ? next->tail : list;
-
-    return list;
+    int capacity = (initialCapacity > 0) ? initialCapacity : 4;
+    array->items = malloc(capacity * sizeof(NodeAST *));
+    if (array->items == NULL) {
+        free(array);
+        return NULL;
+    }
+    array->count = 0;
+    array->capacity = capacity;
+    return array;
 }
 
-NodeList *appendToTemporaryList(NodeList *list, NodeAST *node) {
-    NodeList *newNode = initializeTemporaryList(node, NULL);
-    if (list == NULL) {
-        return newNode;
+NodeArray *appendNode(NodeArray *array, NodeAST *node) {
+    if (node == NULL) return array;
+
+    if (array == NULL) {
+        array = createNodeArray(4);
+        if (array == NULL) return NULL;
     }
-    
-    // inserción en O(1) puro usando el puntero tail
-    list->tail->next = newNode;
-    
-    // actualizamos el tail de la cabecera
-    list->tail = newNode;
-    
-    return list;
+
+    if (array->count >= array->capacity) {
+        int newCapacity = array->capacity * 2;
+        NodeAST **newItems = realloc(array->items, newCapacity * sizeof(NodeAST *));
+        if (newItems == NULL) return array;
+        array->items = newItems;
+        array->capacity = newCapacity;
+    }
+
+    array->items[array->count++] = node;
+    return array;
 }
 
-void resolveTemporaryList(NodeAST *parent, NodeList *list) {
-    int count = 0;
-    for (NodeList *current = list; current != NULL; current = current->next) {
-        count++;
+NodeArray *prependNode(NodeArray *array, NodeAST *node) {
+    if (node == NULL) return array;
+
+    if (array == NULL) {
+        return appendNode(NULL, node);
     }
 
-    if (count == 0) {
-        parent->children = NULL;
-        parent->childCount = 0;
+    if (array->count >= array->capacity) {
+        int newCapacity = array->capacity * 2;
+        NodeAST **newItems = realloc(array->items, newCapacity * sizeof(NodeAST *));
+        if (newItems == NULL) return array;
+        array->items = newItems;
+        array->capacity = newCapacity;
+    }
+
+    memmove(array->items + 1, array->items, array->count * sizeof(NodeAST *));
+    array->items[0] = node;
+    array->count++;
+    return array;
+}
+
+void resolveNodeArray(NodeAST *parent, NodeArray *array) {
+    if (parent == NULL) {
+        if (array != NULL) {
+            free(array->items);
+            free(array);
+        }
         return;
     }
 
-    // reservamos el arreglo de punteros NodeAST de una vez
-    NodeAST **children = malloc(count * sizeof(NodeAST *));
-    if (children == NULL) return;
-
-    // volcamos cada nodo al arreglo y liberamos la lista transitoria
-    int i = 0;
-    NodeList *current = list;
-    while (current != NULL) {
-        children[i] = current->node;
-        i++;
-
-        NodeList *toFree = current;
-        current = current->next;
-        free(toFree);
-    }
-
-    parent->children = children;
-    parent->childCount = count;
-}
-
-NodeList *mergeNodeLists(NodeList *list1, NodeList *list2) {
-    if (list1 == NULL) return list2;
-    if (list2 == NULL) return list1;
-
-    list1->tail->next = list2;
-    list1->tail = list2->tail;
-    
-    return list1;
-}
-
-// en este punto tenemos una lista de simbolos sin tipo, y un tipo, por lo tanto se itera la lista, poniendole el mismo tipo a todas las variables
-NodeList *resolveVariableDefinition(DataType type, NodeList *identifiers) {
-    NodeList *declarationList = NULL;
-    NodeList **tail = &declarationList;
-    NodeList *currentId = identifiers;
-    
-    while (currentId != NULL) {
-        Symbol *varSymbol = currentId->node->symbol;
-        varSymbol->type = type;
-        
-        NodeAST *individualDecl = newNode(VARIABLE_DECLARATION_NODE, varSymbol, NULL, NULL, NULL);        
-        if (individualDecl == NULL) return declarationList;
-        
-        individualDecl->type = type; 
-
-        free(currentId->node);
-
-        NodeList *newCell = initializeTemporaryList(individualDecl, NULL);
-        if (newCell == NULL) return declarationList;
-        
-        *tail = newCell;
-        tail = &newCell->next;
-        
-        if (declarationList != NULL) {
-            declarationList->tail = newCell;
+    if (array == NULL || array->count == 0) {
+        parent->children = NULL;
+        parent->childCount = 0;
+        if (array != NULL) {
+            free(array->items);
+            free(array);
         }
-        
-        currentId = currentId->next;
+        return;
     }
-    
-    return declarationList;
+
+    parent->children = array->items;
+    parent->childCount = array->count;
+    free(array);
+}
+
+NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second) {
+    if (first == NULL) return second;
+    if (second == NULL) return first;
+
+    int total = first->count + second->count;
+    if (total > first->capacity) {
+        NodeAST **newItems = realloc(first->items, total * sizeof(NodeAST *));
+        if (newItems == NULL) return first;
+        first->items = newItems;
+        first->capacity = total;
+    }
+
+    memcpy(first->items + first->count, second->items, second->count * sizeof(NodeAST *));
+    first->count = total;
+
+    free(second->items);
+    free(second);
+    return first;
+}
+
+NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers) {
+    if (identifiers == NULL) return NULL;
+
+    NodeArray *declarations = createNodeArray(identifiers->count);
+    if (declarations == NULL) {
+        free(identifiers->items);
+        free(identifiers);
+        return NULL;
+    }
+
+    for (int i = 0; i < identifiers->count; i++) {
+        NodeAST *idNode = identifiers->items[i];
+        Symbol *varSymbol = idNode->symbol;
+        varSymbol->type = type;
+
+        NodeAST *individualDecl = newNode(VARIABLE_DECLARATION_NODE, varSymbol, NULL, NULL, NULL);
+        if (individualDecl != NULL) {
+            individualDecl->type = type;
+            appendNode(declarations, individualDecl);
+        }
+
+        free(idNode);
+    }
+
+    free(identifiers->items);
+    free(identifiers);
+    return declarations;
 }

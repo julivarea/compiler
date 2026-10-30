@@ -4,26 +4,43 @@
 #include "ast.h"
 #include "types.h"
 
-// lista enlazada temporal utilizada durante el análisis sintáctico
-typedef struct NodeList {
-    NodeAST *node;                  // Nodo AST contenido en la celda
-    struct NodeList *next;          // Puntero al siguiente elemento de la lista
-    struct NodeList *tail;          // Puntero al último elemento (válido en el nodo cabeza)
-} NodeList;
+/**
+ * @brief Arreglo dinámico temporal utilizado durante el análisis sintáctico.
+ */
+typedef struct NodeArray {
+    NodeAST **items;    /**< Arreglo dinámico de punteros a nodos AST. */
+    int count;          /**< Cantidad actual de nodos en el arreglo. */
+    int capacity;       /**< Capacidad reservada en memoria. */
+} NodeArray;
 
-// inicializa una lista enlazada transitoria para el parsing en bison.y
-NodeList *initializeTemporaryList(NodeAST *node, NodeList *next);
+/**
+ * @brief Crea una nueva instancia de NodeArray con la capacidad inicial especificada.
+ */
+NodeArray *createNodeArray(int initialCapacity);
 
-// añade un nodo al final de una lista enlazada iterándola
-NodeList *appendToTemporaryList(NodeList *list, NodeAST *node);
+/**
+ * @brief Añade un nodo al final del arreglo dinámico (redimensiona si es necesario).
+ */
+NodeArray *appendNode(NodeArray *array, NodeAST *node);
 
-// vuelca los nodos de una NodeList al arreglo children de parent y libera la lista
-void resolveTemporaryList(NodeAST *parent, NodeList *list);
+/**
+ * @brief Inserta un nodo al inicio del arreglo dinámico.
+ */
+NodeArray *prependNode(NodeArray *array, NodeAST *node);
 
-// concatena dos listas temporales de nodos reutilizando las celdas existentes
-NodeList *mergeNodeLists(NodeList *list1, NodeList *list2);
+/**
+ * @brief Transfiere la propiedad del arreglo de nodos al nodo parent en O(1) y libera la estructura.
+ */
+void resolveNodeArray(NodeAST *parent, NodeArray *array);
 
-// descompone declaraciones múltiples de variables en declaraciones unitarias
-NodeList *resolveVariableDefinition(DataType type, NodeList *identifiers);
+/**
+ * @brief Concatena dos arreglos dinámicos en uno solo.
+ */
+NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second);
+
+/**
+ * @brief Descompone declaraciones múltiples de variables en declaraciones unitarias.
+ */
+NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers);
 
 #endif // PARSER_HELPERS_H

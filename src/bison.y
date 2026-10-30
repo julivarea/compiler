@@ -29,7 +29,7 @@ extern NodeAST *raizAST;
   float floatval;
   char* strval;
   struct NodeAST *node;
-  struct NodeList *list;
+  struct NodeArray *array;
   DataType dtype;
 }
 
@@ -51,21 +51,21 @@ extern NodeAST *raizAST;
 
 %type <node> Program Statement Expression MethodCall Block MethodDeclaration
 %type <dtype> Type 
-%type <list> VariableDeclaration IdentifierList ListArguments VariableDeclarations Statements ParameterList Parameters Declarations Declaration
+%type <array> VariableDeclaration IdentifierList ListArguments VariableDeclarations Statements ParameterList Parameters Declarations Declaration
 
 %%
     Program
-    : Declarations { $$ = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL); resolveTemporaryList($$, $1); raizAST = $$; }
+    : Declarations { $$ = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL); resolveNodeArray($$, $1); raizAST = $$; }
     ;
 
     Declarations
     : /* empty */ { $$ = NULL; }
-    | Declaration Declarations { $$ = mergeNodeLists($1, $2); } 
+    | Declaration Declarations { $$ = mergeNodeArrays($1, $2); } 
     ;
 
     Declaration
     : VariableDeclaration { $$ = $1; }  
-    | MethodDeclaration { $$ = initializeTemporaryList($1, NULL); }
+    | MethodDeclaration { $$ = appendNode(NULL, $1); }
     ;
 
 
@@ -77,12 +77,12 @@ extern NodeAST *raizAST;
     MethodDeclaration
     : Type ID '(' ParameterList ')' Block { 
         NodeAST *parameters = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL); 
-        resolveTemporaryList(parameters, $4); 
+        resolveNodeArray(parameters, $4); 
         $$ = newMethodDeclaration($1, $2, parameters, $6); 
     }
     | VOID ID '(' ParameterList ')' Block { 
         NodeAST *parameters = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL); 
-        resolveTemporaryList(parameters, $4); 
+        resolveNodeArray(parameters, $4); 
         $$ = newMethodDeclaration(TYPE_VOID, $2, parameters, $6); 
     }
     ;
@@ -96,21 +96,21 @@ extern NodeAST *raizAST;
     : Type ID {
         NodeAST *decl = newNode(VARIABLE_DECLARATION_NODE, newSymbol($2, ID_SYMBOL, $1, NULL), NULL, NULL, NULL);
         decl->type = $1;
-        $$ = initializeTemporaryList(decl, NULL); 
+        $$ = appendNode(NULL, decl); 
     }
     | Parameters ',' Type ID {
         NodeAST *decl = newNode(VARIABLE_DECLARATION_NODE, newSymbol($4, ID_SYMBOL, $3, NULL), NULL, NULL, NULL);
         decl->type = $3;
-        $$ = appendToTemporaryList($1, decl);
+        $$ = appendNode($1, decl);
     }
     ;
     
     IdentifierList
     : ID { 
-        $$ = initializeTemporaryList(newNode(ID_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL), NULL); 
+        $$ = appendNode(NULL, newNode(ID_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); 
     }
     | IdentifierList ',' ID { 
-        $$ = appendToTemporaryList($1, newNode(ID_NODE, newSymbol($3, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); 
+        $$ = appendNode($1, newNode(ID_NODE, newSymbol($3, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); 
     }
     ;
     
@@ -122,7 +122,7 @@ extern NodeAST *raizAST;
 
     Statements
     : /* empty */                  { $$ = NULL; }
-    | Statement Statements         { $$ = initializeTemporaryList($1, $2); }
+    | Statement Statements         { $$ = prependNode($2, $1); }
     ;
 
     Statement
@@ -141,14 +141,14 @@ extern NodeAST *raizAST;
     : ID '(' ')' { $$ = newNode(METHOD_CALL_NODE, newSymbol($1, METHOD_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL); }
     | ID '(' ListArguments ')' {
         NodeAST *call = newNode(METHOD_CALL_NODE, newSymbol($1, METHOD_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL);
-        resolveTemporaryList(call, $3);
+        resolveNodeArray(call, $3);
         $$ = call;
     }
     ;
 
     ListArguments
-    : Expression { $$ = initializeTemporaryList($1, NULL); }
-    | ListArguments ',' Expression { $$ = appendToTemporaryList($1, $3); }
+    : Expression { $$ = appendNode(NULL, $1); }
+    | ListArguments ',' Expression { $$ = appendNode($1, $3); }
     ;
 
     Expression
@@ -176,7 +176,7 @@ extern NodeAST *raizAST;
     : '{' VariableDeclarations Statements '}'
         {
             NodeAST *block = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL);
-            resolveTemporaryList(block, mergeNodeLists($2, $3));
+            resolveNodeArray(block, mergeNodeArrays($2, $3));
             $$ = block;
         }
     ;
@@ -184,7 +184,7 @@ extern NodeAST *raizAST;
 
     VariableDeclarations
     : /* empty */                                { $$ = NULL; } 
-    | VariableDeclaration VariableDeclarations   { $$ = mergeNodeLists($1, $2); } 
+    | VariableDeclaration VariableDeclarations   { $$ = mergeNodeArrays($1, $2); } 
     ;
 
 
