@@ -6,12 +6,15 @@
 #include "bison.tab.h"
 #include "error_handler.h"
 
+static int commentStartLine = 0;
+
 int yywrap(void) {
     return 1;
 }
 %}
 
 %option yylineno
+%x COMMENT
 
 DIGIT       [0-9]
 ALPHA       [a-zA-Z]
@@ -62,7 +65,15 @@ FLOAT       {DIGIT}+"."{DIGIT}+
     /* COMENTARIOS Y ESPACIOS EN BLANCO */
 [ \t\r\n]+                      { /* eliminar blancos */ }
 "//".*                          { /* comentario simple linea */ }
-"/*"([^*]|\*+[^*/])*\*+"/"      { /* comentario multilinea */ }
+"/*"                            { commentStartLine = yylineno; BEGIN(COMMENT); }
+<COMMENT>"*/"                   { BEGIN(INITIAL); }
+<COMMENT>[^*]+                  { /* ignorar contenido del comentario */ }
+<COMMENT>"*"                    { /* ignorar asterisco suelto */ }
+<COMMENT><<EOF>>                {
+                                    lexicalError(commentStartLine, "comentario multilinea sin cerrar");
+                                    BEGIN(INITIAL);
+                                    return 0;
+                                }
 
     /* ERRORES LEXICOS */
 .                               { lexicalError(yylineno, "simbolo no permitido '%s'", yytext); }

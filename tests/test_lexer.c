@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include "unity.h"
 #include "bison.tab.h"
-#include "error_handler.h"
 
 extern int yylex(void);
 extern int yylineno;
@@ -42,7 +41,6 @@ extern void yy_delete_buffer(YY_BUFFER_STATE buffer);
  */
 void setUp(void) {
     yylineno = 1;
-    resetErrorHandler();
 }
 
 /**
@@ -412,6 +410,18 @@ void test_no_spaces_between_tokens(void) {
     yy_delete_buffer(buffer);
 }
 
+// Un comentario multilínea sin cerrar se descarta hasta fin de archivo sin emitir tokens.
+void test_unterminated_comment_is_discarded(void) {
+    YY_BUFFER_STATE buffer = yy_scan_string("int x;\n/* nunca se cierra\nint y;\n");
+
+    TEST_ASSERT_EQUAL_INT(INT, yylex());
+    ASSERT_ID("x");
+    TEST_ASSERT_EQUAL_INT(';', yylex());
+    TEST_ASSERT_EQUAL_INT(0, yylex());
+
+    yy_delete_buffer(buffer);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -438,6 +448,7 @@ int main(void) {
     RUN_TEST(test_only_comments_and_spaces);
     RUN_TEST(test_line_tracking);
     RUN_TEST(test_no_spaces_between_tokens);
+    RUN_TEST(test_unterminated_comment_is_discarded);
 
     return UNITY_END();
 }
