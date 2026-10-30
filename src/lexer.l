@@ -7,13 +7,9 @@
 #include "error_handler.h"
 
 static int commentStartLine = 0;
-
-int yywrap(void) {
-    return 1;
-}
 %}
 
-%option yylineno
+%option yylineno noyywrap nounput noinput
 %x COMMENT
 
 DIGIT       [0-9]
@@ -80,27 +76,3 @@ FLOAT       {DIGIT}+"."{DIGIT}+
 
 %%
 
-#ifdef STANDALONE_LEXER
-int main(int argc, char **argv) {
-    if (argc > 1) {
-        yyin = fopen(argv[1], "r");
-        if (!yyin) {
-            perror("Error al abrir archivo");
-            return 1;
-        }
-    } else {
-        yyin = stdin;
-    }
-
-    /* Bucle para probar el lexer de forma independiente imprimiendo lo que retorna */
-    int token;
-    while ((token = yylex())) {
-        printf("Token: %d, Lexema: %s\n", token, yytext);
-    }
-
-    if (argc > 1 && yyin) {
-        fclose(yyin);
-    }
-    return 0;
-}
-#endif
