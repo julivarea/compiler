@@ -28,6 +28,18 @@ extern char *yytext;
 extern FILE *yyin;
 extern int yylineno;
 
+static int runScan(const Options *options);
+static int runParse(void);
+static int runSemantic(void);
+static int runIntermediateCode(const Options *options, const TACList *tacList);
+static int runAssembly(const Options *options, const TACList *tacList);
+
+static int writeASTTo(const Options *options);
+static int writeBuiltStringTo(const char *path);
+static FILE *openOutputFile(const char *path);
+static int assembleAndLink(const Options *options, const char *assemblyPath);
+static const char *getTokenName(int token);
+
 int compile(const Options *options) {
     switch (options->target) {
         case TARGET_SCAN:
@@ -44,17 +56,19 @@ int compile(const Options *options) {
             if (runSemantic() != 0) { return 1; }
             return writeASTTo(options);
 
-        case TARGET_CODINTER:
+        case TARGET_CODINTER: {
             if (runParse() != 0) { return 1; }
             if (runSemantic() != 0) { return 1; }
-            if (runIntermediateCode(options) != 0) { return 1; }
-            return writeBuiltStringTo(options->output);
+            const TACList *tacList = generateIntermediateCode(raizAST);
+            return runIntermediateCode(options, tacList);
+        }
 
-        case TARGET_ASSEMBLY:
+        case TARGET_ASSEMBLY: {
             if (runParse() != 0) { return 1; }
             if (runSemantic() != 0) { return 1; }
-            if (runIntermediateCode(options) != 0) { return 1; }
-            return runAssembly(options);
+            const TACList *tacList = generateIntermediateCode(raizAST);
+            return runAssembly(options, tacList);
+        }
 
         default:
             return 1;
@@ -92,9 +106,8 @@ static int runScan(const Options *options) {
 }
 
 static int runParse(void) {
-    if (yyparse() != 0) {
-        return 1;
-    }
+    bool hasError = yyparse() != 0;
+    if (hasError) { return 1; }
 
     if (lexical_errors > 0) {
         fprintf(stderr, "\n" ANSI_BOLD_RED "Compilacion abortada: se encontraron %d errores lexicos." ANSI_RESET "\n", lexical_errors);
@@ -115,24 +128,20 @@ static int runSemantic(void) {
     return 0;
 }
 
-static int runIntermediateCode(const Options *options) {
-    TACList intermediateCode = generateIntermediateCode(raizAST);
+static int runIntermediateCode(const Options *options, const TACList *tacList) {
+    resetBuildString();
+    printTACList(tacList);
 
-    if (options->target == TARGET_CODINTER) {
-        resetBuildString();
-        printTACList(intermediateCode);
-
-        if (options->debug) {
-            printf("%s", getBuiltString());
-        }
+    if (options->debug) {
+        printf("%s", getBuiltString());
     }
 
-    return 0;
+    return writeBuiltStringTo(options->output);
 }
 
-static int runAssembly(const Options *options) {
+static int runAssembly(const Options *options, const TACList *tacList) {
     resetBuildString();
-    generateAssembly(getIntermediateCode());
+    generateAssembly(tacList);
 
     if (getObjectCodeErrors() > 0) {
         fprintf(stderr, "\n" ANSI_BOLD_RED "Compilacion abortada: %d errores internos en la generacion de codigo objeto." ANSI_RESET "\n",
