@@ -1,100 +1,144 @@
+#include "symbol_table.h"
+
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-#include "symbol_table.h"
+
+// Arranca en 1 para reservar uid = 0 como indicador de simbolo no declarado.
+static int nextSymbolUid = 1;
 
 Symbol *newSymbol(const char *id, SymbolType symbolType, DataType type, struct NodeAST *parameters) {
     Symbol *symbol = malloc(sizeof(Symbol));
-    if (symbol == NULL) return NULL;
+    bool allocationFailed = (symbol == NULL);
+    if (allocationFailed) {
+        return NULL;
+    }
+
+    bool hasId = (id != NULL);
+
     symbol->symbolType = symbolType;
     symbol->type = type;
     symbol->parameters = parameters;
-    symbol->id = (id != NULL) ? strdup(id) : NULL;
-    symbol->uid = 0; // lo asigna appendSymbol al declararse; 0 = no declarado
+    symbol->id = hasId ? strdup(id) : NULL;
+    symbol->uid = 0; // Asignado por appendSymbol al registrarse en un ambito
 
     return symbol;
 }
 
 void freeSymbol(Symbol *symbol) {
     if (symbol == NULL) return;
-    free(symbol->id);
+
+    bool hasId = (symbol->id != NULL);
+    if (hasId) {
+        free(symbol->id);
+    }
+
     free(symbol);
 }
 
-Scope* createScope(int level, Scope *parent, Symbol *function) {
+Scope *createScope(int level, Scope *parent, Symbol *function) {
     Scope *scope = malloc(sizeof(Scope));
-    if (!scope) return NULL;
-    
+    bool allocationFailed = (scope == NULL);
+    if (allocationFailed) {
+        return NULL;
+    }
+
     scope->level = level;
-    scope->parent = parent; 
+    scope->parent = parent;
     scope->function = function;
-    
+
     scope->symbol_capacity = 8;
     scope->symbol_count = 0;
-    scope->symbols = malloc(sizeof(Symbol*) * scope->symbol_capacity);
-    
+    scope->symbols = malloc(sizeof(Symbol *) * scope->symbol_capacity);
+
     scope->children_capacity = 4;
     scope->children_count = 0;
-    scope->childrens = malloc(sizeof(Scope*) * scope->children_capacity);
-    
+    scope->childrens = malloc(sizeof(Scope *) * scope->children_capacity);
+
+    bool internalAllocationFailed = (scope->symbols == NULL || scope->childrens == NULL);
+    if (internalAllocationFailed) {
+        free(scope->symbols);
+        free(scope->childrens);
+        free(scope);
+        return NULL;
+    }
+
     return scope;
 }
 
-// Fuente de los uid: declarar un simbolo es lo que lo convierte en una entidad
-// con identidad propia, y appendSymbol es el unico lugar por donde eso pasa
-// (variables, parametros y metodos). Arranca en 1 para que 0 siga significando
-// "simbolo no declarado".
-static int next_symbol_uid = 1;
-
 void appendSymbol(Scope *scope, Symbol *symbol) {
-    if (!scope || !symbol) return;
+    bool isInvalidInput = (scope == NULL || symbol == NULL);
+    if (isInvalidInput) return;
 
-    if (symbol->uid == 0) {
-        symbol->uid = next_symbol_uid++;
+    bool isUndeclared = (symbol->uid == 0);
+    if (isUndeclared) {
+        symbol->uid = nextSymbolUid++;
     }
 
-    if (scope->symbol_count >= scope->symbol_capacity) {
-        scope->symbol_capacity *= 2;
-        scope->symbols = realloc(scope->symbols, sizeof(Symbol*) * scope->symbol_capacity);
+    bool needsExpansion = (scope->symbol_count >= scope->symbol_capacity);
+    if (needsExpansion) {
+        int newCapacity = scope->symbol_capacity * 2;
+        Symbol **newSymbols = realloc(scope->symbols, sizeof(Symbol *) * newCapacity);
+        bool allocationFailed = (newSymbols == NULL);
+        if (allocationFailed) {
+            return;
+        }
+
+        scope->symbols = newSymbols;
+        scope->symbol_capacity = newCapacity;
     }
+
     scope->symbols[scope->symbol_count++] = symbol;
 }
 
 void appendChildScope(Scope *parent, Scope *child) {
-    if (!parent || !child) return;
-    
-    if (parent->children_count >= parent->children_capacity) {
-        parent->children_capacity *= 2;
-        parent->childrens = realloc(parent->childrens, sizeof(Scope*) * parent->children_capacity);
+    bool isInvalidInput = (parent == NULL || child == NULL);
+    if (isInvalidInput) return;
+
+    bool needsExpansion = (parent->children_count >= parent->children_capacity);
+    if (needsExpansion) {
+        int newCapacity = parent->children_capacity * 2;
+        Scope **newChildren = realloc(parent->childrens, sizeof(Scope *) * newCapacity);
+        bool allocationFailed = (newChildren == NULL);
+        if (allocationFailed) {
+            return;
+        }
+
+        parent->childrens = newChildren;
+        parent->children_capacity = newCapacity;
     }
+
     parent->childrens[parent->children_count++] = child;
 }
 
-// Verifica si un identificador fue definido en el ambito actual (sin buscar en padres)
-Symbol* lookupVariableCurrentScope(Scope *scope, const char *id) {
-    if (scope == NULL || id == NULL) return NULL;
-
-    for (int i = 0; i < scope->symbol_count; i++) {
-        Symbol *current_symbol = scope->symbols[i];
-        
-        if (current_symbol->id != NULL && strcmp(current_symbol->id, id) == 0) {
-            return current_symbol;
-        }
+Symbol *lookupVariable(Scope *scope, const char *id) {
+    bool isInvalidInput = (scope == NULL || id == NULL);
+    if (isInvalidInput) {
+        return NULL;
     }
-    return NULL;
+
+    Symbol *symbol = lookupVariableCurrentScope(scope, id);
+    bool isFoundInCurrentScope = (symbol != NULL);
+    if (isFoundInCurrentScope) {
+        return symbol;
+    }
+
+    return lookupVariable(scope->parent, id);
 }
 
-Symbol* lookupVariable(Scope *scope, const char *id) {
-    if (scope == NULL || id == NULL) {
+Symbol *lookupVariableCurrentScope(Scope *scope, const char *id) {
+    bool isInvalidInput = (scope == NULL || id == NULL);
+    if (isInvalidInput) {
         return NULL;
     }
 
     for (int i = 0; i < scope->symbol_count; i++) {
-        Symbol *current_symbol = scope->symbols[i];
-        
-        if (current_symbol->id != NULL && strcmp(current_symbol->id, id) == 0) {
-            return current_symbol;
+        Symbol *currentSymbol = scope->symbols[i];
+        bool matchesId = (currentSymbol->id != NULL && strcmp(currentSymbol->id, id) == 0);
+        if (matchesId) {
+            return currentSymbol;
         }
     }
-    return lookupVariable(scope->parent, id);
+
+    return NULL;
 }
