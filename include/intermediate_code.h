@@ -16,19 +16,9 @@
  * generada en una invocación previa y reinicia los contadores internos de
  * temporales y etiquetas.
  *
- * @param root Nodo raíz del AST a procesar (acepta NULL, en cuyo caso no emite código).
+ * @param root Nodo raíz del AST a procesar (acepta NULL, en cuyo caso retorna NULL).
+ * @return Puntero constante a la lista de instrucciones TAC generadas, o NULL si root es NULL.
  */
-void generateIntermediateCode(NodeAST *root);
-
-/**
- * @brief Devuelve la lista de instrucciones TAC generada en la última invocación.
- *
- * Permite acceder a la estructura de código intermedio producida por @ref generateIntermediateCode
- * para su posterior procesamiento por las fases subsiguientes del compilador
- * (intérprete, optimizador o generador de código de máquina x86-64).
- *
- * @return Puntero constante a la lista de instrucciones TAC, o NULL si todavía no se ejecutó la generación.
- */
-const TACList *getIntermediateCode(void);
+const TACList *generateIntermediateCode(NodeAST *root);
 
 #endif // INTERMEDIATE_CODE_H

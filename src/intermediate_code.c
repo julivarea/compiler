@@ -41,11 +41,12 @@ static TACOperand newLabel(void);
  * Recorre el AST a partir del bloque raíz, descarta cualquier secuencia previa,
  * reinicia los contadores internos y despacha declaraciones globales y de métodos.
  *
- * @param root Nodo raíz del AST a procesar (acepta NULL).
+ * @param root Nodo raíz del AST a procesar 
+ * @return lista de instrucciones
  */
-void generateIntermediateCode(NodeAST *root) {
+const TACList *generateIntermediateCode(NodeAST *root) {
     if (root == NULL) {
-        return;
+        return NULL;
     }
 
     freeTACList(current_code);
@@ -57,6 +58,7 @@ void generateIntermediateCode(NodeAST *root) {
     for (int i = 0; i < root->childCount; i++) {
         NodeAST *declaration = root->children[i];
         if (declaration == NULL) continue;
+        
         // declaraciones de variables globales, las variables locales son procesadas junto con el bloque por statementCode
         if (declaration->nodeType == VARIABLE_DECLARATION_NODE) {
             generateGlobalDeclarationCode(declaration);
@@ -64,6 +66,7 @@ void generateIntermediateCode(NodeAST *root) {
             generateStatementCode(declaration);
         }
     }
+    return current_code;
 }
 
 /**
