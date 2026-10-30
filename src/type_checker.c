@@ -3,13 +3,6 @@
 #include "type_checker.h"
 #include "error_handler.h"
 
-static int isNumeric(DataType type);
-static int isBasicType(DataType type);
-static DataType resolveNumericOperation(DataType left, DataType right);
-static DataType resolveBinaryOperation(OperationType operator, DataType left, DataType right);
-static DataType analyzeIdentifier(NodeAST *node, Scope *scope);
-static DataType analyzeBinaryOperator(NodeAST *node, Scope *scope);
-
 int isAssignable(DataType expected, DataType actual) {
     if (expected == actual) return 1;
     if (expected == TYPE_FLOAT && actual == TYPE_INT) return 1;
@@ -55,7 +48,6 @@ static DataType resolveBinaryOperation(OperationType operator, DataType left, Da
                 return TYPE_BOOL;
             return TYPE_ERROR;
                     
-        // no se aplica la coercion para la igualdad
         case OP_EQ:
             if (left == right && isBasicType(left))
                 return TYPE_BOOL;
@@ -133,10 +125,6 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
         }
     }
 
-    // La gramatica deja en el nodo un simbolo propio, sin la lista de
-    // parametros formales. Se reapunta al simbolo declarado para que la
-    // generacion de codigo pueda consultar el perfil del metodo sin volver a
-    // resolver nombres (lo necesita, por ejemplo, para coercionar argumentos).
     node->symbol = method;
     node->type = method->type;
 
@@ -144,18 +132,14 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
 }
 
 static DataType analyzeBinaryOperator(NodeAST *node, Scope *scope) {
-    DataType leftType = analyzeExpression(GET_LEFT(node), scope); //
+    DataType leftType = analyzeExpression(GET_LEFT(node), scope);
     DataType rightType = TYPE_VOID; // default
     
     if (GET_RIGHT(node) != NULL) {
         rightType = analyzeExpression(GET_RIGHT(node), scope);
     }
 
-    DataType resultType = resolveBinaryOperation(
-        node->operationType,
-        leftType,
-        rightType
-    );
+    DataType resultType = resolveBinaryOperation(node->operationType, leftType, rightType);
 
     if (resultType == TYPE_ERROR) {
         semanticError(node->line, "Tipos incompatibles en la operacion binaria.");

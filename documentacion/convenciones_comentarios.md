@@ -59,125 +59,64 @@ Agrupados de manera lógica, sin comentarios redundantes entre líneas:
 
 ## 3. Documentación de Funciones
 
-Cada prototipo público en cabeceras y cada función de módulo en archivos `.c` se documenta con la estructura canónica de 3 secciones separadas por una línea vacía (` *`):
-
-```c
-/**
- * @brief <Resumen de acción en una oración terminada en punto.>
- *
- * <Párrafo(s) descriptivo(s) detallando responsabilidades, flujo, qué valida o construye,
- * y contratos. Se utiliza @p para referenciar parámetros en el texto.>
- *
- * @param <nombre> <Descripción del rol semántico y restricciones/centinelas entre paréntesis.>
- * @return <Descripción del valor devuelto (solo si la función NO es void).>
- */
-```
+Se documenta el contrato público y lo que el código no puede decir. Si el nombre, la firma y los tipos ya lo explican, no se documenta.
 
 ### Reglas para las secciones:
 
 1. **`@brief`:**
-   - Una oración concisa que resume el propósito principal.
+   - Una oración concisa que resume el propósito o contrato principal.
    - Siempre finaliza en punto (`.`).
+   - Obligatorio en las declaraciones públicas del `.h`.
    - Ejemplo: `@brief Crea e inicializa una nueva instrucción TAC cuádrupla en memoria dinámica.`
 
-2. **Cuerpo explicativo:**
+2. **Cuerpo explicativo (opcional):**
+   - Solo si hay un contrato, flujo o invariante que la firma no revela.
    - Separado de `@brief` y de `@param` por una línea vacía (` *`).
-   - Explica el comportamiento interno, validaciones, efectos colaterales o algoritmos implementados.
-   - Se utiliza `@p nombre_parametro` cuando se menciona un argumento en el texto (ej. `@p parent == NULL`).
 
-3. **`@param <nombre>`:**
-   - Detalla la función semántica de cada argumento.
-   - Restricciones, valores especiales o valores centinela se especifican entre paréntesis al final (ej. `(acepta NULL)`, `(NULL para el scope global)`).
+3. **`@param <nombre>` (solo si aporta):**
+   - Solo para restricciones no evidentes: `NULL`, ownership, centinelas, unidades, rangos o alias.
+   - Restricciones y valores centinela entre paréntesis al final (ej. `(acepta NULL)`, `(NULL para el scope global)`).
    - Siempre finaliza en punto (`.`).
+   - Si el nombre del parámetro ya lo explica, se omite.
 
-4. **`@return` (Solo funciones con retorno):**
-   - **Funciones `void`:** **NUNCA** llevan `@return` (se omite por completo).
-   - **Funciones no-void:** Describe el resultado devuelto y qué significa en caso de error (ej. `NULL` o códigos especiales).
+4. **`@return` (solo si aporta):**
+   - **Funciones `void`:** **NUNCA** llevan `@return`.
+   - **Funciones no-void:** solo si el significado no es obvio (ej. qué implica `NULL` o un código de error).
    - No se repite el tipo de dato redundante antes de la descripción.
-   - Ejemplo: `@return Puntero a la instrucción creada, o NULL si falló la reserva de memoria.`
 
 ---
 
 ## 4. Ejemplos de Referencia
 
-### 4.1. Función constructora con retorno y validación de memoria
+### 4.1. Declaración pública con contrato en el `.h`
 ```c
 /**
- * @brief Crea e inicializa una nueva instrucción TAC cuádrupla en memoria dinámica.
+ * @brief Crea una instrucción TAC y enlaza sus operandos.
  *
- * Reserva espacio para una estructura TACInstruction, configura su código de
- * operación y sus tres operandos (resultado, primer argumento y segundo argumento),
- * e inicializa el puntero de enlace siguiente en NULL.
- *
- * @param op Código de operación que define la instrucción.
- * @param result Operando de destino o etiqueta asociada.
- * @param arg1 Primer operando fuente o argumento principal.
- * @param arg2 Segundo operando fuente o argumento secundario.
+ * @param result Operando de destino (no NULL).
+ * @param arg1 Primer operando fuente (acepta NULL si la operación es unaria).
  * @return Puntero a la instrucción creada, o NULL si falló la reserva de memoria.
  */
-TACInstruction *createTACInstruction(TACOperation op, TACOperand result, TACOperand arg1, TACOperand arg2) {
+TACInstruction *createTACInstruction(TACOperation operation, TACOperand result, TACOperand arg1, TACOperand arg2);
+```
+
+### 4.2. Función `static` autoexplicativa en el `.c`
+```c
+static const char *getOperatorSymbol(TACOperation operation) {
     ...
 }
 ```
 
-### 4.2. Función destructora / `void` (sin `@return`)
-```c
-/**
- * @brief Libera la memoria ocupada por una instrucción TAC individual.
- *
- * Verifica que el puntero no sea nulo antes de invocar la liberación
- * de la estructura. No libera las instrucciones encadenadas en 'next'.
- *
- * @param instruction Puntero a la instrucción TAC a liberar (acepta NULL).
- */
-void freeTACInstruction(TACInstruction *instruction) {
-    if (instruction != NULL) {
-        free(instruction);
-    }
-}
-```
-
-### 4.3. Función estática de mapeo / formateo
-```c
-/**
- * @brief Obtiene la representación textual del operador para instrucciones binarias o unarias.
- *
- * Mapea códigos de operación como TAC_ADD, TAC_SUB o TAC_EQ a su símbolo correspondiente
- * (+, -, ==) para su posterior formateo en texto. Retorna "?" para operaciones no reconocidas.
- *
- * @param op Código de operación del TAC.
- * @return Cadena constante con el símbolo del operador.
- */
-static const char *getOperatorSymbol(TACOp op) {
-    ...
-}
-```
-
-### 4.4. Función pública con recorrido y emisión
-```c
-/**
- * @brief Vuelca la representación textual de una instrucción TAC al acumulador de cadenas.
- *
- * Extrae los nombres calificados de los operandos y formatea la instrucción
- * según su categoría sintáctica (etiquetas, declaraciones, asignaciones,
- * saltos condicionales, llamadas o expresiones binarias/unarias), escribiendo
- * el resultado mediante buildStringf.
- *
- * @param instruction Puntero a la instrucción TAC a imprimir (si es NULL no realiza acción).
- */
-void printTACInstruction(const TACInstruction *instruction) {
-    ...
-}
-```
+Solo si el mapeo no fuera evidente se añadiría un `//` de una línea explicando el porqué.
 
 ---
 
 ## 5. Estructura y Comentarios en Archivos de Implementación (`.c`)
 
-1. **Forward Declarations al inicio:**
-   Todas las funciones estáticas (`static`) se declaran al inicio del archivo `.c`, facilitando una lectura ordenada de los componentes del módulo.
+1. **Forward Declarations cuando hagan falta:**
+   Solo se declaran al inicio las funciones `static` que lo necesiten (recursión mutua u orden de definición). No se duplican firmas por rutina.
    ```c
-   static const char *getOperatorSymbol(TACOp op);
+   static const char *getOperatorSymbol(TACOperation operation);
    ```
 
 2. **Comentarios de línea (`//`):**
@@ -186,4 +125,13 @@ void printTACInstruction(const TACInstruction *instruction) {
      ```c
      analyzeMethodCall(node, current_scope, 0); // isExpression = 0 (llamada como sentencia)
      ```
+
+3. **Intenciones con variables booleanas en lugar de bloques de comentarios:**
+   En vez de preceder un `if` con un bloque de comentario explicativo, se extrae la condición a una o más variables booleanas bien nombradas:
+   ```c
+   bool needsFloatCoercion = (node->symbol->type == TYPE_FLOAT);
+   if (needsFloatCoercion) {
+       value = coerceToFloat(value);
+   }
+   ```
 

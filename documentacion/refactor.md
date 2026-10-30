@@ -1,6 +1,6 @@
 # Reglas de Organización, Estilo y Documentación
 
-Estándar del proyecto para refactorización, basado en la **Metáfora del Periódico**, la **Regla del Paso Descendente** (*Step-Down Rule*) y las convenciones de [`convenciones_comentarios.md`](convenciones_comentarios.md) (formato Doxygen detallado y ejemplos canónicos).
+Estándar del proyecto para refactorización, basado en la **Metáfora del Periódico**, la **Regla del Paso Descendente** (*Step-Down Rule*) y las convenciones de [`convenciones_comentarios.md`](convenciones_comentarios.md) (formato Doxygen y ejemplos canónicos).
 
 ---
 
@@ -11,6 +11,8 @@ Todo archivo se lee de arriba abajo, bajando el nivel de abstracción:
 1. **Primero el propósito y las operaciones principales:** el lector debe entenderlos en las primeras líneas.
 2. **Después los detalles:** submétodos, helpers, mapeos y funciones estáticas.
 3. **Tipos canónicos:** se definen en su lugar; sin `typedef` adelantados ni aliases artificiales.
+
+La regla se aplica al escribir o modificar código; no obliga a reordenar archivos existentes solo para cumplirla.
 
 ---
 
@@ -56,7 +58,7 @@ Se usa include guard con sufijo `_H` (no `#pragma once`). Después del `#define`
 ## 3. Archivos de implementación (`.c`)
 
 1. **Includes** al inicio.
-2. **Prototipos `static`:** todas las funciones estáticas se declaran arriba, antes de cualquier implementación.
+2. **Prototipos `static`:** solo cuando se necesiten (recursión mutua u orden de definición).
 3. **Función principal primero:** en objetos el constructor; en procesos la entrada pública.
 4. **Submétodos directos:** en el orden en que los usa la función principal.
 5. **Helpers de bajo nivel al final:** formateo, búsquedas, conversiones y mapeos.
@@ -71,33 +73,39 @@ Se usa include guard con sufijo `_H` (no `#pragma once`). Después del `#define`
 
 - **Sin abreviaturas opacas:** `op` → `operation`, `arg1`/`arg2` → `firstOperand`/`secondOperand`, `ptr` → `pointer`, `tmp` → `temporary`, `val` → `value`, `buf` → `buffer`, `idx` → `index`, `len` → `length`, `ctx` → `context`, `err` → `error`.
 - **Nombres pronunciables y buscables:** identificadores en inglés, comentarios en español.
-- **Booleanos** con prefijo `is`, `has` o `can` (`isExpression`, `hasReturn`).
+- **Booleanos** con prefijo `is`, `has`, `can` o `needs` (`isExpression`, `hasReturn`, `needsImplicitReturn`).
+- **Expresión de intención mediante booleanos (en vez de bloques de comentarios):** Extraer condiciones a variables booleanas con nombres descriptivos (`bool var = (cond); if (var)`) para documentar la intención directamente con el código, evitando bloques de comentarios gigantes:
+  ```c
+  bool needsImplicitReturn = (node->type == TYPE_VOID && !lastInstructionIsReturn());
+  if (needsImplicitReturn) {
+      emit(TAC_RETURN, tacNone(), tacNone(), tacNone());
+  }
+  ```
 - **Verbos consistentes** con el módulo: `create`, `free`, `print`, `analyze`, `generate`, `get`.
 - **Excepciones:** contadores cortos (`i`, `j`, `k`) y acrónimos de dominio ya establecidos (`AST`, `TAC`, `TACOp`).
 
-> Los ejemplos de [`convenciones_comentarios.md`](convenciones_comentarios.md) usan nombres heredados (`op`, `arg1`); al refactorizar se renombran según esta sección.
+> Los ejemplos de [`convenciones_comentarios.md`](convenciones_comentarios.md) usan nombres heredados (`op`, `arg1`); se renombran solo en el código que se modifique, nunca en un barrido masivo.
 
 ---
 
 ## 5. Documentación de funciones
 
-Referencia normativa completa: [`convenciones_comentarios.md`](convenciones_comentarios.md). Reglas mínimas que aplica el refactor:
+Referencia: [`convenciones_comentarios.md`](convenciones_comentarios.md). Se documenta solo lo que el código no puede decir: el contrato, el porqué y las restricciones.
 
-- Bloques Doxygen `/** ... */` en español formal, con punto final en `@brief`, cuerpo y `@param`.
-- Estructura de 3 secciones separadas por ` *`: `@brief`, cuerpo explicativo, parámetros.
-- En caso de que la funcion este clara, evitar sobre comentar
-- `@param` con restricciones o centinelas entre paréntesis; `@p` para referenciar parámetros en el texto.
-- `@return` solo en funciones no-`void`; las `void` lo omiten.
+- `@brief` de una línea en cada declaración pública del `.h`. Es la única fuente de documentación de la API.
+- Cuerpo explicativo y `@param` solo cuando aporten algo no evidente: `NULL`, ownership, centinelas, unidades, rangos o errores.
+- `@return` solo en funciones no-`void` y solo si el significado no es obvio.
+- En el `.c` no se repite la documentación del `.h`; las `static` triviales no llevan Doxygen ni bloques de comentarios explicativos.
 - La firma de la función empieza en la línea siguiente al ` */`, sin línea en blanco.
-- Cada prototipo público de cabecera y cada función de módulo se documenta, incluidas las `static`.
 
 ---
 
 ## 6. Checklist de refactor
 
-- [ ] Orden descendente: principal → submétodos → helpers.
+- [ ] Orden descendente en el código nuevo o modificado: principal → submétodos → helpers.
 - [ ] Cabecera con guard `_H`, bloque `@file`/`@brief` e includes agrupados.
-- [ ] Todos los prototipos `static` al inicio del `.c`.
-- [ ] Nombres significativos, sin abreviaturas opacas (`op`, `arg1`, `tmp`).
-- [ ] Documentación de 3 secciones, con punto final y sin `@return` en `void`.
+- [ ] Prototipos `static` solo donde el orden de definición o la recursión mutua lo exijan.
+- [ ] Nombres significativos en el código que se toca, sin renombrados masivos.
+- [ ] Intenciones expresadas con booleanos descriptivos (`bool var = (cond); if (var)`) en vez de bloques de comentarios.
+- [ ] Documentación solo de contratos y restricciones no evidentes; sin repetir el código.
 - [ ] Sin comentarios redundantes; `//` solo para aclaraciones puntuales.
