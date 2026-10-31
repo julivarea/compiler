@@ -16,8 +16,7 @@ struct NodeAST;
 typedef enum SymbolType {
     ID_SYMBOL,          /**< Identificador de variable o parámetro. */
     METHOD_SYMBOL,      /**< Identificador de método o función. */
-    CONSTANT_SYMBOL,    /**< Literal o valor constante primitivo. */
-    DECLARATION_SYMBOL  /**< Símbolo asociado a una declaración de tipo. */
+    CONSTANT_SYMBOL     /**< Literal o valor constante primitivo. */
 } SymbolType;
 
 /**
@@ -32,7 +31,6 @@ typedef struct Symbol {
     union {
         int int_val;            /**< Valor numérico para constantes de tipo entero o booleano. */
         float float_val;        /**< Valor numérico para constantes de punto flotante. */
-        char *str_val;          /**< Puntero a cadena para literales textuales. */
     } value;
 } Symbol;
 
