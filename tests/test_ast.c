@@ -18,7 +18,10 @@ void setUp(void) {
     astRoot = NULL;
     resetErrorHandler();
 }
-void tearDown(void) {}
+void tearDown(void) {
+    freeAST(astRoot);
+    astRoot = NULL;
+}
 
 /* ------------------------------------------------------------------------
  * Utilidades para parsear y mirar el árbol (no hacen ninguna aserción)
@@ -26,6 +29,7 @@ void tearDown(void) {}
 
 // Parsea un programa y devuelve la raíz del AST; NULL si no parsea
 static NodeAST *parseProgram(const char *input) {
+    freeAST(astRoot);
     astRoot = NULL;
     YY_BUFFER_STATE buffer = yy_scan_string(input);
     yyparse();

@@ -50,6 +50,7 @@ NodeAST *newIntLiteralNode(int value);
 NodeAST *newFloatLiteralNode(float value);
 NodeAST *newBoolLiteralNode(int value);
 
+void freeAST(NodeAST *node);
 void fprintAST(FILE *out, NodeAST *node, int level);
 void printAST(NodeAST *node, int level);
 

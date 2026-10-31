@@ -95,6 +95,26 @@ NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *pa
     return node;
 }
 
+void freeAST(NodeAST *node) {
+    if (node == NULL) return;
+
+    for (int i = 0; i < node->childCount; i++) {
+        freeAST(node->children[i]);
+    }
+    free(node->children);
+
+    bool hasOwnedSymbol = (node->symbol != NULL &&
+        (node->nodeType == VARIABLE_DECLARATION_NODE ||
+         node->nodeType == METHOD_DECLARATION_NODE ||
+         node->nodeType == CONSTANT_NODE ||
+         node->symbol->uid == 0));
+    if (hasOwnedSymbol) {
+        freeSymbol(node->symbol);
+    }
+
+    free(node);
+}
+
 const char* getDataTypeName(DataType type) {
     switch(type) {
         case TYPE_INT: return "INT";

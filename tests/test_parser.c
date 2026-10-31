@@ -1,4 +1,5 @@
 #include "unity.h"
+#include "ast.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -8,12 +9,17 @@ typedef struct yy_buffer_state *YY_BUFFER_STATE;
 extern YY_BUFFER_STATE yy_scan_string(const char * str);
 extern void yy_delete_buffer(YY_BUFFER_STATE buffer);
 extern int yylineno;
+extern NodeAST *astRoot;
 
 // Configuración de Unity
 void setUp(void) {
     yylineno = 1; // cada test arranca a contar líneas desde 1
+    astRoot = NULL;
 }
-void tearDown(void) {}
+void tearDown(void) {
+    freeAST(astRoot);
+    astRoot = NULL;
+}
 
 // Programa mínimo válido
 void test_parser_programa_minimo_valido(void) {
