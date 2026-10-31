@@ -24,11 +24,6 @@ NodeArray *createNodeArray(int initialCapacity);
 NodeArray *appendNode(NodeArray *array, NodeAST *node);
 
 /**
- * @brief Inserta un nodo al inicio del arreglo dinámico.
- */
-NodeArray *prependNode(NodeArray *array, NodeAST *node);
-
-/**
  * @brief Transfiere la propiedad del arreglo de nodos al nodo parent en O(1) y libera la estructura.
  */
 void resolveNodeArray(NodeAST *parent, NodeArray *array);

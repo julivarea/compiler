@@ -60,7 +60,7 @@ extern NodeAST *astRoot;
 
     Declarations
     : %empty { $$ = NULL; }
-    | Declaration Declarations { $$ = mergeNodeArrays($1, $2); } 
+    | Declarations Declaration { $$ = mergeNodeArrays($1, $2); } 
     ;
 
     Declaration
@@ -120,7 +120,7 @@ extern NodeAST *astRoot;
 
     Statements
     : %empty                       { $$ = NULL; }
-    | Statement Statements         { $$ = prependNode($2, $1); }
+    | Statements Statement         { $$ = appendNode($1, $2); }
     ;
 
     Statement
@@ -182,7 +182,7 @@ extern NodeAST *astRoot;
 
     VariableDeclarations
     : %empty                                     { $$ = NULL; } 
-    | VariableDeclaration VariableDeclarations   { $$ = mergeNodeArrays($1, $2); } 
+    | VariableDeclarations VariableDeclaration   { $$ = mergeNodeArrays($1, $2); } 
     ;
 
 

@@ -40,27 +40,6 @@ NodeArray *appendNode(NodeArray *array, NodeAST *node) {
     return array;
 }
 
-NodeArray *prependNode(NodeArray *array, NodeAST *node) {
-    if (node == NULL) return array;
-
-    if (array == NULL) {
-        return appendNode(NULL, node);
-    }
-
-    if (array->count >= array->capacity) {
-        int newCapacity = array->capacity * 2;
-        NodeAST **newItems = realloc(array->items, newCapacity * sizeof(NodeAST *));
-        if (newItems == NULL) return array;
-        array->items = newItems;
-        array->capacity = newCapacity;
-    }
-
-    memmove(array->items + 1, array->items, array->count * sizeof(NodeAST *));
-    array->items[0] = node;
-    array->count++;
-    return array;
-}
-
 void resolveNodeArray(NodeAST *parent, NodeArray *array) {
     if (parent == NULL) {
         if (array != NULL) {
