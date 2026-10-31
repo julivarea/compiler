@@ -18,7 +18,7 @@ step() {
     [ -n "$VERBOSE" ] && [ -n "$out" ] && echo "$out"
 }
 
-echo "Generando Flex y Bison y compilando tests..."
+echo "Compilando dependencias y suites de tests..."
 step "bison" bison -d src/bison.y -o build/bison.tab.c
 step "flex" flex -o build/lex.yy.c src/lexer.l
 step "compilacion de tests del lexer" \
@@ -27,6 +27,8 @@ step "compilacion de tests del parser" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_parser.c src/ast.c src/parser_helpers.c src/symbol_table.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_parser_tests
 step "compilacion de tests del AST" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_ast.c src/ast.c src/parser_helpers.c src/symbol_table.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_ast_tests
+step "compilacion de tests de la tabla de simbolos" \
+    gcc -DUNITY_TESTING -Iinclude -Isrc -I./tests/unity tests/unity/unity.c tests/test_symbol_table.c src/symbol_table.c -o build/run_symbol_table_tests
 
 # Convierte la salida de Unity a una linea por test y descarta los mensajes
 # de error que imprime el propio compilador ("Error <etapa> en la linea N: ...")
@@ -56,9 +58,11 @@ run "PARSER" ./build/run_parser_tests
 PARSER_EXIT=$?
 run "AST" ./build/run_ast_tests
 AST_EXIT=$?
+run "SYMBOL TABLE" ./build/run_symbol_table_tests
+SYMBOL_TABLE_EXIT=$?
 
 echo ""
-if [ $LEXER_EXIT -eq 0 ] && [ $PARSER_EXIT -eq 0 ] && [ $AST_EXIT -eq 0 ]; then
+if [ $LEXER_EXIT -eq 0 ] && [ $PARSER_EXIT -eq 0 ] && [ $AST_EXIT -eq 0 ] && [ $SYMBOL_TABLE_EXIT -eq 0 ]; then
     echo "✅ TODOS LOS TESTS PASARON"
 else
     echo "❌ ALGUNOS TESTS FALLARON"
