@@ -7,19 +7,17 @@
 // Arranca en 1 para reservar uid = 0 como indicador de simbolo no declarado.
 static int nextSymbolUid = 1;
 
-Symbol *newSymbol(const char *id, SymbolType symbolType, DataType type, struct NodeAST *parameters) {
+Symbol *newSymbol(char *id, SymbolType symbolType, DataType type, struct NodeAST *parameters) {
     Symbol *symbol = malloc(sizeof(Symbol));
     bool allocationFailed = (symbol == NULL);
     if (allocationFailed) {
         return NULL;
     }
 
-    bool hasId = (id != NULL);
-
     symbol->symbolType = symbolType;
     symbol->type = type;
     symbol->parameters = parameters;
-    symbol->id = hasId ? strdup(id) : NULL;
+    symbol->id = id;
     symbol->uid = 0; // Asignado por appendSymbol al registrarse en un ambito
 
     return symbol;

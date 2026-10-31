@@ -48,7 +48,7 @@ typedef struct Symbol {
  * @param parameters Lista de nodos AST con parámetros formales (NULL si no es método).
  * @return Puntero al nuevo símbolo creado, o NULL si falló la reserva de memoria.
  */
-Symbol *newSymbol(const char *id, SymbolType symbolType, DataType type, struct NodeAST *parameters);
+Symbol *newSymbol(char *id, SymbolType symbolType, DataType type, struct NodeAST *parameters);
 
 /**
  * @brief Libera la memoria ocupada por un símbolo y su identificador.
