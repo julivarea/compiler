@@ -11,11 +11,11 @@ typedef struct yy_buffer_state *YY_BUFFER_STATE;
 extern YY_BUFFER_STATE yy_scan_string(const char *str);
 extern void yy_delete_buffer(YY_BUFFER_STATE buffer);
 extern int yylineno;
-extern NodeAST *raizAST;
+extern NodeAST *astRoot;
 
 void setUp(void) {
     yylineno = 1;
-    raizAST = NULL;
+    astRoot = NULL;
     resetErrorHandler();
 }
 void tearDown(void) {}
@@ -26,11 +26,11 @@ void tearDown(void) {}
 
 // Parsea un programa y devuelve la raíz del AST; NULL si no parsea
 static NodeAST *parseProgram(const char *input) {
-    raizAST = NULL;
+    astRoot = NULL;
     YY_BUFFER_STATE buffer = yy_scan_string(input);
     yyparse();
     yy_delete_buffer(buffer);
-    return raizAST;
+    return astRoot;
 }
 
 // Devuelve el cuerpo (bloque) del primer método del programa; NULL si no hay
@@ -60,8 +60,8 @@ static const char *operatorSymbol(OperationType operation) {
         case OP_EQ:       return "==";
         case OP_AND:      return "&&";
         case OP_OR:       return "||";
-        case OP_NEGATIVE: return "neg";
-        case OP_NEGATION: return "!";
+        case OP_UMINUS:   return "neg";
+        case OP_NOT:      return "!";
     }
     return "?";
 }
@@ -77,7 +77,7 @@ static void renderExpression(const NodeAST *node, char *out, size_t size) {
             else if (node->symbol->type == TYPE_FLOAT) append(out, size, "%g", node->symbol->value.float_val);
             else                                       append(out, size, "%s", node->symbol->value.int_val ? "true" : "false");
             return;
-        case BINARYOPERATOR_NODE:
+        case OPERATOR_NODE:
             append(out, size, "(%s", operatorSymbol(node->operationType));
             break;
         case METHOD_CALL_NODE:
@@ -329,7 +329,7 @@ void test_assignment_structure(void) {
     TEST_ASSERT_EQUAL_INT(ASSIGNMENT_NODE, assignment->nodeType);
     TEST_ASSERT_EQUAL_STRING("x", assignment->symbol->id);
     TEST_ASSERT_EQUAL_INT(1, assignment->childCount);
-    TEST_ASSERT_EQUAL_INT(BINARYOPERATOR_NODE, assignment->children[0]->nodeType);
+    TEST_ASSERT_EQUAL_INT(OPERATOR_NODE, assignment->children[0]->nodeType);
 }
 
 // if sin else tiene condición y bloque; con else suma el bloque del else
@@ -358,7 +358,7 @@ void test_while_structure(void) {
     NodeAST *loop = body->children[0];
     TEST_ASSERT_EQUAL_INT(WHILE_NODE, loop->nodeType);
     TEST_ASSERT_EQUAL_INT(2, loop->childCount);
-    TEST_ASSERT_EQUAL_INT(BINARYOPERATOR_NODE, loop->children[0]->nodeType);
+    TEST_ASSERT_EQUAL_INT(OPERATOR_NODE, loop->children[0]->nodeType);
     TEST_ASSERT_EQUAL_INT(BLOCK_NODE, loop->children[1]->nodeType);
     TEST_ASSERT_EQUAL_INT(1, loop->children[1]->childCount);
 }

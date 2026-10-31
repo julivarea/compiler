@@ -13,9 +13,9 @@ static void yyerror(const char *s) {
 /* En la build normal la definicion vive en main.c. En los tests unitarios
  * (UNITY_TESTING) no se linkea main.c, por lo que se define aqui. */
 #ifdef UNITY_TESTING
-NodeAST *raizAST = NULL;
+NodeAST *astRoot = NULL;
 #else
-extern NodeAST *raizAST;
+extern NodeAST *astRoot;
 #endif
 %}
 
@@ -30,7 +30,7 @@ extern NodeAST *raizAST;
   char* strval;
   struct NodeAST *node;
   struct NodeArray *array;
-  DataType dtype;
+  DataType dataType;
 }
 
 %token VOID INT FLOAT BOOLEAN IF ELSE WHILE RETURN
@@ -50,12 +50,12 @@ extern NodeAST *raizAST;
 %precedence NOT UMINUS  /* negación lógica ! y menos unario */
 
 %type <node> Program Statement Expression MethodCall Block MethodDeclaration ParameterList
-%type <dtype> Type 
-%type <array> VariableDeclaration IdentifierList ListArguments VariableDeclarations Statements Parameters Declarations Declaration
+%type <dataType> Type 
+%type <array> VariableDeclaration IdentifierList ArgumentList VariableDeclarations Statements Parameters Declarations Declaration
 
 %%
     Program
-    : Declarations { $$ = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL); resolveNodeArray($$, $1); raizAST = $$; }
+    : Declarations { $$ = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL); resolveNodeArray($$, $1); astRoot = $$; }
     ;
 
     Declarations
@@ -137,16 +137,16 @@ extern NodeAST *raizAST;
 
     MethodCall
     : ID '(' ')' { $$ = newNode(METHOD_CALL_NODE, newSymbol($1, METHOD_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL); }
-    | ID '(' ListArguments ')' {
+    | ID '(' ArgumentList ')' {
         NodeAST *call = newNode(METHOD_CALL_NODE, newSymbol($1, METHOD_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL);
         resolveNodeArray(call, $3);
         $$ = call;
     }
     ;
 
-    ListArguments
+    ArgumentList
     : Expression { $$ = appendNode(NULL, $1); }
-    | ListArguments ',' Expression { $$ = appendNode($1, $3); }
+    | ArgumentList ',' Expression { $$ = appendNode($1, $3); }
     ;
 
     Expression
@@ -155,19 +155,19 @@ extern NodeAST *raizAST;
     | FLOAT_CONST  { $$ = newFloatLiteralNode($1); } 
     | BOOL_CONST   { $$ = newBoolLiteralNode($1); }
     | NUMBER       { $$ = newIntLiteralNode($1); }
-    | '-' Expression %prec UMINUS { $$ = newBinaryOperatorNode(OP_NEGATIVE, $2, NULL); }
-    | NOT Expression { $$ = newBinaryOperatorNode(OP_NEGATION, $2, NULL); }
+    | '-' Expression %prec UMINUS { $$ = newOperatorNode(OP_UMINUS, $2, NULL); }
+    | NOT Expression { $$ = newOperatorNode(OP_NOT, $2, NULL); }
     | '(' Expression ')' { $$ = $2; }
-    | Expression '+' Expression { $$ = newBinaryOperatorNode(OP_ADD, $1, $3); }
-    | Expression '-' Expression { $$ = newBinaryOperatorNode(OP_SUB, $1, $3); }
-    | Expression '*' Expression { $$ = newBinaryOperatorNode(OP_MUL, $1, $3); }
-    | Expression '/' Expression { $$ = newBinaryOperatorNode(OP_DIV, $1, $3); }
-    | Expression '%' Expression { $$ = newBinaryOperatorNode(OP_MOD, $1, $3); }
-    | Expression '<' Expression { $$ = newBinaryOperatorNode(OP_LT, $1, $3); }
-    | Expression '>' Expression { $$ = newBinaryOperatorNode(OP_GT, $1, $3); }
-    | Expression EQ Expression { $$ = newBinaryOperatorNode(OP_EQ, $1, $3); }
-    | Expression AND Expression { $$ = newBinaryOperatorNode(OP_AND, $1, $3); }
-    | Expression OR Expression { $$ = newBinaryOperatorNode(OP_OR, $1, $3); }
+    | Expression '+' Expression { $$ = newOperatorNode(OP_ADD, $1, $3); }
+    | Expression '-' Expression { $$ = newOperatorNode(OP_SUB, $1, $3); }
+    | Expression '*' Expression { $$ = newOperatorNode(OP_MUL, $1, $3); }
+    | Expression '/' Expression { $$ = newOperatorNode(OP_DIV, $1, $3); }
+    | Expression '%' Expression { $$ = newOperatorNode(OP_MOD, $1, $3); }
+    | Expression '<' Expression { $$ = newOperatorNode(OP_LT, $1, $3); }
+    | Expression '>' Expression { $$ = newOperatorNode(OP_GT, $1, $3); }
+    | Expression EQ Expression { $$ = newOperatorNode(OP_EQ, $1, $3); }
+    | Expression AND Expression { $$ = newOperatorNode(OP_AND, $1, $3); }
+    | Expression OR Expression { $$ = newOperatorNode(OP_OR, $1, $3); }
     ;
 
     Block

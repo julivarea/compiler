@@ -235,7 +235,7 @@ static TACOperand generateExpressionCode(NodeAST *node) {
         case CONSTANT_NODE:
             return generateConstantOperand(node);
 
-        case BINARYOPERATOR_NODE:
+        case OPERATOR_NODE:
             return generateBinaryOperatorCode(node);
 
         case METHOD_CALL_NODE:
@@ -254,7 +254,7 @@ static TACOperand generateBinaryOperatorCode(NodeAST *node) {
 
     TACOperand left = generateExpressionCode(GET_LEFT(node));
     TACOperand result = newTemporary(node->type);
-    bool isUnary = (node->operationType == OP_NEGATIVE || node->operationType == OP_NEGATION);
+    bool isUnary = (node->operationType == OP_UMINUS || node->operationType == OP_NOT);
 
     if (isUnary) {
         emit(getTACOperation(node->operationType), result, left, tacNone());
@@ -365,8 +365,8 @@ static TACOperation getTACOperation(OperationType operation) {
         case OP_EQ:       return TAC_EQ;
         case OP_AND:      return TAC_AND;
         case OP_OR:       return TAC_OR;
-        case OP_NEGATIVE: return TAC_NEG;
-        case OP_NEGATION: return TAC_NOT;
+        case OP_UMINUS:   return TAC_NEG;
+        case OP_NOT:      return TAC_NOT;
         default:          return TAC_ASSIGN;
     }
 }

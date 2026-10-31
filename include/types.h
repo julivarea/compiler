@@ -40,8 +40,8 @@ const char *getDataTypeName(DataType type);
  */
 typedef enum OperationType {
     OP_ADD,
-    OP_NEGATIVE,
-    OP_NEGATION,
+    OP_UMINUS,
+    OP_NOT,
     OP_SUB,
     OP_MUL,
     OP_DIV,

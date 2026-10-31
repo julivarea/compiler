@@ -63,9 +63,9 @@ NodeAST *newBoolLiteralNode(int value){
 }
 
 // Crea un nuevo nodo AST para operaciones binarias o unarias
-NodeAST *newBinaryOperatorNode(OperationType operator, NodeAST *left, NodeAST *right){
+NodeAST *newOperatorNode(OperationType operator, NodeAST *left, NodeAST *right){
     NodeAST *node = newNode(
-        BINARYOPERATOR_NODE,
+        OPERATOR_NODE,
         NULL,
         left,
         right,
@@ -106,8 +106,8 @@ const char* getDataTypeName(DataType type) {
     }
 }
 
-static const char* getOpName(OperationType op) {
-    switch(op) {
+static const char* getOperationName(OperationType operation) {
+    switch(operation) {
         case OP_ADD: return "+";
         case OP_SUB: return "-";
         case OP_MUL: return "*";
@@ -118,8 +118,8 @@ static const char* getOpName(OperationType op) {
         case OP_EQ: return "==";
         case OP_AND: return "&&";
         case OP_OR: return "||";
-        case OP_NEGATIVE: return "- (unario)";
-        case OP_NEGATION: return "!";
+        case OP_UMINUS: return "- (unario)";
+        case OP_NOT: return "!";
         default: return "?";
     }
 }
@@ -151,8 +151,8 @@ void fprintAST(FILE *out, NodeAST *node, int level) {
             else if (node->symbol->type == TYPE_BOOL) 
                 fprintf(out, "Constante BOOL: %s\n", node->symbol->value.int_val ? "true" : "false");
             break;
-        case BINARYOPERATOR_NODE:
-            fprintf(out, "Operacion Binaria: %s\n", getOpName(node->operationType));
+        case OPERATOR_NODE:
+            fprintf(out, "Operacion: %s\n", getOperationName(node->operationType));
             break;
         case ASSIGNMENT_NODE:
             fprintf(out, "Asignacion a: %s #%d (Tipo %s)\n", node->symbol->id, node->symbol->uid, getDataTypeName(node->type));

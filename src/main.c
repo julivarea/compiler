@@ -7,7 +7,7 @@
 #include "error_handler.h"
 #include "driver.h"
 
-NodeAST *raizAST = NULL;
+NodeAST *astRoot = NULL;
 extern FILE *yyin;
 
 int main(int argc, char **argv) {

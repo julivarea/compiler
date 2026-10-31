@@ -22,7 +22,7 @@
 #define ANSI_RESET    "\033[0m"
 #define MAX_PATH_LENGTH 4096
 
-extern NodeAST *raizAST;
+extern NodeAST *astRoot;
 extern int yyparse(void);
 extern int yylex(void);
 extern char *yytext;
@@ -60,14 +60,14 @@ int compile(const Options *options) {
         case TARGET_CODINTER: {
             if (runParse() != 0) { return 1; }
             if (runSemantic() != 0) { return 1; }
-            const TACList *tacList = generateIntermediateCode(raizAST);
+            const TACList *tacList = generateIntermediateCode(astRoot);
             return runIntermediateCode(options, tacList);
         }
 
         case TARGET_ASSEMBLY: {
             if (runParse() != 0) { return 1; }
             if (runSemantic() != 0) { return 1; }
-            const TACList *tacList = generateIntermediateCode(raizAST);
+            const TACList *tacList = generateIntermediateCode(astRoot);
             return runAssembly(options, tacList);
         }
 
@@ -119,7 +119,7 @@ static int runParse(void) {
 }
 
 static int runSemantic(void) {
-    analyzeSemantics(raizAST, NULL);
+    analyzeSemantics(astRoot, NULL);
 
     if (semantic_errors > 0) {
         fprintf(stderr, "\n" ANSI_BOLD_RED "Compilacion abortada: se encontraron %d errores semanticos." ANSI_RESET "\n", semantic_errors);
@@ -187,11 +187,11 @@ static int writeASTTo(const Options *options) {
         return 1;
     }
 
-    fprintAST(outputFile, raizAST, 0);
+    fprintAST(outputFile, astRoot, 0);
     fclose(outputFile);
 
     if (options->debug) {
-        printAST(raizAST, 0);
+        printAST(astRoot, 0);
     }
     return 0;
 }

@@ -60,12 +60,12 @@ static DataType resolveBinaryOperation(OperationType operator, DataType left, Da
                 return TYPE_BOOL;
             return TYPE_ERROR;
 
-        case OP_NEGATIVE:
+        case OP_UMINUS:
             if (left == TYPE_INT || left == TYPE_FLOAT)
                 return left;
             return TYPE_ERROR;
 
-        case OP_NEGATION:
+        case OP_NOT:
             if (left == TYPE_BOOL)
                 return TYPE_BOOL;
             return TYPE_ERROR;
@@ -164,7 +164,7 @@ DataType analyzeExpression(NodeAST *node, Scope *scope) {
         case METHOD_CALL_NODE:
             return analyzeMethodCall(node, scope, 1); // 1: expresion
 
-        case BINARYOPERATOR_NODE:
+        case OPERATOR_NODE:
             return analyzeBinaryOperator(node, scope);
 
         default:
