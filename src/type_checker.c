@@ -1,34 +1,132 @@
+#include "type_checker.h"
+
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include "type_checker.h"
+
 #include "error_handler.h"
 
-int isAssignable(DataType expected, DataType actual) {
-    if (expected == actual) return 1;
-    if (expected == TYPE_FLOAT && actual == TYPE_INT) return 1;
-    return 0;
-}
-static int isNumeric(DataType type) {
-    return type == TYPE_INT || type == TYPE_FLOAT;
-}
+static DataType analyzeIdentifier(NodeAST *node, Scope *scope);
+static DataType analyzeOperator(NodeAST *node, Scope *scope);
+static DataType resolveOperation(OperationType operator, DataType left, DataType right);
+static DataType resolveNumericOperation(DataType left, DataType right);
+static bool isNumeric(DataType type);
+static bool isBasicType(DataType type);
 
-static int isBasicType(DataType type) {
-    return type == TYPE_INT || type == TYPE_FLOAT || type == TYPE_BOOL;
-}
-
-static DataType resolveNumericOperation(DataType left, DataType right) {
-    if (!isNumeric(left) || !isNumeric(right))
+DataType analyzeExpression(NodeAST *node, Scope *scope) {
+    if (node == NULL) {
         return TYPE_ERROR;
-
-    int coalesceToFloat = (left == TYPE_FLOAT || right == TYPE_FLOAT);
-    
-    if (coalesceToFloat) {
-        return TYPE_FLOAT;
     }
-    return TYPE_INT;
+
+    switch (node->nodeType) {
+        case ID_NODE:
+            return analyzeIdentifier(node, scope);
+
+        case CONSTANT_NODE:
+            node->type = node->symbol->type;
+            return node->type;
+
+        case METHOD_CALL_NODE:
+            return analyzeMethodCall(node, scope, true);
+
+        case OPERATOR_NODE:
+            return analyzeOperator(node, scope);
+
+        default:
+            return TYPE_ERROR;
+    }
 }
 
-static DataType resolveBinaryOperation(OperationType operator, DataType left, DataType right) {
+static DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
+    Symbol *symbol = lookupSymbol(scope, node->symbol->id);
+
+    if (symbol == NULL) {
+        semanticError(node->line, "Variable no declarada: %s", node->symbol->id);
+        node->type = TYPE_ERROR;
+        return TYPE_ERROR;
+    }
+
+    if (symbol->symbolType != VARIABLE_SYMBOL) {
+        semanticError(node->line, "El identificador '%s' no es una variable.", node->symbol->id);
+        node->type = TYPE_ERROR;
+        return TYPE_ERROR;
+    }
+
+    node->symbol = symbol;
+    node->type = symbol->type;
+
+    return symbol->type;
+}
+
+DataType analyzeMethodCall(NodeAST *node, Scope *scope, bool isExpression) {
+    Symbol *method = lookupSymbol(scope, node->symbol->id);
+
+    if (method == NULL) {
+        semanticError(node->line, "Método no declarado: %s", node->symbol->id);
+        return TYPE_ERROR;
+    }
+
+    if (isExpression && method->type == TYPE_VOID) {
+        semanticError(node->line, "El metodo '%s' es void y no puede usarse como expresion.", node->symbol->id);
+        return TYPE_ERROR;
+    }
+    
+    if (method->symbolType != METHOD_SYMBOL) {
+        semanticError(node->line, "El simbolo encontrado pertenece a una variable no a una llamada de un metodo");
+        return TYPE_ERROR;
+    }
+
+    NodeAST *parametersNode = method->parameters;
+    int expectedArgumentCount = parametersNode ? parametersNode->childCount : 0;
+
+    if (node->childCount != expectedArgumentCount) {
+        semanticError(node->line, "Cantidad de argumentos incorrecta. Se esperaban %d pero se pasaron %d.", expectedArgumentCount, node->childCount);
+        return TYPE_ERROR;
+    }
+
+    for (int i = 0; i < node->childCount; i++) {
+        DataType actual = analyzeExpression(node->children[i], scope);
+        DataType expected = parametersNode->children[i]->type;
+
+        // Evita reportar error en cascada si el argumento ya fallo previamente.
+        if (actual == TYPE_ERROR) continue;
+
+        if (!isAssignable(expected, actual)) {
+            semanticError(node->line, "Parámetro incompatible en la posición %d", i + 1);
+        }
+    }
+
+    node->symbol = method;
+    node->type = method->type;
+
+    return method->type;
+}
+
+static DataType analyzeOperator(NodeAST *node, Scope *scope) {
+    DataType leftType = analyzeExpression(GET_LEFT(node), scope);
+    DataType rightType = TYPE_VOID; // default
+    
+    if (GET_RIGHT(node) != NULL) {
+        rightType = analyzeExpression(GET_RIGHT(node), scope);
+    }
+
+    // Evita reportar error en cascada si algun operando ya fallo previamente.
+    if (leftType == TYPE_ERROR || rightType == TYPE_ERROR) {
+        node->type = TYPE_ERROR;
+        return TYPE_ERROR;
+    }
+
+    DataType resultType = resolveOperation(node->operationType, leftType, rightType);
+
+    if (resultType == TYPE_ERROR) {
+        semanticError(node->line, "Tipos incompatibles en la operacion binaria.");
+    }
+
+    node->type = resultType;
+    return resultType;
+}
+
+static DataType resolveOperation(OperationType operator, DataType left, DataType right) {
     switch (operator) {
         case OP_ADD:
         case OP_SUB:
@@ -75,114 +173,27 @@ static DataType resolveBinaryOperation(OperationType operator, DataType left, Da
     }
 }
 
-static DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
-    Symbol *symbol = lookupSymbol(scope, node->symbol->id);
-
-    if (symbol == NULL) {
-        semanticError(node->line, "Variable no declarada: %s", node->symbol->id);
-        node->type = TYPE_ERROR;
+static DataType resolveNumericOperation(DataType left, DataType right) {
+    if (!isNumeric(left) || !isNumeric(right))
         return TYPE_ERROR;
+
+    bool coalesceToFloat = (left == TYPE_FLOAT || right == TYPE_FLOAT);
+    if (coalesceToFloat) {
+        return TYPE_FLOAT;
     }
-
-    if (symbol->symbolType != VARIABLE_SYMBOL) {
-        semanticError(node->line, "El identificador '%s' no es una variable.", node->symbol->id);
-        node->type = TYPE_ERROR;
-        return TYPE_ERROR;
-    }
-
-    node->symbol = symbol;
-    node->type = symbol->type;
-
-    return symbol->type;
+    return TYPE_INT;
 }
 
-DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
-    Symbol *method = lookupSymbol(scope, node->symbol->id);
-
-    if (method == NULL) {
-        semanticError(node->line, "Método no declarado: %s", node->symbol->id);
-        return TYPE_ERROR;
-    }
-
-    if (isExpression && method->type == TYPE_VOID) {
-        semanticError(node->line, "El metodo '%s' es void y no puede usarse como expresion.", node->symbol->id);
-        return TYPE_ERROR;
-    }
-    
-    if(method->symbolType != METHOD_SYMBOL){
-        semanticError(node->line, "El simbolo encontrado pertenece a una variable no a una llamada de un metodo");
-        return TYPE_ERROR;
-    }
-
-    NodeAST *parametersNode = method->parameters;
-    int expectedArgCount = parametersNode ? parametersNode->childCount : 0;
-
-    if (node->childCount != expectedArgCount) {
-        semanticError(node->line, "Cantidad de argumentos incorrecta. Se esperaban %d pero se pasaron %d.", expectedArgCount, node->childCount);
-        return TYPE_ERROR;
-    }
-
-    for (int i = 0; i < node->childCount; i++) {
-        DataType actual = analyzeExpression(node->children[i], scope);
-        DataType expected = parametersNode->children[i]->type;
-
-        // Evita reportar error en cascada si el argumento ya fallo previamente.
-        if (actual == TYPE_ERROR) continue;
-
-        if (!isAssignable(expected, actual)) {
-            semanticError(node->line, "Parámetro incompatible en la posición %d", i + 1);
-        }
-    }
-
-    node->symbol = method;
-    node->type = method->type;
-
-    return method->type;
+bool isAssignable(DataType expected, DataType actual) {
+    if (expected == actual) return true;
+    if (expected == TYPE_FLOAT && actual == TYPE_INT) return true;
+    return false;
 }
 
-static DataType analyzeBinaryOperator(NodeAST *node, Scope *scope) {
-    DataType leftType = analyzeExpression(GET_LEFT(node), scope);
-    DataType rightType = TYPE_VOID; // default
-    
-    if (GET_RIGHT(node) != NULL) {
-        rightType = analyzeExpression(GET_RIGHT(node), scope);
-    }
-
-    // Evita reportar error en cascada si algun operando ya fallo previamente.
-    if (leftType == TYPE_ERROR || rightType == TYPE_ERROR) {
-        node->type = TYPE_ERROR;
-        return TYPE_ERROR;
-    }
-
-    DataType resultType = resolveBinaryOperation(node->operationType, leftType, rightType);
-
-    if (resultType == TYPE_ERROR) {
-        semanticError(node->line, "Tipos incompatibles en la operacion binaria.");
-    }
-
-    node->type = resultType;
-    return resultType;
+static bool isNumeric(DataType type) {
+    return type == TYPE_INT || type == TYPE_FLOAT;
 }
 
-DataType analyzeExpression(NodeAST *node, Scope *scope) {
-    if (node == NULL)
-        return TYPE_ERROR;
-
-    switch (node->nodeType) {
-        case ID_NODE:
-            return analyzeIdentifier(node, scope);
-
-        case CONSTANT_NODE:
-            node->type = node->symbol->type;
-            return node->type;
-
-        case METHOD_CALL_NODE:
-            return analyzeMethodCall(node, scope, 1); // 1: expresion
-
-        case OPERATOR_NODE:
-            return analyzeBinaryOperator(node, scope);
-
-        default:
-            return TYPE_ERROR;
-    }
+static bool isBasicType(DataType type) {
+    return type == TYPE_INT || type == TYPE_FLOAT || type == TYPE_BOOL;
 }

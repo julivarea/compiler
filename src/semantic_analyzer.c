@@ -60,7 +60,7 @@ static void analyzeNodeSemantics(NodeAST *node, Scope *currentScope) {
             break;
 
         case METHOD_CALL_NODE:
-            analyzeMethodCall(node, currentScope, 0); // isExpression = 0 (llamada como sentencia)
+            analyzeMethodCall(node, currentScope, false); // isExpression = false (llamada como sentencia)
             break;
 
         case VARIABLE_DECLARATION_NODE:

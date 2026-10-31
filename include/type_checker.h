@@ -6,6 +6,7 @@
  * @brief Deducción, compatibilidad e inferencia de tipos para expresiones.
  */
 
+#include <stdbool.h>
 #include "types.h"
 #include "ast.h"
 #include "symbol_table.h"
@@ -36,10 +37,10 @@ DataType analyzeExpression(NodeAST *node, Scope *scope);
  *
  * @param node Nodo de llamada a método en el AST (METHOD_CALL_NODE).
  * @param scope Ámbito activo donde se busca la declaración del método.
- * @param isExpression Indicador del contexto de invocación (1 si se usa como expresión, 0 si se invoca como sentencia).
+ * @param isExpression Indicador del contexto de invocación (true si se usa como expresión, false si se invoca como sentencia).
  * @return Tipo de retorno del método analizado, o TYPE_ERROR si la llamada es inválida.
  */
-DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression);
+DataType analyzeMethodCall(NodeAST *node, Scope *scope, bool isExpression);
 
 /**
  * @brief Comprueba si un tipo de dato actual es compatible o asignable a un tipo esperado.
@@ -50,8 +51,8 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression);
  *
  * @param expected Tipo de dato destino o esperado.
  * @param actual Tipo de dato origen o producido por la expresión.
- * @return 1 si el tipo actual puede ser asignado al esperado, o 0 en caso contrario.
+ * @return true si el tipo actual puede ser asignado al esperado, o false en caso contrario.
  */
-int isAssignable(DataType expected, DataType actual);
+bool isAssignable(DataType expected, DataType actual);
 
 #endif // TYPE_CHECKER_H
