@@ -1,12 +1,17 @@
+#include "ast.h"
+
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-#include "ast.h"
+
 #include "symbol_table.h"
 
-extern int yylineno; 
+extern int yylineno;
+
+static void describeNode(FILE *out, const NodeAST *node);
+static const char *getOperationName(OperationType operation);
 
 NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid, NodeAST *right) {
     NodeAST *node = malloc(sizeof(NodeAST));
@@ -44,38 +49,13 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
     return node;
 }
 
-NodeAST *newIntLiteralNode(int value){
-    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_INT, NULL);
-    symbol->value.int_val = value;
-    return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
-}
-
-NodeAST *newFloatLiteralNode(float value){
-    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_FLOAT, NULL);
-    symbol->value.float_val = value;
-    return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
-}
-
-NodeAST *newBoolLiteralNode(int value){
-    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_BOOL, NULL);
-    symbol->value.int_val = value;
-    return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
-}
-
-// Crea un nuevo nodo AST para operaciones binarias o unarias
-NodeAST *newOperatorNode(OperationType operator, NodeAST *left, NodeAST *right){
-    NodeAST *node = newNode(
-        OPERATOR_NODE,
-        NULL,
-        left,
-        right,
-        NULL
-    );
+NodeAST *newOperatorNode(OperationType operator, NodeAST *left, NodeAST *right) {
+    NodeAST *node = newNode(OPERATOR_NODE, NULL, left, right, NULL);
     node->operationType = operator;
     return node;
 }
 
-NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *parameters, NodeAST *body) { 
+NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *parameters, NodeAST *body) {
     NodeAST *node = newNode(
         METHOD_DECLARATION_NODE,
         newSymbol(methodName, METHOD_SYMBOL, returnType, parameters),
@@ -88,11 +68,29 @@ NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *pa
     if (hasParameters) {
         node->line = parameters->line;
     }
-    node->children = malloc(2 * sizeof(NodeAST*));
+    node->children = malloc(2 * sizeof(NodeAST *));
     node->childCount = 2;
     node->children[0] = parameters;
     node->children[1] = body;
     return node;
+}
+
+NodeAST *newIntLiteralNode(int value) {
+    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_INT, NULL);
+    symbol->value.int_val = value;
+    return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
+}
+
+NodeAST *newFloatLiteralNode(float value) {
+    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_FLOAT, NULL);
+    symbol->value.float_val = value;
+    return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
+}
+
+NodeAST *newBoolLiteralNode(int value) {
+    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_BOOL, NULL);
+    symbol->value.int_val = value;
+    return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
 }
 
 void freeAST(NodeAST *node) {
@@ -115,45 +113,26 @@ void freeAST(NodeAST *node) {
     free(node);
 }
 
-const char* getDataTypeName(DataType type) {
-    switch(type) {
-        case TYPE_INT: return "INT";
-        case TYPE_BOOL: return "BOOL";
-        case TYPE_FLOAT: return "FLOAT";
-        case TYPE_VOID: return "VOID";
-        case TYPE_ERROR: return "ERROR";
-        default: return "UNKNOWN";
-    }
-}
-
-static const char* getOperationName(OperationType operation) {
-    switch(operation) {
-        case OP_ADD: return "+";
-        case OP_SUB: return "-";
-        case OP_MUL: return "*";
-        case OP_DIV: return "/";
-        case OP_MOD: return "%";
-        case OP_LT: return "<";
-        case OP_GT: return ">";
-        case OP_EQ: return "==";
-        case OP_AND: return "&&";
-        case OP_OR: return "||";
-        case OP_UMINUS: return "- (unario)";
-        case OP_NOT: return "!";
-        default: return "?";
-    }
-}
-
 void fprintAST(FILE *out, NodeAST *node, int level) {
     if (node == NULL) return;
-    
-    // Imprimir indentación basada en el nivel
+
     for (int i = 0; i < level; i++) {
         fprintf(out, "  | ");
     }
-    
-    // Imprimir información del nodo actual
-    switch(node->nodeType) {
+
+    describeNode(out, node);
+
+    for (int i = 0; i < node->childCount; i++) {
+        fprintAST(out, node->children[i], level + 1);
+    }
+}
+
+void printAST(NodeAST *node, int level) {
+    fprintAST(stdout, node, level);
+}
+
+static void describeNode(FILE *out, const NodeAST *node) {
+    switch (node->nodeType) {
         case METHOD_DECLARATION_NODE:
             fprintf(out, "Metodo: %s (Retorna %s)\n", node->symbol->id, getDataTypeName(node->type));
             break;
@@ -164,11 +143,11 @@ void fprintAST(FILE *out, NodeAST *node, int level) {
             fprintf(out, "ID: %s #%d (Tipo %s)\n", node->symbol->id, node->symbol->uid, getDataTypeName(node->type));
             break;
         case CONSTANT_NODE:
-            if (node->symbol->type == TYPE_INT) 
+            if (node->symbol->type == TYPE_INT)
                 fprintf(out, "Constante INT: %d\n", node->symbol->value.int_val);
-            else if (node->symbol->type == TYPE_FLOAT) 
+            else if (node->symbol->type == TYPE_FLOAT)
                 fprintf(out, "Constante FLOAT: %f\n", node->symbol->value.float_val);
-            else if (node->symbol->type == TYPE_BOOL) 
+            else if (node->symbol->type == TYPE_BOOL)
                 fprintf(out, "Constante BOOL: %s\n", node->symbol->value.int_val ? "true" : "false");
             break;
         case OPERATOR_NODE:
@@ -198,11 +177,33 @@ void fprintAST(FILE *out, NodeAST *node, int level) {
         default:
             fprintf(out, "Nodo Desconocido (Tipo %d)\n", node->nodeType);
     }
-    
-    for (int i = 0; i < node->childCount; i++) {
-        fprintAST(out, node->children[i], level + 1);
+}
+
+const char *getDataTypeName(DataType type) {
+    switch (type) {
+        case TYPE_INT:   return "INT";
+        case TYPE_BOOL:  return "BOOL";
+        case TYPE_FLOAT: return "FLOAT";
+        case TYPE_VOID:  return "VOID";
+        case TYPE_ERROR: return "ERROR";
+        default:         return "UNKNOWN";
     }
 }
-void printAST(NodeAST *node, int level) {
-    fprintAST(stdout, node, level);
+
+static const char *getOperationName(OperationType operation) {
+    switch (operation) {
+        case OP_ADD:    return "+";
+        case OP_SUB:    return "-";
+        case OP_MUL:    return "*";
+        case OP_DIV:    return "/";
+        case OP_MOD:    return "%";
+        case OP_LT:     return "<";
+        case OP_GT:     return ">";
+        case OP_EQ:     return "==";
+        case OP_AND:    return "&&";
+        case OP_OR:     return "||";
+        case OP_UMINUS: return "- (unario)";
+        case OP_NOT:    return "!";
+        default:        return "?";
+    }
 }
