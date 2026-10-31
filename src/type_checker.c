@@ -84,6 +84,12 @@ static DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
         return TYPE_ERROR;
     }
 
+    if (symbol->symbolType != VARIABLE_SYMBOL) {
+        semanticError(node->line, "El identificador '%s' no es una variable.", node->symbol->id);
+        node->type = TYPE_ERROR;
+        return TYPE_ERROR;
+    }
+
     node->symbol = symbol;
     node->type = symbol->type;
 
