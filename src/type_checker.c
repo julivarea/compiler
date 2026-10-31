@@ -126,6 +126,9 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
         DataType actual = analyzeExpression(node->children[i], scope);
         DataType expected = parametersNode->children[i]->type;
 
+        // Evita reportar error en cascada si el argumento ya fallo previamente.
+        if (actual == TYPE_ERROR) continue;
+
         if (!isAssignable(expected, actual)) {
             semanticError(node->line, "Parámetro incompatible en la posición %d", i + 1);
         }
@@ -143,6 +146,12 @@ static DataType analyzeBinaryOperator(NodeAST *node, Scope *scope) {
     
     if (GET_RIGHT(node) != NULL) {
         rightType = analyzeExpression(GET_RIGHT(node), scope);
+    }
+
+    // Evita reportar error en cascada si algun operando ya fallo previamente.
+    if (leftType == TYPE_ERROR || rightType == TYPE_ERROR) {
+        node->type = TYPE_ERROR;
+        return TYPE_ERROR;
     }
 
     DataType resultType = resolveBinaryOperation(node->operationType, leftType, rightType);
