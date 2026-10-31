@@ -76,7 +76,7 @@ static DataType resolveBinaryOperation(OperationType operator, DataType left, Da
 }
 
 static DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
-    Symbol *symbol = lookupVariable(scope, node->symbol->id);
+    Symbol *symbol = lookupSymbol(scope, node->symbol->id);
 
     if (symbol == NULL) {
         semanticError(node->line, "Variable no declarada: %s", node->symbol->id);
@@ -91,7 +91,7 @@ static DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
 }
 
 DataType analyzeMethodCall(NodeAST *node, Scope *scope, int isExpression) {
-    Symbol *method = lookupVariable(scope, node->symbol->id);
+    Symbol *method = lookupSymbol(scope, node->symbol->id);
 
     if (method == NULL) {
         semanticError(node->line, "Método no declarado: %s", node->symbol->id);

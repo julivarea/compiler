@@ -45,18 +45,18 @@ Scope *createScope(int level, Scope *parent, Symbol *function) {
     scope->parent = parent;
     scope->function = function;
 
-    scope->symbol_capacity = 8;
-    scope->symbol_count = 0;
-    scope->symbols = malloc(sizeof(Symbol *) * scope->symbol_capacity);
+    scope->symbolCapacity = 8;
+    scope->symbolCount = 0;
+    scope->symbols = malloc(sizeof(Symbol *) * scope->symbolCapacity);
 
-    scope->children_capacity = 4;
-    scope->children_count = 0;
-    scope->childrens = malloc(sizeof(Scope *) * scope->children_capacity);
+    scope->childrenCapacity = 4;
+    scope->childrenCount = 0;
+    scope->children = malloc(sizeof(Scope *) * scope->childrenCapacity);
 
-    bool internalAllocationFailed = (scope->symbols == NULL || scope->childrens == NULL);
+    bool internalAllocationFailed = (scope->symbols == NULL || scope->children == NULL);
     if (internalAllocationFailed) {
         free(scope->symbols);
-        free(scope->childrens);
+        free(scope->children);
         free(scope);
         return NULL;
     }
@@ -73,9 +73,9 @@ void appendSymbol(Scope *scope, Symbol *symbol) {
         symbol->uid = nextSymbolUid++;
     }
 
-    bool needsExpansion = (scope->symbol_count >= scope->symbol_capacity);
+    bool needsExpansion = (scope->symbolCount >= scope->symbolCapacity);
     if (needsExpansion) {
-        int newCapacity = scope->symbol_capacity * 2;
+        int newCapacity = scope->symbolCapacity * 2;
         Symbol **newSymbols = realloc(scope->symbols, sizeof(Symbol *) * newCapacity);
         bool allocationFailed = (newSymbols == NULL);
         if (allocationFailed) {
@@ -83,54 +83,54 @@ void appendSymbol(Scope *scope, Symbol *symbol) {
         }
 
         scope->symbols = newSymbols;
-        scope->symbol_capacity = newCapacity;
+        scope->symbolCapacity = newCapacity;
     }
 
-    scope->symbols[scope->symbol_count++] = symbol;
+    scope->symbols[scope->symbolCount++] = symbol;
 }
 
 void appendChildScope(Scope *parent, Scope *child) {
     bool isInvalidInput = (parent == NULL || child == NULL);
     if (isInvalidInput) return;
 
-    bool needsExpansion = (parent->children_count >= parent->children_capacity);
+    bool needsExpansion = (parent->childrenCount >= parent->childrenCapacity);
     if (needsExpansion) {
-        int newCapacity = parent->children_capacity * 2;
-        Scope **newChildren = realloc(parent->childrens, sizeof(Scope *) * newCapacity);
+        int newCapacity = parent->childrenCapacity * 2;
+        Scope **newChildren = realloc(parent->children, sizeof(Scope *) * newCapacity);
         bool allocationFailed = (newChildren == NULL);
         if (allocationFailed) {
             return;
         }
 
-        parent->childrens = newChildren;
-        parent->children_capacity = newCapacity;
+        parent->children = newChildren;
+        parent->childrenCapacity = newCapacity;
     }
 
-    parent->childrens[parent->children_count++] = child;
+    parent->children[parent->childrenCount++] = child;
 }
 
-Symbol *lookupVariable(Scope *scope, const char *id) {
+Symbol *lookupSymbol(Scope *scope, const char *id) {
     bool isInvalidInput = (scope == NULL || id == NULL);
     if (isInvalidInput) {
         return NULL;
     }
 
-    Symbol *symbol = lookupVariableCurrentScope(scope, id);
+    Symbol *symbol = lookupSymbolInScope(scope, id);
     bool isFoundInCurrentScope = (symbol != NULL);
     if (isFoundInCurrentScope) {
         return symbol;
     }
 
-    return lookupVariable(scope->parent, id);
+    return lookupSymbol(scope->parent, id);
 }
 
-Symbol *lookupVariableCurrentScope(Scope *scope, const char *id) {
+Symbol *lookupSymbolInScope(Scope *scope, const char *id) {
     bool isInvalidInput = (scope == NULL || id == NULL);
     if (isInvalidInput) {
         return NULL;
     }
 
-    for (int i = 0; i < scope->symbol_count; i++) {
+    for (int i = 0; i < scope->symbolCount; i++) {
         Symbol *currentSymbol = scope->symbols[i];
         bool matchesId = (currentSymbol->id != NULL && strcmp(currentSymbol->id, id) == 0);
         if (matchesId) {

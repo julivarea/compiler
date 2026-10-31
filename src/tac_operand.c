@@ -61,14 +61,14 @@ TACOperand tacConstantInt(int value) {
     char str[TAC_NAME_LENGTH];
     snprintf(str, sizeof(str), "%d", value);
     TACOperand operand = makeOperand(OPERAND_CONSTANT, TYPE_INT, str);
-    operand.value.int_val = value;
+    operand.value.intValue = value;
 
     return operand;
 }
 
 TACOperand tacConstantBool(int value) {
     TACOperand operand = makeOperand(OPERAND_CONSTANT, TYPE_BOOL, value ? "true" : "false");
-    operand.value.int_val = value;
+    operand.value.intValue = value;
 
     return operand;
 }
@@ -77,7 +77,7 @@ TACOperand tacConstantFloat(float value) {
     char str[TAC_NAME_LENGTH];
     snprintf(str, sizeof(str), "%f", value);
     TACOperand operand = makeOperand(OPERAND_CONSTANT, TYPE_FLOAT, str);
-    operand.value.float_val = value;
+    operand.value.floatValue = value;
 
     return operand;
 }

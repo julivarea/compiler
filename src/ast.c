@@ -77,19 +77,19 @@ NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *pa
 
 NodeAST *newIntLiteralNode(int value) {
     Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_INT, NULL);
-    symbol->value.int_val = value;
+    symbol->value.intValue = value;
     return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
 }
 
 NodeAST *newFloatLiteralNode(float value) {
     Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_FLOAT, NULL);
-    symbol->value.float_val = value;
+    symbol->value.floatValue = value;
     return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
 }
 
 NodeAST *newBoolLiteralNode(int value) {
     Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_BOOL, NULL);
-    symbol->value.int_val = value;
+    symbol->value.intValue = value;
     return newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
 }
 
@@ -144,11 +144,11 @@ static void describeNode(FILE *out, const NodeAST *node) {
             break;
         case CONSTANT_NODE:
             if (node->symbol->type == TYPE_INT)
-                fprintf(out, "Constante INT: %d\n", node->symbol->value.int_val);
+                fprintf(out, "Constante INT: %d\n", node->symbol->value.intValue);
             else if (node->symbol->type == TYPE_FLOAT)
-                fprintf(out, "Constante FLOAT: %f\n", node->symbol->value.float_val);
+                fprintf(out, "Constante FLOAT: %f\n", node->symbol->value.floatValue);
             else if (node->symbol->type == TYPE_BOOL)
-                fprintf(out, "Constante BOOL: %s\n", node->symbol->value.int_val ? "true" : "false");
+                fprintf(out, "Constante BOOL: %s\n", node->symbol->value.intValue ? "true" : "false");
             break;
         case OPERATOR_NODE:
             fprintf(out, "Operacion: %s\n", getOperationName(node->operationType));

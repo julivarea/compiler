@@ -85,7 +85,7 @@ NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second) {
 }
 
 NodeAST *newParameterDeclaration(DataType type, char *id) {
-    NodeAST *declaration = newNode(VARIABLE_DECLARATION_NODE, newSymbol(id, ID_SYMBOL, type, NULL), NULL, NULL, NULL);
+    NodeAST *declaration = newNode(VARIABLE_DECLARATION_NODE, newSymbol(id, VARIABLE_SYMBOL, type, NULL), NULL, NULL, NULL);
     if (declaration != NULL) {
         declaration->type = type;
     }

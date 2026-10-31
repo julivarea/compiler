@@ -92,7 +92,7 @@ static void analyzeNodeSemantics(NodeAST *node, Scope *currentScope) {
 }
 
 static void analyzeMethodNode(NodeAST *node, Scope *currentScope) {
-    bool isAlreadyDeclared = (lookupVariableCurrentScope(currentScope, node->symbol->id) != NULL);
+    bool isAlreadyDeclared = (lookupSymbolInScope(currentScope, node->symbol->id) != NULL);
     if (isAlreadyDeclared) {
         semanticError(node->line, "El metodo '%s' ya fue declarado previamente en este ambito.", node->symbol->id);
         return;
@@ -134,7 +134,7 @@ static void analyzeMethodNode(NodeAST *node, Scope *currentScope) {
 }
 
 static void analyzeVariableDeclarationNode(NodeAST *node, Scope *currentScope) {
-    bool isAlreadyDeclared = (lookupVariableCurrentScope(currentScope, node->symbol->id) != NULL);
+    bool isAlreadyDeclared = (lookupSymbolInScope(currentScope, node->symbol->id) != NULL);
     if (isAlreadyDeclared) {
         semanticError(node->line, "La variable '%s' ya fue declarada previamente en este ambito.", node->symbol->id);
         return;
@@ -146,14 +146,14 @@ static void analyzeVariableDeclarationNode(NodeAST *node, Scope *currentScope) {
 static void analyzeAssignmentNode(NodeAST *node, Scope *currentScope) {
     node->type = TYPE_ERROR;
 
-    Symbol *resolvedSymbol = lookupVariable(currentScope, node->symbol->id);
+    Symbol *resolvedSymbol = lookupSymbol(currentScope, node->symbol->id);
     bool isVariableDeclared = (resolvedSymbol != NULL);
     if (!isVariableDeclared) {
         semanticError(node->line, "Asignacion a variable no declarada '%s'.", node->symbol->id);
         return;
     }
 
-    bool isVariable = (resolvedSymbol->symbolType == ID_SYMBOL);
+    bool isVariable = (resolvedSymbol->symbolType == VARIABLE_SYMBOL);
     if (!isVariable) {
         semanticError(node->line, "Ese nombre de simbolo corresponde al metodo '%s'.", node->symbol->id);
         return;
@@ -273,7 +273,7 @@ static bool guaranteesReturn(NodeAST *node) {
 }
 
 static void checkMainMethodExists(Scope *globalScope) {
-    Symbol *mainSymbol = lookupVariableCurrentScope(globalScope, "main");
+    Symbol *mainSymbol = lookupSymbolInScope(globalScope, "main");
 
     bool hasMainMethod = (mainSymbol != NULL);
     if (!hasMainMethod) {

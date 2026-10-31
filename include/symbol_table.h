@@ -14,7 +14,7 @@ struct NodeAST;
  * @brief Categorías de símbolos gestionados por el compilador.
  */
 typedef enum SymbolType {
-    ID_SYMBOL,          /**< Identificador de variable o parámetro. */
+    VARIABLE_SYMBOL,    /**< Identificador de variable o parámetro. */
     METHOD_SYMBOL,      /**< Identificador de método o función. */
     CONSTANT_SYMBOL     /**< Literal o valor constante primitivo. */
 } SymbolType;
@@ -29,8 +29,8 @@ typedef struct Symbol {
     SymbolType symbolType;      /**< Categoría sintáctico-semántica del símbolo. */
     struct NodeAST *parameters; /**< Lista de parámetros formales (solo si symbolType es METHOD_SYMBOL). */
     union {
-        int int_val;            /**< Valor numérico para constantes de tipo entero o booleano. */
-        float float_val;        /**< Valor numérico para constantes de punto flotante. */
+        int intValue;           /**< Valor numérico para constantes de tipo entero o booleano. */
+        float floatValue;       /**< Valor numérico para constantes de punto flotante. */
     } value;
 } Symbol;
 
@@ -64,13 +64,13 @@ void freeSymbol(Symbol *symbol);
 typedef struct Scope {
     int level;                  /**< Nivel de anidamiento léxico (0 para el ámbito global). */
     Symbol **symbols;           /**< Arreglo dinámico de símbolos declarados en este ámbito. */
-    int symbol_count;           /**< Cantidad actual de símbolos registrados en el ámbito. */
-    int symbol_capacity;        /**< Capacidad total del arreglo de símbolos antes de requerir realocación. */
+    int symbolCount;            /**< Cantidad actual de símbolos registrados en el ámbito. */
+    int symbolCapacity;         /**< Capacidad total del arreglo de símbolos antes de requerir realocación. */
     Symbol *function;           /**< Símbolo del método contenedor asociado a este ámbito (NULL si es global). */
     struct Scope *parent;       /**< Ámbito léxico padre inmediato (NULL para el ámbito raíz global). */
-    struct Scope **childrens;   /**< Arreglo dinámico de sub-ámbitos léxicos anidados. */
-    int children_count;         /**< Cantidad de sub-ámbitos anidados registrados. */
-    int children_capacity;      /**< Capacidad total del arreglo de sub-ámbitos. */
+    struct Scope **children;    /**< Arreglo dinámico de sub-ámbitos léxicos anidados. */
+    int childrenCount;          /**< Cantidad de sub-ámbitos anidados registrados. */
+    int childrenCapacity;       /**< Capacidad total del arreglo de sub-ámbitos. */
 } Scope;
 
 /**
@@ -118,7 +118,7 @@ void appendChildScope(Scope *parent, Scope *child);
  * @param id Nombre textual del símbolo que se desea localizar (no debe ser NULL).
  * @return Puntero al símbolo hallado en la jerarquía, o NULL si no está declarado.
  */
-Symbol *lookupVariable(Scope *scope, const char *id);
+Symbol *lookupSymbol(Scope *scope, const char *id);
 
 /**
  * @brief Busca un identificador exclusivamente en el ámbito léxico actual.
@@ -130,6 +130,6 @@ Symbol *lookupVariable(Scope *scope, const char *id);
  * @param id Nombre textual del símbolo a verificar (no debe ser NULL).
  * @return Puntero al símbolo si ya existe localmente, o NULL en caso contrario.
  */
-Symbol *lookupVariableCurrentScope(Scope *scope, const char *id);
+Symbol *lookupSymbolInScope(Scope *scope, const char *id);
 
 #endif // SYMBOL_TABLE_H

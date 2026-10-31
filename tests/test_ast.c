@@ -77,9 +77,9 @@ static void renderExpression(const NodeAST *node, char *out, size_t size) {
             append(out, size, "%s", node->symbol->id);
             return;
         case CONSTANT_NODE:
-            if (node->symbol->type == TYPE_INT)        append(out, size, "%d", node->symbol->value.int_val);
-            else if (node->symbol->type == TYPE_FLOAT) append(out, size, "%g", node->symbol->value.float_val);
-            else                                       append(out, size, "%s", node->symbol->value.int_val ? "true" : "false");
+            if (node->symbol->type == TYPE_INT)        append(out, size, "%d", node->symbol->value.intValue);
+            else if (node->symbol->type == TYPE_FLOAT) append(out, size, "%g", node->symbol->value.floatValue);
+            else                                       append(out, size, "%s", node->symbol->value.intValue ? "true" : "false");
             return;
         case OPERATOR_NODE:
             append(out, size, "(%s", operatorSymbol(node->operationType));
@@ -215,19 +215,19 @@ void test_constant_nodes_have_type_and_value(void) {
     NodeAST *integer = body->children[0]->children[0];
     TEST_ASSERT_EQUAL_INT(CONSTANT_NODE, integer->nodeType);
     TEST_ASSERT_EQUAL_INT(TYPE_INT, integer->symbol->type);
-    TEST_ASSERT_EQUAL_INT(7, integer->symbol->value.int_val);
+    TEST_ASSERT_EQUAL_INT(7, integer->symbol->value.intValue);
 
     NodeAST *real = body->children[1]->children[0];
     TEST_ASSERT_EQUAL_INT(TYPE_FLOAT, real->symbol->type);
-    TEST_ASSERT_EQUAL_FLOAT(2.5f, real->symbol->value.float_val);
+    TEST_ASSERT_EQUAL_FLOAT(2.5f, real->symbol->value.floatValue);
 
     NodeAST *yes = body->children[2]->children[0];
     TEST_ASSERT_EQUAL_INT(TYPE_BOOL, yes->symbol->type);
-    TEST_ASSERT_EQUAL_INT(1, yes->symbol->value.int_val);
+    TEST_ASSERT_EQUAL_INT(1, yes->symbol->value.intValue);
 
     NodeAST *no = body->children[3]->children[0];
     TEST_ASSERT_EQUAL_INT(TYPE_BOOL, no->symbol->type);
-    TEST_ASSERT_EQUAL_INT(0, no->symbol->value.int_val);
+    TEST_ASSERT_EQUAL_INT(0, no->symbol->value.intValue);
 }
 
 /* ------------------------------------------------------------------------

@@ -132,7 +132,7 @@ void generateAssembly(const TACList *tacList) {
                         frame->maxPendingParams = pendingCount;
                     }
                 } else if (scan->operation == TAC_CALL) {
-                    int arity = (scan->secondOperand.kind == OPERAND_CONSTANT) ? scan->secondOperand.value.int_val : 0;
+                    int arity = (scan->secondOperand.kind == OPERAND_CONSTANT) ? scan->secondOperand.value.intValue : 0;
                     pendingCount -= arity;
                     if (pendingCount < 0) {
                         pendingCount = 0;
@@ -188,7 +188,7 @@ static void emitFloatConstantPool(const TACList *tacList) {
         for (int i = 0; i < 3; i++) {
             bool isFloatConstant = (operands[i]->kind == OPERAND_CONSTANT && operands[i]->type == TYPE_FLOAT);
             if (isFloatConstant) {
-                internFloatConstant(operands[i]->value.float_val);
+                internFloatConstant(operands[i]->value.floatValue);
             }
         }
     }
@@ -501,7 +501,7 @@ static void emitParam(const TACInstruction *instruction, FunctionFrame *frame) {
 
 /* Consume los argumentos según System V AMD64 y emite la llamada. */
 static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
-    int argumentCount = (instruction->secondOperand.kind == OPERAND_CONSTANT) ? instruction->secondOperand.value.int_val : 0;
+    int argumentCount = (instruction->secondOperand.kind == OPERAND_CONSTANT) ? instruction->secondOperand.value.intValue : 0;
     bool exceedsPending = (argumentCount > frame->pendingParamCount);
     if (exceedsPending) {
         argumentCount = frame->pendingParamCount;
@@ -637,7 +637,7 @@ static void loadOperand(const TACOperand *operand, const char *registerName, con
 
     bool isImmediate = (operand->kind == OPERAND_CONSTANT);
     if (isImmediate) {
-        AsmInstruction immediate = asmLoad(opRegStr(registerName), opImm(operand->value.int_val));
+        AsmInstruction immediate = asmLoad(opRegStr(registerName), opImm(operand->value.intValue));
         emitAsm(&immediate);
         return;
     }
@@ -670,7 +670,7 @@ static void loadFloatOperand(const TACOperand *operand, const char *xmmRegister,
 
     bool isImmediate = (operand->kind == OPERAND_CONSTANT);
     if (isImmediate) {
-        buildStringf("    movss %s(%%rip), %s\n", internFloatConstant(operand->value.float_val), xmmRegister);
+        buildStringf("    movss %s(%%rip), %s\n", internFloatConstant(operand->value.floatValue), xmmRegister);
         return;
     }
 

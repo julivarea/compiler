@@ -44,8 +44,8 @@ typedef struct TACOperand {
     char name[TAC_NAME_LENGTH];    /**< Nombre del temporal, variable, etiqueta o método. */
     Symbol *symbol;                /**< Puntero al símbolo asociado (solo en OPERAND_VARIABLE). */
     union {
-        int int_val;               /**< Valor numérico para enteros y booleanos. */
-        float float_val;           /**< Valor numérico para literales reales. */
+        int intValue;              /**< Valor numérico para enteros y booleanos. */
+        float floatValue;          /**< Valor numérico para literales reales. */
     } value;                       /**< Contenedor de valor inmediato (solo en OPERAND_CONSTANT). */
 } TACOperand;
 
@@ -85,7 +85,7 @@ TACOperand tacVariable(Symbol *symbol);
 /**
  * @brief Crea un operando para un literal constante entero.
  *
- * Almacena el valor entero en el campo @p int_val y formatea su representación textual.
+ * Almacena el valor entero en el campo @p intValue y formatea su representación textual.
  *
  * @param value Valor numérico entero.
  * @return Operando TAC de tipo constante entera.
@@ -105,7 +105,7 @@ TACOperand tacConstantBool(int value);
 /**
  * @brief Crea un operando para un literal constante de punto flotante.
  *
- * Almacena el valor real en el campo @p float_val y genera su representación textual.
+ * Almacena el valor real en el campo @p floatValue y genera su representación textual.
  *
  * @param value Valor de punto flotante.
  * @return Operando TAC de tipo constante real.

@@ -83,8 +83,8 @@ Type
     ;
 
 IdentifierList
-    : ID                                        { $$ = appendNode(NULL, newNode(ID_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); }
-    | IdentifierList ',' ID                     { $$ = appendNode($1, newNode(ID_NODE, newSymbol($3, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); }
+    : ID                                        { $$ = appendNode(NULL, newNode(ID_NODE, newSymbol($1, VARIABLE_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); }
+    | IdentifierList ',' ID                     { $$ = appendNode($1, newNode(ID_NODE, newSymbol($3, VARIABLE_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); }
     ;
 
 MethodDeclaration
@@ -125,7 +125,7 @@ Statements
     ;
 
 Statement
-    : ID '=' Expression ';'                     { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), $3, NULL, NULL); }
+    : ID '=' Expression ';'                     { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, VARIABLE_SYMBOL, TYPE_VOID, NULL), $3, NULL, NULL); }
     | MethodCall ';'                            { $$ = $1; }
     | RETURN Expression ';'                     { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); }
     | RETURN ';'                                { $$ = newNode(RETURN_NODE, NULL, NULL, NULL, NULL); }
@@ -151,7 +151,7 @@ ArgumentList
     ;
 
 Expression
-    : ID                                        { $$ = newNode(ID_NODE, newSymbol($1, ID_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL); }
+    : ID                                        { $$ = newNode(ID_NODE, newSymbol($1, VARIABLE_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL); }
     | MethodCall                                { $$ = $1; }
     | FLOAT_CONST                               { $$ = newFloatLiteralNode($1); }
     | BOOL_CONST                                { $$ = newBoolLiteralNode($1); }

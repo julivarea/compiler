@@ -305,11 +305,11 @@ static TACOperand generateConstantOperand(NodeAST *node) {
 
     switch (node->symbol->type) {
         case TYPE_INT:
-            return tacConstantInt(node->symbol->value.int_val);
+            return tacConstantInt(node->symbol->value.intValue);
         case TYPE_BOOL:
-            return tacConstantBool(node->symbol->value.int_val);
+            return tacConstantBool(node->symbol->value.intValue);
         case TYPE_FLOAT:
-            return tacConstantFloat(node->symbol->value.float_val);
+            return tacConstantFloat(node->symbol->value.floatValue);
         default:
             return tacNone();
     }
