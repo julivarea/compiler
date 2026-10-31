@@ -242,7 +242,7 @@ static void analyzeWhileNode(NodeAST *node, Scope *currentScope) {
         semanticError(node->line, "La condicion del while debe ser de tipo BOOL, pero es %s.", getDataTypeName(conditionType));
     }
 
-    NodeAST *body = GET_IF_BLOCK(node);
+    NodeAST *body = GET_WHILE_BLOCK(node);
     analyzeNodeSemantics(body, currentScope);
 }
 
