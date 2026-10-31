@@ -29,6 +29,8 @@ step "compilacion de tests del AST" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_ast.c src/ast.c src/parser_helpers.c src/symbol_table.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_ast_tests
 step "compilacion de tests de la tabla de simbolos" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -I./tests/unity tests/unity/unity.c tests/test_symbol_table.c src/symbol_table.c -o build/run_symbol_table_tests
+step "compilacion de tests del analisis semantico" \
+    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_semantic.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_semantic_tests
 
 # Convierte la salida de Unity a una linea por test y descarta los mensajes
 # de error que imprime el propio compilador ("Error <etapa> en la linea N: ...")
@@ -60,9 +62,11 @@ run "AST" ./build/run_ast_tests
 AST_EXIT=$?
 run "SYMBOL TABLE" ./build/run_symbol_table_tests
 SYMBOL_TABLE_EXIT=$?
+run "SEMANTIC" ./build/run_semantic_tests
+SEMANTIC_EXIT=$?
 
 echo ""
-if [ $LEXER_EXIT -eq 0 ] && [ $PARSER_EXIT -eq 0 ] && [ $AST_EXIT -eq 0 ] && [ $SYMBOL_TABLE_EXIT -eq 0 ]; then
+if [ $LEXER_EXIT -eq 0 ] && [ $PARSER_EXIT -eq 0 ] && [ $AST_EXIT -eq 0 ] && [ $SYMBOL_TABLE_EXIT -eq 0 ] && [ $SEMANTIC_EXIT -eq 0 ]; then
     echo "✅ TODOS LOS TESTS PASARON"
 else
     echo "❌ ALGUNOS TESTS FALLARON"
