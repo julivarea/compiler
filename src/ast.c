@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,11 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
     node->symbol = symbol;
     node->type = TYPE_VOID;
     node->line = yylineno;
+
+    bool hasConditionLine = ((nodeType == WHILE_NODE || nodeType == IF_ELSE_NODE) && left != NULL);
+    if (hasConditionLine) {
+        node->line = left->line;
+    }
 
     int count = 0;
     NodeAST *temp[3];
@@ -78,6 +84,10 @@ NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *pa
         NULL
     );
     node->type = returnType;
+    bool hasParameters = (parameters != NULL);
+    if (hasParameters) {
+        node->line = parameters->line;
+    }
     node->children = malloc(2 * sizeof(NodeAST*));
     node->childCount = 2;
     node->children[0] = parameters;

@@ -105,6 +105,14 @@ NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second) {
     return first;
 }
 
+NodeAST *newParameterDeclaration(DataType type, char *id) {
+    NodeAST *declaration = newNode(VARIABLE_DECLARATION_NODE, newSymbol(id, ID_SYMBOL, type, NULL), NULL, NULL, NULL);
+    if (declaration != NULL) {
+        declaration->type = type;
+    }
+    return declaration;
+}
+
 NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers) {
     if (identifiers == NULL) return NULL;
 

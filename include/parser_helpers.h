@@ -39,6 +39,11 @@ void resolveNodeArray(NodeAST *parent, NodeArray *array);
 NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second);
 
 /**
+ * @brief Crea un nodo de declaración de parámetro formal para un método.
+ */
+NodeAST *newParameterDeclaration(DataType type, char *id);
+
+/**
  * @brief Descompone declaraciones múltiples de variables en declaraciones unitarias.
  */
 NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers);

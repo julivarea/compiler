@@ -77,11 +77,9 @@ extern NodeAST *raizAST;
     MethodDeclaration
     : Type ID '(' ParameterList ')' Block { 
         $$ = newMethodDeclaration($1, $2, $4, $6); 
-        if ($4 != NULL) $$->line = $4->line;
     }
     | VOID ID '(' ParameterList ')' Block { 
         $$ = newMethodDeclaration(TYPE_VOID, $2, $4, $6); 
-        if ($4 != NULL) $$->line = $4->line;
     }
     ;
 
@@ -98,14 +96,10 @@ extern NodeAST *raizAST;
 
     Parameters
     : Type ID {
-        NodeAST *decl = newNode(VARIABLE_DECLARATION_NODE, newSymbol($2, ID_SYMBOL, $1, NULL), NULL, NULL, NULL);
-        decl->type = $1;
-        $$ = appendNode(NULL, decl); 
+        $$ = appendNode(NULL, newParameterDeclaration($1, $2)); 
     }
     | Parameters ',' Type ID {
-        NodeAST *decl = newNode(VARIABLE_DECLARATION_NODE, newSymbol($4, ID_SYMBOL, $3, NULL), NULL, NULL, NULL);
-        decl->type = $3;
-        $$ = appendNode($1, decl);
+        $$ = appendNode($1, newParameterDeclaration($3, $4));
     }
     ;
     
@@ -135,18 +129,9 @@ extern NodeAST *raizAST;
     | RETURN Expression ';' { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); }
     | RETURN ';' { $$ = newNode(RETURN_NODE, NULL, NULL, NULL, NULL); }
     | Block { $$ = $1; }
-    | WHILE '(' Expression ')' Block {
-        $$ = newNode(WHILE_NODE, NULL, $3, NULL, $5);
-        if ($3 != NULL) $$->line = $3->line;
-    }
-    | IF '(' Expression ')' Block {
-        $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, NULL);
-        if ($3 != NULL) $$->line = $3->line;
-    }
-    | IF '(' Expression ')' Block ELSE Block {
-        $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, $7);
-        if ($3 != NULL) $$->line = $3->line;
-    }
+    | WHILE '(' Expression ')' Block         { $$ = newNode(WHILE_NODE, NULL, $3, NULL, $5); }
+    | IF '(' Expression ')' Block            { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, NULL); }
+    | IF '(' Expression ')' Block ELSE Block { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, $7); }
     | ';' { $$ = NULL; }
     ;
 
