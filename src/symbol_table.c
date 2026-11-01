@@ -140,3 +140,7 @@ Symbol *lookupSymbolInScope(Scope *scope, const char *id) {
 
     return NULL;
 }
+
+void resetSymbolUids(void) {
+    nextSymbolUid = 1;
+}

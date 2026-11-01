@@ -132,4 +132,12 @@ Symbol *lookupSymbol(Scope *scope, const char *id);
  */
 Symbol *lookupSymbolInScope(Scope *scope, const char *id);
 
+/**
+ * @brief Reinicia el contador de uids únicos de símbolos.
+ *
+ * Restablece la secuencia de uids comenzando en 1. Utilizado principalmente
+ * en las suites de prueba para garantizar determinismo entre ejecuciones consecutivas.
+ */
+void resetSymbolUids(void);
+
 #endif // SYMBOL_TABLE_H
