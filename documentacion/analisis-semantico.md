@@ -6,11 +6,19 @@ El análisis semántico recorre el Árbol de Sintaxis Abstracta (AST) tras un pa
 
 ## 1. Gestión de Ámbitos y Declaraciones (Scopes)
 
+La resolución léxica se apoya en un árbol de ámbitos (`Scope`) donde cada bloque y función posee su propio entorno:
 
-- **Declaración antes del uso:** Cualquier variable o método debe haber sido declarado antes de ser referenciado en una expresión, asignación o llamada.
-- **Sin duplicados en el mismo ámbito:** No se permite declarar dos identificadores con el mismo nombre dentro del mismo nivel de `Scope` (variables locales en el mismo bloque o funciones en el scope global).
-- **Sombreado permitido (*Shadowing*):** Un bloque interno o método puede declarar una variable con el mismo nombre que otra en un ámbito padre, ocultando la visibilidad del padre dentro del bloque local.
-- **Asignación de identificador único (`UID`):** Al insertarse un símbolo en su `Scope`, se le asigna un `uid` autoincremental que persiste en el AST. Esto permite distinguir de forma inmediata variables homónimas en distintos niveles.
+- **Búsqueda Jerárquica (`lookupSymbol`):**
+  - Al evaluar el uso de una variable en expresiones (`ID_NODE`), sentencias de asignación (`ASSIGNMENT_NODE`) o llamadas (`METHOD_CALL_NODE`), la búsqueda inicia en el `Scope` actual mediante `lookupSymbolInScope`.
+  - Si el identificador no se encuentra localmente, asciende recursivamente a través del puntero `scope->parent` hasta alcanzar el ámbito global (`level = 0`).
+  - Al hallarlo, el nodo del AST actualiza su puntero `node->symbol` hacia el `Symbol` resuelto, asociando su `uid` y tipo.
+- **Búsqueda Local y Validación de Duplicados (`lookupSymbolInScope`):**
+  - Al declarar una variable o método, se utiliza exclusivamente `lookupSymbolInScope` para verificar colisiones en el nivel actual sin consultar a los padres.
+  - No se permite declarar dos identificadores con el mismo nombre dentro del mismo nivel de `Scope`.
+- **Sombreado Léxico (*Shadowing*):**
+  - Un ámbito anidado puede declarar una variable con el mismo nombre que otra en un ámbito ancestro. Como `lookupSymbol` consulta primero el ámbito local, la variable interna oculta a la externa dentro de su bloque.
+- **Asignación de Identificador Único (`UID`):**
+  - Al insertarse un símbolo en su `Scope` con `appendSymbol()`, se le asigna un `uid` secuencial único ($\ge 1$). Los identificadores no declarados mantienen `uid = 0`. Esto garantiza la distinción inequívoca de variables homónimas en las etapas de código intermedio (TAC) y código objeto.
 
 ---
 
@@ -51,6 +59,7 @@ El chequeo de tipos se implementa en `src/type_checker.c`:
   - Una sentencia `return` fuera del cuerpo de cualquier función genera un error semántico.
   - En funciones `void`, un `return` no debe contener ninguna expresión (`return;`).
   - En funciones con tipo de retorno (`int`, `float`, `boolean`), el `return` debe contener una expresión cuyo tipo sea compatible con el declarado en la firma del método.
+  - **Garantía de Retorno:** Todo método no-void debe asegurar mediante `guaranteesReturn` que todos sus caminos de ejecución terminen en un `return`.
 
 ---
 
@@ -60,9 +69,17 @@ El chequeo de tipos se implementa en `src/type_checker.c`:
 
 ---
 
-## 6. Manejo de Errores
+## 6. Manejo de Errores y Casos Anómalos
 
-A diferencia del análisis sintáctico que interrumpe la ejecución en el primer fallo:
-- El análisis semántico **no corta en el primer error**.
-- Recorre todo el árbol reportando cada inconsistencia con su respectivo número de línea.
-- Si se acumula al menos un error (`semantic_errors > 0`), la compilación se aborta con código de salida `1` impidiendo la generación de código intermedio.
+El compilador aplica un modelo de diagnóstico acumulativo y robusto:
+
+### Casos Anómalos de Resolución de Variables ("Casos Malos")
+1. **Variable no declarada en expresión:** Si `lookupSymbol` retorna `NULL` al evaluar un identificador (`ID_NODE`), se reporta error (`"Variable no declarada: <id>"`) y se asigna el tipo `TYPE_ERROR` al nodo. Los operadores que reciben este tipo propagan el error sin generar reportes falsos redundantes.
+2. **Asignación a variable no declarada:** Si en `ASSIGNMENT_NODE` el identificador no existe en ningún scope ancestro, se reporta `"Asignacion a variable no declarada '<id>'"`.
+3. **Colisión de categoría de símbolo:** Si el identificador existe pero corresponde a un método y se intenta utilizar como variable, o viceversa, se reporta la discrepancia categórica (`VARIABLE_SYMBOL` vs `METHOD_SYMBOL`).
+4. **Redeclaración en el mismo ámbito:** Si `lookupSymbolInScope` encuentra que el símbolo ya existía en el nivel actual, se emite `"La variable '<id>' ya fue declarada previamente en este ambito"` y se descarta la inserción duplicada.
+5. **Punteros nulos:** Las funciones de búsqueda manejan entradas `NULL` (`scope == NULL` o `id == NULL`) retornando `NULL` de forma segura.
+
+### Política de Terminación del Compilador
+- A diferencia del análisis sintáctico que interrumpe la ejecución en el primer fallo, el análisis semántico **no corta en el primer error**, sino que recorre todo el AST acumulando los diagnósticos con su número de línea.
+- Si se registra al menos un error (`semantic_errors > 0`), el módulo `driver.c` emite el mensaje `"Compilacion abortada: se encontraron X errores semanticos."` y aborta la compilación con código de salida `1`, impidiendo la generación de código intermedio (TAC) y código ensamblador.

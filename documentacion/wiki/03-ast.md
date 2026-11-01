@@ -72,7 +72,7 @@ El compilador estructura el árbol mediante 12 tipos de nodos activos en el enum
 - **Propósito:** Representa la referencia o uso de una variable dentro de una expresión o asignación (ej: `x + 1`).
 - **Aridad:** Sin hijos (`childCount = 0`).
 - **Carga:** Su campo `symbol` almacena el nombre del identificador a buscar.
-- **Acción Semántica:** El analizador semántico busca el símbolo mediante `lookupVariable`, resolviendo su tipo y asegurando que haya sido declarado previamente en el ámbito actual o en algún ámbito ancestro.
+- **Acción Semántica:** El analizador semántico busca el símbolo mediante `lookupSymbol`, resolviendo su tipo y asegurando que haya sido declarado previamente en el ámbito actual o en algún ámbito ancestro.
 
 #### `CONSTANT_NODE`
 - **Propósito:** Representa literales numéricos o booleanos (ej: `42`, `3.14`, `true`, `false`).
