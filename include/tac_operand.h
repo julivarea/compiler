@@ -15,7 +15,7 @@
  * Las variables llevan el sufijo "@<uid>", por lo que requieren holgura sobre
  * el largo del identificador original.
  */
-#define TAC_NAME_LENGTH 64
+#define TAC_NAME_LENGTH 256
 
 /**
  * @brief Naturaleza o categoría de un operando TAC.

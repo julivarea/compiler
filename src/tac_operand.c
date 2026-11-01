@@ -10,7 +10,13 @@ static TACOperand makeOperand(OperandKind kind, DataType type, const char *name)
     operand.kind = kind;
     operand.type = type;
     if (name != NULL) {
-        snprintf(operand.name, sizeof(operand.name), "%s", name);
+        int written = snprintf(operand.name, sizeof(operand.name), "%s", name);
+        // Si written >= sizeof, la cadena no cupo en el buffer y fue truncada por snprintf.
+        if (written < 0 || (size_t)written >= sizeof(operand.name)) {
+            fprintf(stderr,
+                    "\033[1;31mError interno del TAC:\033[0m el nombre del operando '%s' excede el limite de %zu caracteres.\n",
+                    name, sizeof(operand.name) - 1);
+        }
     }
 
     return operand;
@@ -45,10 +51,18 @@ TACOperand tacVariable(Symbol *symbol) {
      *
      * uid == 0 significa que el símbolo no quedó declarado en ningún scope, lo
      * que no debería ocurrir si el análisis semántico terminó sin errores. */
+    int written;
     if (symbol->uid != 0) {
-        snprintf(qualifiedName, sizeof(qualifiedName), "%s@%d", id, symbol->uid);
+        written = snprintf(qualifiedName, sizeof(qualifiedName), "%s@%d", id, symbol->uid);
     } else {
-        snprintf(qualifiedName, sizeof(qualifiedName), "%s", id);
+        written = snprintf(qualifiedName, sizeof(qualifiedName), "%s", id);
+    }
+
+    // snprintf retorna la longitud necesaria: si written >= sizeof, el nombre fue truncado y perdio su sufijo @uid.
+    if (written < 0 || (size_t)written >= sizeof(qualifiedName)) {
+        fprintf(stderr,
+                "\033[1;31mError interno del TAC:\033[0m el identificador calificado para '%s' excede el limite de %zu caracteres.\n",
+                id, sizeof(qualifiedName) - 1);
     }
 
     TACOperand operand = makeOperand(OPERAND_VARIABLE, symbol->type, qualifiedName);
