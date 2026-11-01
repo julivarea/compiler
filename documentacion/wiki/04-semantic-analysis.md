@@ -97,6 +97,46 @@ classDiagram
   } value;
   ```
 
+### Variantes de `SymbolType` y Uso Específico de Campos
+
+Cada variante de `SymbolType` especializa el uso de los campos de `Symbol` según su rol semántico:
+
+#### 1. `VARIABLE_SYMBOL` (Variables y Parámetros)
+Representa variables locales, variables globales y parámetros formales.
+- **`id`:** Nombre del identificador (`strdup`). Clave de búsqueda en `lookupSymbol` y detección de redeclaraciones con `lookupSymbolInScope`.
+- **`uid`:** Asignado secuencialmente ($\ge 1$) por `appendSymbol()`. Resuelve el sombreado léxico (*shadowing*) y asigna desplazamientos en el marco de pila (`FunctionFrame`) durante el código objeto. Vale `0` si el símbolo no está registrado.
+- **`type`:** Tipo estático (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL`). Chequeado por el `TypeChecker` para compatibilidad en asignaciones (`isAssignable`) y expresiones.
+- **`symbolType`:** Fijo en `VARIABLE_SYMBOL`. Previene invocar variables como funciones o asignar valores a métodos.
+- **`parameters`:** No se usa (`NULL`).
+- **`value`:** No se usa en análisis semántico.
+
+#### 2. `METHOD_SYMBOL` (Métodos y Funciones)
+Representa la declaración de métodos y funciones (incluido `main`).
+- **`id`:** Nombre del método. Usado en `lookupSymbol` para resolver invocaciones (`METHOD_CALL_NODE`).
+- **`uid`:** Identificador único asignado al registrar el método en el ámbito global. Usado para rotular etiquetas y saltos en TAC y ensamblador.
+- **`type`:** Tipo de retorno (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL`, `TYPE_VOID`). Usado para comprobar las sentencias `return`, rechazar retornos con valor en métodos `void`, y asignar el tipo a llamadas a métodos en expresiones.
+- **`symbolType`:** Fijo en `METHOD_SYMBOL`. Permite validar que las llamadas correspondan a funciones reales.
+- **`parameters`:** Puntero al subárbol del AST de parámetros (`PARAMETERS_NODE`). Permite validar aridad (cantidad de argumentos) y compatibilidad de tipos argumento a argumento, además de poblar el `Scope` local del método al entrar a su cuerpo.
+- **`value`:** No se usa.
+
+#### 3. `CONSTANT_SYMBOL` (Literales y Constantes Primitivas)
+Representa valores inmediatos constantes en expresiones (`42`, `3.14`, `true`, `false`).
+- **`id`:** `NULL` (literales anónimos).
+- **`uid`:** `0` (no se registra en la tabla de símbolos del `Scope`).
+- **`type`:** Tipo primitivo (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL`).
+- **`symbolType`:** Fijo en `CONSTANT_SYMBOL`.
+- **`parameters`:** No se usa (`NULL`).
+- **`value`:** Almacenamiento nativo del valor (`value.intValue` para enteros o booleanos 0/1; `value.floatValue` para flotantes). Evita conversiones de texto a número y se proyecta a operandos inmediatos TAC (`tacConstantInt`, `tacConstantFloat`, `tacConstantBool`) y ensamblador.
+
+| Campo en `Symbol` | `VARIABLE_SYMBOL` | `METHOD_SYMBOL` | `CONSTANT_SYMBOL` |
+| :--- | :--- | :--- | :--- |
+| **`id`** | Nombre de la variable (`char*`) | Nombre de la función (`char*`) | `NULL` (anónimo) |
+| **`uid`** | Secuencial único ($\ge 1$, $0$ si no declarada) | Secuencial único ($\ge 1$) | `0` (no registrado en `Scope`) |
+| **`type`** | Tipo de la variable (`int`, `float`, `boolean`) | Tipo de retorno (`int`, `float`, `boolean`, `void`) | Tipo del literal (`int`, `float`, `boolean`) |
+| **`symbolType`** | `VARIABLE_SYMBOL` | `METHOD_SYMBOL` | `CONSTANT_SYMBOL` |
+| **`parameters`** | `NULL` (no aplica) | Puntero a `PARAMETERS_NODE` (AST) | `NULL` (no aplica) |
+| **`value`** | No utilizado en análisis semántico | No utilizado | `intValue` (int/bool) o `floatValue` (float) |
+
 ### Ciclo de Vida
 1. **Creación (`newSymbol`):** Reserva memoria en el heap, clona el identificador si no es nulo, enlaza los parámetros y fija `uid = 0`.
 2. **Liberación (`freeSymbol`):** Libera la cadena duplicada `symbol->id` y luego la estructura del símbolo en memoria.
