@@ -7,6 +7,8 @@
  */
 
 #include <stdio.h>
+#include <stdbool.h>
+
 #include "types.h"
 #include "symbol_table.h"
 
@@ -39,6 +41,18 @@ typedef struct NodeAST {
     int line;                    /**< Línea del código fuente donde inicia la construcción. */
     struct NodeAST **children;   /**< Arreglo dinámico de punteros a nodos hijos. */
     int childCount;              /**< Cantidad de nodos hijos almacenados. */
+
+    /**
+     * @brief Indica si el nodo debe generar código.
+     *
+     * Vale `true` para todo nodo recién creado, de modo que sin optimizaciones
+     * el comportamiento no cambia. La etapa de optimización lo pone en `false`
+     * para marcar nodos que no hay que emitir —una rama descartada, una
+     * sentencia inalcanzable, una asignación redundante— sin desenganchar el
+     * nodo del árbol y arriesgar los punteros de su padre.
+     * `generateStatementCode()` lo consulta antes de traducir cada sentencia.
+     */
+    bool hasExecute;
 } NodeAST;
 
 #define GET_CHILD(node, index) ((node)->childCount > (index) ? (node)->children[(index)] : NULL)
