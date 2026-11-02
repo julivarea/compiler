@@ -21,9 +21,10 @@ La etapa vale **15% de la nota final** y su entrega es el **miércoles 12 de nov
 | `-opt all` | Se aplican todas las optimizaciones soportadas |
 | `-opt <nombre>` | Se aplica únicamente la indicada |
 
-Hoy `src/cli.c` ya parsea la opción y la deja en `Options.opt` (`NULL` si no se pasó, `"all"` si
-se pasó sin nombre), y la extensión de salida pasa a `.opt`. Falta traducir ese valor a un
-conjunto de optimizaciones activas y consultarlo desde cada transformación.
+`src/cli.c` parsea la opción y la deja en `Options.opt` (`NULL` si no se pasó, `"all"` si se
+pasó sin nombre), y la extensión de salida pasa a `.opt`. `parseOptimizations()` en
+`src/optimizer.c` traduce ese valor al conjunto de optimizaciones activas, y un nombre
+desconocido se informa por stderr.
 
 **Requisito no negociable:** sin `-opt`, el compilador tiene que producir exactamente lo mismo
 que antes. Es la propiedad que permite aislar una regresión: si un programa falla con `-opt` y
@@ -33,8 +34,8 @@ anda sin él, el problema está en la optimización y no en el resto del compila
 
 | Flag | Optimización |
 | --- | --- |
-| `const-fold` | Plegado de constantes (§3.1) |
-| `const-prop` | Propagación de constantes (§3.1) |
+| `const-fold` | Plegado de constantes (§3.1) — **implementada** |
+| `const-prop` | Propagación de constantes (§3.1) — **implementada** |
 | `dead-code` | Eliminación de código inalcanzable (§3.2) |
 | `const-branch` | Condición constante en `if` / `while` (§3.3) |
 | `self-assign` | Asignaciones redundantes y mirilla (§3.4) |
@@ -112,6 +113,50 @@ sola instrucción.
 
 **Verificación:** comparar el `.ci` con y sin el flag sobre un programa con aritmética
 constante, y comprobar que el ejecutable devuelve el mismo resultado en ambos casos.
+
+#### Estado: implementada
+
+En `src/optimizer.c`. El ejemplo del principio de la sección produce hoy:
+
+```
+// sin -opt                   // con -opt all
+t0 = 1 + 2                    t0 = 3
+t1 = t0 + 3                   t1 = 6
+ret t1                        ret 6
+```
+
+Se ve la cadena completa: se pliega `1 + 2`, se propaga el `3` al operando de la suma
+siguiente, se pliega `3 + 3`, y se propaga el `6` hasta el `ret`. Las dos pasadas se repiten
+hasta que ninguna introduce cambios, con un tope de rondas por si una transformación futura no
+convergiera.
+
+Las dos asignaciones que quedan ya no las lee nadie. Eliminarlas es trabajo de la eliminación
+de código muerto, que todavía no está: con solo estas dos optimizaciones el TAC no se acorta,
+se simplifica.
+
+**Qué hace cada flag por separado.** Ninguna de las dos rinde mucho sola, y es esperable:
+`const-fold` solo actúa cuando los dos operandos ya son literales, y `const-prop` no tiene nada
+que propagar si antes no se plegó algo. Es el caso concreto de lo que anticipa §4.
+
+**Decisiones de implementación:**
+- El plegado **no elimina la instrucción**, la convierte en `TAC_ASSIGN`. Así el destino
+  conserva su valor y cualquier uso posterior sigue siendo válido, sin tener que reescribir la
+  lista enlazada mientras se la recorre.
+- La propagación **descarta todo lo que sabía en cada etiqueta y en cada salto**. A una
+  etiqueta se puede llegar desde cualquier parte, así que lo que valía antes del salto no vale
+  necesariamente después. Es conservador —dentro de un ciclo no se propaga nada— pero nunca
+  incorrecto.
+- En un `call` se olvidan las variables y se conservan los temporales. El callee puede escribir
+  cualquier global, pero no puede alcanzar los temporales de quien lo invoca: C-TDS pasa por
+  valor y no tiene punteros.
+- La tabla de valores conocidos se indexa por el nombre del operando, que ya viene calificado
+  con el `uid`, así que dos variables homónimas de scopes distintos no se confunden.
+
+**Verificado:** 22 programas compilados **dos veces** —con y sin `-opt all`— ejecutando ambos
+binarios y comparando el código de salida entre sí y contra el resultado esperado: 22 de 22
+idénticos. Incluye el caso de **división por cero**, donde ambas versiones abortan igual con
+SIGFPE, que es la prueba de que no se plegó. Los 40 tests siguen pasando y los 12 ejemplos
+conservan su código de salida con y sin el flag.
 
 ---
 
@@ -286,14 +331,20 @@ documentarlo en el informe.
 
 ## 6. Estado de la implementación
 
-- **El parseo de `-opt` existe** (`src/cli.c`) y la extensión `.opt` también, pero el valor
-  todavía no se traduce a un conjunto de optimizaciones activas.
-- **El mecanismo `hasExecute` está empezado.** El campo se usa en `src/ast.c`, `src/intermediate_code.c`
-  lo respeta al generar, y `src/semantic_analyzer.c` tiene el esqueleto de la marca para las
-  asignaciones redundantes. **Está incompleto y hoy no compila:** falta declarar el campo en
-  `NodeAST`, definir el enumerado de optimizaciones y la función que consulta si una está
-  activa, e incluir `<stdbool.h>` donde se usa `bool`.
-- **Ninguna de las cinco optimizaciones está implementada todavía.**
+- **La infraestructura está completa.** `src/optimizer.c` y `include/optimizer.h` contienen el
+  enumerado de optimizaciones, el parseo del valor de `-opt` y el ciclo que aplica las pasadas
+  hasta converger. El driver las invoca desde `buildIntermediateCode()`, entre la generación
+  del TAC y su emisión, de modo que las aprovechan tanto `-target codinter` como la generación
+  de assembly y el ejecutable.
+- **El mecanismo `hasExecute` quedó funcionando.** El campo está declarado en `NodeAST`,
+  `src/ast.c` lo inicializa en `true` y `src/intermediate_code.c` lo consulta antes de traducir
+  cada sentencia. Está inerte: mientras ninguna optimización lo ponga en `false`, el
+  comportamiento no cambia. El esqueleto que había en `src/semantic_analyzer.c` se quitó porque
+  no compilaba y porque el analizador semántico no debe conocer los flags de optimización; la
+  transformación va en la pasada de optimización, según §3.4.
+- **Implementadas:** plegado y propagación de constantes (§3.1).
+- **Pendientes:** código inalcanzable (§3.2), condición constante (§3.3), asignaciones
+  redundantes y mirilla (§3.4), reducción de fuerza (§3.5).
 
 ---
 

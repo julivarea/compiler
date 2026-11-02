@@ -14,6 +14,7 @@
 #include "intermediate_code.h"
 #include "interpreter.h"
 #include "object_code.h"
+#include "optimizer.h"
 #include "semantic_analyzer.h"
 #include "string_builder.h"
 
@@ -40,6 +41,26 @@ static FILE *openOutputFile(const char *path);
 static int assembleAndLink(const Options *options, const char *assemblyPath);
 static const char *getTokenName(int token);
 
+/*
+ * Genera el código intermedio y le aplica las optimizaciones que se hayan
+ * pedido con -opt. Sin -opt no se aplica ninguna y la lista queda exactamente
+ * como la emitió el generador.
+ */
+static const TACList *buildIntermediateCode(const Options *options) {
+    const TACList *tacList = generateIntermediateCode(astRoot);
+
+    OptimizationSet enabled = parseOptimizations(options->opt);
+    bool hasOptimizations = (enabled != OPTIMIZATION_NONE);
+    if (hasOptimizations) {
+        int changes = optimizeIntermediateCode((TACList *)tacList, enabled);
+        if (options->debug) {
+            printf("Optimizaciones: %d instrucciones transformadas\n\n", changes);
+        }
+    }
+
+    return tacList;
+}
+
 int compile(const Options *options) {
     switch (options->target) {
         case TARGET_SCAN:
@@ -59,14 +80,14 @@ int compile(const Options *options) {
         case TARGET_CODINTER: {
             if (runParse() != 0) { return 1; }
             if (runSemantic() != 0) { return 1; }
-            const TACList *tacList = generateIntermediateCode(astRoot);
+            const TACList *tacList = buildIntermediateCode(options);
             return runIntermediateCode(options, tacList);
         }
 
         case TARGET_ASSEMBLY: {
             if (runParse() != 0) { return 1; }
             if (runSemantic() != 0) { return 1; }
-            const TACList *tacList = generateIntermediateCode(astRoot);
+            const TACList *tacList = buildIntermediateCode(options);
             return runAssembly(options, tacList);
         }
 
