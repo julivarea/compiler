@@ -21,6 +21,7 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
     node->symbol = symbol;
     node->type = TYPE_VOID;
     node->line = yylineno;
+    node->hasExecute = true;
 
     bool hasConditionLine = ((nodeType == WHILE_NODE || nodeType == IF_ELSE_NODE) && left != NULL);
     if (hasConditionLine) {

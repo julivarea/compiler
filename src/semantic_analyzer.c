@@ -144,6 +144,7 @@ static void analyzeVariableDeclarationNode(NodeAST *node, Scope *currentScope) {
 }
 
 static void analyzeAssignmentNode(NodeAST *node, Scope *currentScope) {
+    boolean applyOptimization = false;
     node->type = TYPE_ERROR;
 
     Symbol *resolvedSymbol = lookupSymbol(currentScope, node->symbol->id);
@@ -163,10 +164,20 @@ static void analyzeAssignmentNode(NodeAST *node, Scope *currentScope) {
 
     NodeAST *expression = GET_EXPRESSION(node);
     bool hasExpression = (expression != NULL);
+
     if (hasExpression) {
+
+    if(options.contains(OPTIMIZATION_EQUALS)){
+        
+        if(expression->nodeType == ID_NODE && expression->symbol->id == node->symbol->id){
+            node->hasExecute = false;
+            break;
+        }
+        
+    }
+
         DataType expressionType = analyzeExpression(expression, currentScope);
         bool isExpressionValid = (expressionType != TYPE_ERROR);
-
         if (isExpressionValid) {
             bool areTypesCompatible = isAssignable(resolvedSymbol->type, expressionType);
             if (!areTypesCompatible) {
@@ -204,7 +215,7 @@ static void analyzeReturnNode(NodeAST *node, Scope *currentScope) {
         semanticError(node->line, "El metodo '%s' es void y no deberia retornar un valor.", functionName);
         return;
     }
-
+    
     DataType actualType = analyzeExpression(expression, currentScope);
     bool isExpressionValid = (actualType != TYPE_ERROR);
     bool areTypesCompatible = isAssignable(expectedType, actualType);
