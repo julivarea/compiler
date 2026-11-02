@@ -149,7 +149,7 @@ static bool parseTarget(const char *value, Target *target) {
         *target = TARGET_CODINTER;
     } else if (strcmp(value, "assembly") == 0) {
         *target = TARGET_ASSEMBLY;
-    } else if (strcmp(value, "interp") == 0) {
+    } else if (strcmp(value, "interp") == 0 || strcmp(value, "interpret") == 0) {
         *target = TARGET_INTERP;
     } else {
         return false;

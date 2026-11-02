@@ -34,6 +34,41 @@ void freeSymbol(Symbol *symbol) {
     free(symbol);
 }
 
+Symbol makeIntSymbol(int value) {
+    Symbol symbol;
+    memset(&symbol, 0, sizeof(Symbol));
+    symbol.symbolType = CONSTANT_SYMBOL;
+    symbol.type = TYPE_INT;
+    symbol.value.intValue = value;
+    return symbol;
+}
+
+Symbol makeFloatSymbol(float value) {
+    Symbol symbol;
+    memset(&symbol, 0, sizeof(Symbol));
+    symbol.symbolType = CONSTANT_SYMBOL;
+    symbol.type = TYPE_FLOAT;
+    symbol.value.floatValue = value;
+    return symbol;
+}
+
+Symbol makeBoolSymbol(bool value) {
+    Symbol symbol;
+    memset(&symbol, 0, sizeof(Symbol));
+    symbol.symbolType = CONSTANT_SYMBOL;
+    symbol.type = TYPE_BOOL;
+    symbol.value.intValue = value ? 1 : 0;
+    return symbol;
+}
+
+Symbol makeVoidSymbol(void) {
+    Symbol symbol;
+    memset(&symbol, 0, sizeof(Symbol));
+    symbol.symbolType = CONSTANT_SYMBOL;
+    symbol.type = TYPE_VOID;
+    return symbol;
+}
+
 Scope *createScope(int level, Scope *parent, Symbol *function) {
     Scope *scope = malloc(sizeof(Scope));
     bool allocationFailed = (scope == NULL);

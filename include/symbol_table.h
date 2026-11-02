@@ -54,6 +54,37 @@ Symbol *newSymbol(char *id, SymbolType symbolType, DataType type, struct NodeAST
 void freeSymbol(Symbol *symbol);
 
 /**
+ * @brief Crea un símbolo constante de tipo entero por valor.
+ *
+ * @param value Valor entero a encapsular.
+ * @return Estructura Symbol inicializada con symbolType CONSTANT_SYMBOL y type TYPE_INT.
+ */
+Symbol makeIntSymbol(int value);
+
+/**
+ * @brief Crea un símbolo constante de tipo flotante por valor.
+ *
+ * @param value Valor de punto flotante a encapsular.
+ * @return Estructura Symbol inicializada con symbolType CONSTANT_SYMBOL y type TYPE_FLOAT.
+ */
+Symbol makeFloatSymbol(float value);
+
+/**
+ * @brief Crea un símbolo constante de tipo booleano por valor.
+ *
+ * @param value Valor booleano a encapsular.
+ * @return Estructura Symbol inicializada con symbolType CONSTANT_SYMBOL y type TYPE_BOOL.
+ */
+Symbol makeBoolSymbol(bool value);
+
+/**
+ * @brief Crea un símbolo constante de tipo void por valor.
+ *
+ * @return Estructura Symbol inicializada con symbolType CONSTANT_SYMBOL y type TYPE_VOID.
+ */
+Symbol makeVoidSymbol(void);
+
+/**
  * @brief Ámbito léxico (scope) en la jerarquía de la tabla de símbolos.
  */
 typedef struct Scope {

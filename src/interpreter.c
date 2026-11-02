@@ -38,10 +38,6 @@ static Symbol evaluateBinaryOperator(OperationType operation, Symbol left, Symbo
 
 static Scope *getGlobalScope(Scope *scope);
 static float getFloatValue(Symbol symbol);
-static Symbol makeIntSymbol(int value);
-static Symbol makeFloatSymbol(float value);
-static Symbol makeBoolSymbol(bool value);
-static Symbol makeVoidSymbol(void);
 static bool isTruthy(Symbol symbol);
 
 Scope *interpreteSemantics(NodeAST *root) {
@@ -62,11 +58,6 @@ Scope *interpreteSemantics(NodeAST *root) {
 }
 
 static void registerGlobalDeclarations(NodeAST *root, Scope *globalScope) {
-    bool isValidInput = (root != NULL && globalScope != NULL);
-    if (!isValidInput) {
-        return;
-    }
-
     for (int i = 0; i < root->childCount; i++) {
         NodeAST *child = root->children[i];
         if (child == NULL) {
@@ -102,22 +93,8 @@ static void registerMethodDeclaration(NodeAST *node, Scope *globalScope) {
 }
 
 static void executeMainMethod(Scope *globalScope) {
-    if (globalScope == NULL) {
-        return;
-    }
-
     Symbol *mainSymbol = lookupSymbol(globalScope, "main");
-    bool isMainValid = (mainSymbol != NULL && mainSymbol->symbolType == FUNCTION_ENTRY_SYMBOL);
-    if (!isMainValid) {
-        semanticError(0, "Error en tiempo de ejecucion: no se encontro el metodo 'main'.");
-        return;
-    }
-
     NodeAST *mainDeclaration = mainSymbol->value.function;
-    bool hasDeclaration = (mainDeclaration != NULL);
-    if (!hasDeclaration) {
-        return;
-    }
 
     Symbol result = executeFunctionBody(mainDeclaration, NULL, globalScope, globalScope);
     if (result.type == TYPE_INT) {
@@ -132,11 +109,6 @@ static void executeMainMethod(Scope *globalScope) {
 }
 
 static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argumentsNode, Scope *callerScope, Scope *globalScope) {
-    bool isValidInput = (methodDeclarationNode != NULL && globalScope != NULL);
-    if (!isValidInput) {
-        return makeVoidSymbol();
-    }
-
     int argumentCount = (argumentsNode != NULL) ? argumentsNode->childCount : 0;
     bool hasArguments = (argumentCount > 0);
     Symbol *argumentValues = NULL;
@@ -161,36 +133,25 @@ static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argum
     if (hasParameters) {
         for (int i = 0; i < parametersNode->childCount; i++) {
             NodeAST *parameterNode = parametersNode->children[i];
-            bool isParameterValid = (parameterNode != NULL && parameterNode->symbol != NULL);
-            if (isParameterValid) {
-                Symbol *parameterSymbol = newSymbol(parameterNode->symbol->id, VARIABLE_SYMBOL, parameterNode->type, NULL);
-                bool hasMatchingArgument = (argumentValues != NULL && i < argumentCount);
-                if (hasMatchingArgument) {
-                    bool needsFloatCoercion = (parameterSymbol->type == TYPE_FLOAT && argumentValues[i].type == TYPE_INT);
-                    if (needsFloatCoercion) {
-                        parameterSymbol->value.floatValue = (float)argumentValues[i].value.intValue;
-                    } else if (parameterSymbol->type == TYPE_FLOAT) {
-                        parameterSymbol->value.floatValue = argumentValues[i].value.floatValue;
-                    } else {
-                        parameterSymbol->value.intValue = argumentValues[i].value.intValue;
-                    }
+            Symbol *parameterSymbol = newSymbol(parameterNode->symbol->id, VARIABLE_SYMBOL, parameterNode->type, NULL);
+            if (argumentValues != NULL) {
+                bool needsFloatCoercion = (parameterSymbol->type == TYPE_FLOAT && argumentValues[i].type == TYPE_INT);
+                if (needsFloatCoercion) {
+                    parameterSymbol->value.floatValue = (float)argumentValues[i].value.intValue;
+                } else if (parameterSymbol->type == TYPE_FLOAT) {
+                    parameterSymbol->value.floatValue = argumentValues[i].value.floatValue;
+                } else {
+                    parameterSymbol->value.intValue = argumentValues[i].value.intValue;
                 }
-                appendSymbol(functionScope, parameterSymbol);
             }
+            appendSymbol(functionScope, parameterSymbol);
         }
     }
 
-    bool hasAllocatedArguments = (argumentValues != NULL);
-    if (hasAllocatedArguments) {
-        free(argumentValues);
-    }
+    free(argumentValues);
 
     NodeAST *bodyNode = methodDeclarationNode->children[1];
-    ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
-    bool hasBody = (bodyNode != NULL);
-    if (hasBody) {
-        result = executeBlock(bodyNode, functionScope);
-    }
+    ExecResult result = executeBlock(bodyNode, functionScope);
 
     bool needsFloatCoercion = (methodDeclarationNode->type == TYPE_FLOAT && result.value.type == TYPE_INT);
     if (needsFloatCoercion) {
@@ -257,37 +218,31 @@ static ExecResult executeAssignment(NodeAST *node, Scope *currentScope) {
     ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
     Symbol assignedValue = evaluateExpression(GET_EXPRESSION(node), currentScope);
     Symbol *target = lookupSymbol(currentScope, node->symbol->id);
-    bool hasTarget = (target != NULL);
-    if (hasTarget) {
-        bool needsFloatCoercion = (target->type == TYPE_FLOAT && assignedValue.type == TYPE_INT);
-        if (needsFloatCoercion) {
-            target->value.floatValue = (float)assignedValue.value.intValue;
-        } else if (target->type == TYPE_FLOAT) {
-            target->value.floatValue = assignedValue.value.floatValue;
-        } else {
-            target->value.intValue = assignedValue.value.intValue;
-        }
+    bool needsFloatCoercion = (target->type == TYPE_FLOAT && assignedValue.type == TYPE_INT);
+    if (needsFloatCoercion) {
+        target->value.floatValue = (float)assignedValue.value.intValue;
+    } else if (target->type == TYPE_FLOAT) {
+        target->value.floatValue = assignedValue.value.floatValue;
+    } else {
+        target->value.intValue = assignedValue.value.intValue;
     }
 
     return result;
 }
 
 static ExecResult executeIfElse(NodeAST *node, Scope *currentScope) {
-    ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
     Symbol condition = evaluateExpression(GET_CONDITION(node), currentScope);
     bool conditionHolds = isTruthy(condition);
     if (conditionHolds) {
-        bool hasIfBlock = (GET_IF_BLOCK(node) != NULL);
-        if (hasIfBlock) {
-            return executeStatement(GET_IF_BLOCK(node), currentScope);
-        }
-    } else {
-        bool hasElseBlock = (GET_ELSE_BLOCK(node) != NULL);
-        if (hasElseBlock) {
-            return executeStatement(GET_ELSE_BLOCK(node), currentScope);
-        }
+        return executeStatement(GET_IF_BLOCK(node), currentScope);
     }
 
+    bool hasElseBlock = (GET_ELSE_BLOCK(node) != NULL);
+    if (hasElseBlock) {
+        return executeStatement(GET_ELSE_BLOCK(node), currentScope);
+    }
+
+    ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
     return result;
 }
 
@@ -315,16 +270,7 @@ static ExecResult executeReturn(NodeAST *node, Scope *currentScope) {
 
 static Symbol executeMethodCall(NodeAST *node, Scope *currentScope) {
     Symbol *functionSymbol = lookupSymbol(currentScope, node->symbol->id);
-    bool isFunctionFound = (functionSymbol != NULL && functionSymbol->symbolType == FUNCTION_ENTRY_SYMBOL);
-    if (!isFunctionFound) {
-        return makeVoidSymbol();
-    }
-
     NodeAST *functionDeclaration = functionSymbol->value.function;
-    if (functionDeclaration == NULL) {
-        return makeVoidSymbol();
-    }
-
     Scope *globalScope = getGlobalScope(currentScope);
     return executeFunctionBody(functionDeclaration, node, currentScope, globalScope);
 }
@@ -354,10 +300,6 @@ static Symbol evaluateExpression(NodeAST *node, Scope *currentScope) {
 
 static Symbol evaluateIdentifier(NodeAST *node, Scope *currentScope) {
     Symbol *symbol = lookupSymbol(currentScope, node->symbol->id);
-    if (symbol == NULL) {
-        return makeVoidSymbol();
-    }
-
     return *symbol;
 }
 
@@ -417,15 +359,12 @@ static Symbol evaluateUnaryOperator(OperationType operation, Symbol operand) {
         case OP_UMINUS:
             if (operand.type == TYPE_FLOAT) {
                 return makeFloatSymbol(-operand.value.floatValue);
-            } else if (operand.type == TYPE_INT) {
-                return makeIntSymbol(-operand.value.intValue);
             }
-            break;
+            return makeIntSymbol(-operand.value.intValue);
 
         default:
-            break;
+            return operand;
     }
-    return operand;
 }
 
 static Symbol evaluateBinaryOperator(OperationType operation, Symbol left, Symbol right) {
@@ -527,46 +466,6 @@ static float getFloatValue(Symbol symbol) {
     return (symbol.type == TYPE_FLOAT) ? symbol.value.floatValue : (float)symbol.value.intValue;
 }
 
-static Symbol makeIntSymbol(int value) {
-    Symbol symbol;
-    memset(&symbol, 0, sizeof(Symbol));
-    symbol.symbolType = CONSTANT_SYMBOL;
-    symbol.type = TYPE_INT;
-    symbol.value.intValue = value;
-    return symbol;
-}
-
-static Symbol makeFloatSymbol(float value) {
-    Symbol symbol;
-    memset(&symbol, 0, sizeof(Symbol));
-    symbol.symbolType = CONSTANT_SYMBOL;
-    symbol.type = TYPE_FLOAT;
-    symbol.value.floatValue = value;
-    return symbol;
-}
-
-static Symbol makeBoolSymbol(bool value) {
-    Symbol symbol;
-    memset(&symbol, 0, sizeof(Symbol));
-    symbol.symbolType = CONSTANT_SYMBOL;
-    symbol.type = TYPE_BOOL;
-    symbol.value.intValue = value ? 1 : 0;
-    return symbol;
-}
-
-static Symbol makeVoidSymbol(void) {
-    Symbol symbol;
-    memset(&symbol, 0, sizeof(Symbol));
-    symbol.symbolType = CONSTANT_SYMBOL;
-    symbol.type = TYPE_VOID;
-    return symbol;
-}
-
 static bool isTruthy(Symbol symbol) {
-    if (symbol.type == TYPE_BOOL || symbol.type == TYPE_INT) {
-        return symbol.value.intValue != 0;
-    } else if (symbol.type == TYPE_FLOAT) {
-        return symbol.value.floatValue != 0.0f;
-    }
-    return false;
+    return symbol.value.intValue != 0;
 }
