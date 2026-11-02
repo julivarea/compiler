@@ -73,7 +73,7 @@ int compile(const Options *options) {
         case TARGET_INTERP: {
             if (runParse() != 0) { return 1; }
             if (runSemantic() != 0) { return 1; }
-            interpreteSemantics(astRoot, NULL);
+            interpreteSemantics(astRoot);
             return 0;
         }
 

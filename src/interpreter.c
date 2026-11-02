@@ -44,35 +44,26 @@ static Symbol makeBoolSymbol(bool value);
 static Symbol makeVoidSymbol(void);
 static bool isTruthy(Symbol symbol);
 
-Scope *interpreteSemantics(NodeAST *root, Scope *parent) {
+Scope *interpreteSemantics(NodeAST *root) {
     if (root == NULL) {
         return NULL;
     }
 
-    bool isGlobalScope = (parent == NULL);
-    int level = !isGlobalScope ? parent->level + 1 : 0;
-
-    Scope *currentScope = createScope(level, parent, NULL);
-    if (currentScope == NULL) {
+    Scope *globalScope = createScope(0, NULL, NULL);
+    if (globalScope == NULL) {
         semanticError(root->line, "Error: no se pudo reservar memoria para el ambito.");
         return NULL;
     }
 
-    if (!isGlobalScope) {
-        appendChildScope(parent, currentScope);
-    }
+    registerGlobalDeclarations(root, globalScope);
+    executeMainMethod(globalScope);
 
-    registerGlobalDeclarations(root, currentScope);
-
-    if (isGlobalScope) {
-        executeMainMethod(currentScope);
-    }
-
-    return currentScope;
+    return globalScope;
 }
 
 static void registerGlobalDeclarations(NodeAST *root, Scope *globalScope) {
-    if (root == NULL || globalScope == NULL) {
+    bool isValidInput = (root != NULL && globalScope != NULL);
+    if (!isValidInput) {
         return;
     }
 
@@ -82,21 +73,25 @@ static void registerGlobalDeclarations(NodeAST *root, Scope *globalScope) {
             continue;
         }
 
-        if (child->nodeType == VARIABLE_DECLARATION_NODE) {
+        bool isVariableDeclaration = (child->nodeType == VARIABLE_DECLARATION_NODE);
+        bool isMethodDeclaration = (child->nodeType == METHOD_DECLARATION_NODE);
+
+        if (isVariableDeclaration) {
             registerVariableDeclaration(child, globalScope);
-        } else if (child->nodeType == METHOD_DECLARATION_NODE) {
+        } else if (isMethodDeclaration) {
             registerMethodDeclaration(child, globalScope);
         }
     }
 }
 
 static void registerVariableDeclaration(NodeAST *node, Scope *currentScope) {
-    if (node == NULL || node->symbol == NULL || currentScope == NULL) {
+    if (node == NULL || currentScope == NULL) {
         return;
     }
 
     Symbol *symbol = newSymbol(node->symbol->id, VARIABLE_SYMBOL, node->type, NULL);
-    if (symbol->type == TYPE_FLOAT) {
+    bool isFloatType = (symbol->type == TYPE_FLOAT);
+    if (isFloatType) {
         symbol->value.floatValue = 0.0f;
     } else {
         symbol->value.intValue = 0;
@@ -105,7 +100,7 @@ static void registerVariableDeclaration(NodeAST *node, Scope *currentScope) {
 }
 
 static void registerMethodDeclaration(NodeAST *node, Scope *globalScope) {
-    if (node == NULL || node->symbol == NULL || globalScope == NULL) {
+    if (node == NULL || globalScope == NULL) {
         return;
     }
 
@@ -120,13 +115,15 @@ static void executeMainMethod(Scope *globalScope) {
     }
 
     Symbol *mainSymbol = lookupSymbol(globalScope, "main");
-    if (mainSymbol == NULL || mainSymbol->symbolType != FUNCTION_ENTRY_SYMBOL) {
+    bool isMainValid = (mainSymbol != NULL && mainSymbol->symbolType == FUNCTION_ENTRY_SYMBOL);
+    if (!isMainValid) {
         semanticError(0, "Error en tiempo de ejecucion: no se encontro el metodo 'main'.");
         return;
     }
 
     NodeAST *mainDeclaration = mainSymbol->value.function;
-    if (mainDeclaration == NULL) {
+    bool hasDeclaration = (mainDeclaration != NULL);
+    if (!hasDeclaration) {
         return;
     }
 
@@ -143,13 +140,15 @@ static void executeMainMethod(Scope *globalScope) {
 }
 
 static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argumentsNode, Scope *callerScope, Scope *globalScope) {
-    if (methodDeclarationNode == NULL || globalScope == NULL) {
+    bool isValidInput = (methodDeclarationNode != NULL && globalScope != NULL);
+    if (!isValidInput) {
         return makeVoidSymbol();
     }
 
     int argumentCount = (argumentsNode != NULL) ? argumentsNode->childCount : 0;
+    bool hasArguments = (argumentCount > 0);
     Symbol *argumentValues = NULL;
-    if (argumentCount > 0) {
+    if (hasArguments) {
         argumentValues = malloc(sizeof(Symbol) * argumentCount);
         if (argumentValues != NULL) {
             for (int i = 0; i < argumentCount; i++) {
@@ -166,12 +165,15 @@ static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argum
     appendChildScope(globalScope, functionScope);
 
     NodeAST *parametersNode = methodDeclarationNode->children[0];
-    if (parametersNode != NULL) {
+    bool hasParameters = (parametersNode != NULL);
+    if (hasParameters) {
         for (int i = 0; i < parametersNode->childCount; i++) {
             NodeAST *parameterNode = parametersNode->children[i];
-            if (parameterNode != NULL && parameterNode->symbol != NULL) {
+            bool isParameterValid = (parameterNode != NULL && parameterNode->symbol != NULL);
+            if (isParameterValid) {
                 Symbol *parameterSymbol = newSymbol(parameterNode->symbol->id, VARIABLE_SYMBOL, parameterNode->type, NULL);
-                if (argumentValues != NULL && i < argumentCount) {
+                bool hasMatchingArgument = (argumentValues != NULL && i < argumentCount);
+                if (hasMatchingArgument) {
                     bool needsFloatCoercion = (parameterSymbol->type == TYPE_FLOAT && argumentValues[i].type == TYPE_INT);
                     if (needsFloatCoercion) {
                         parameterSymbol->value.floatValue = (float)argumentValues[i].value.intValue;
@@ -186,13 +188,15 @@ static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argum
         }
     }
 
-    if (argumentValues != NULL) {
+    bool hasAllocatedArguments = (argumentValues != NULL);
+    if (hasAllocatedArguments) {
         free(argumentValues);
     }
 
     NodeAST *bodyNode = methodDeclarationNode->children[1];
     ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
-    if (bodyNode != NULL) {
+    bool hasBody = (bodyNode != NULL);
+    if (hasBody) {
         result = executeBlock(bodyNode, functionScope);
     }
 
@@ -206,7 +210,8 @@ static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argum
 
 static ExecResult executeBlock(NodeAST *node, Scope *currentScope) {
     ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
-    if (node == NULL || currentScope == NULL) {
+    bool isValidInput = (node != NULL && currentScope != NULL);
+    if (!isValidInput) {
         return result;
     }
 
@@ -263,13 +268,14 @@ static ExecResult executeStatement(NodeAST *node, Scope *currentScope) {
 
 static ExecResult executeAssignment(NodeAST *node, Scope *currentScope) {
     ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
-    if (node == NULL || node->symbol == NULL || node->symbol->id == NULL || currentScope == NULL) {
+    if (node == NULL || currentScope == NULL) {
         return result;
     }
 
     Symbol assignedValue = evaluateExpression(GET_EXPRESSION(node), currentScope);
     Symbol *target = lookupSymbol(currentScope, node->symbol->id);
-    if (target != NULL) {
+    bool hasTarget = (target != NULL);
+    if (hasTarget) {
         bool needsFloatCoercion = (target->type == TYPE_FLOAT && assignedValue.type == TYPE_INT);
         if (needsFloatCoercion) {
             target->value.floatValue = (float)assignedValue.value.intValue;
@@ -290,12 +296,17 @@ static ExecResult executeIfElse(NodeAST *node, Scope *currentScope) {
     }
 
     Symbol condition = evaluateExpression(GET_CONDITION(node), currentScope);
-    if (isTruthy(condition)) {
-        if (GET_IF_BLOCK(node) != NULL) {
+    bool conditionHolds = isTruthy(condition);
+    if (conditionHolds) {
+        bool hasIfBlock = (GET_IF_BLOCK(node) != NULL);
+        if (hasIfBlock) {
             return executeStatement(GET_IF_BLOCK(node), currentScope);
         }
-    } else if (GET_ELSE_BLOCK(node) != NULL) {
-        return executeStatement(GET_ELSE_BLOCK(node), currentScope);
+    } else {
+        bool hasElseBlock = (GET_ELSE_BLOCK(node) != NULL);
+        if (hasElseBlock) {
+            return executeStatement(GET_ELSE_BLOCK(node), currentScope);
+        }
     }
 
     return result;
@@ -323,7 +334,8 @@ static ExecResult executeReturn(NodeAST *node, Scope *currentScope) {
         return result;
     }
 
-    if (GET_EXPRESSION(node) != NULL) {
+    bool hasReturnExpression = (GET_EXPRESSION(node) != NULL);
+    if (hasReturnExpression) {
         result.value = evaluateExpression(GET_EXPRESSION(node), currentScope);
     }
 
@@ -331,13 +343,13 @@ static ExecResult executeReturn(NodeAST *node, Scope *currentScope) {
 }
 
 static Symbol executeMethodCall(NodeAST *node, Scope *currentScope) {
-    if (node == NULL || node->symbol == NULL || node->symbol->id == NULL || currentScope == NULL) {
+    if (node == NULL || currentScope == NULL) {
         return makeVoidSymbol();
     }
 
     Symbol *functionSymbol = lookupSymbol(currentScope, node->symbol->id);
-    if (functionSymbol == NULL || functionSymbol->symbolType != FUNCTION_ENTRY_SYMBOL) {
-        semanticError(node->line, "Metodo '%s' no encontrado.", node->symbol->id);
+    bool isFunctionFound = (functionSymbol != NULL && functionSymbol->symbolType == FUNCTION_ENTRY_SYMBOL);
+    if (!isFunctionFound) {
         return makeVoidSymbol();
     }
 
@@ -374,13 +386,12 @@ static Symbol evaluateExpression(NodeAST *node, Scope *currentScope) {
 }
 
 static Symbol evaluateIdentifier(NodeAST *node, Scope *currentScope) {
-    if (node == NULL || node->symbol == NULL || node->symbol->id == NULL) {
+    if (node == NULL || currentScope == NULL) {
         return makeVoidSymbol();
     }
 
     Symbol *symbol = lookupSymbol(currentScope, node->symbol->id);
     if (symbol == NULL) {
-        semanticError(node->line, "Identificador '%s' no declarado.", node->symbol->id);
         return makeVoidSymbol();
     }
 
@@ -412,13 +423,14 @@ static Symbol evaluateOperator(NodeAST *node, Scope *currentScope) {
         return makeVoidSymbol();
     }
 
-    bool isUnary = (node->childCount == 1 || GET_RIGHT(node) == NULL);
+    bool isUnary = (node->childCount == 1);
     if (isUnary) {
         Symbol operand = evaluateExpression(GET_LEFT(node), currentScope);
         return evaluateUnaryOperator(node->operationType, operand);
     }
 
-    if (node->operationType == OP_AND) {
+    bool isLogicalAnd = (node->operationType == OP_AND);
+    if (isLogicalAnd) {
         Symbol left = evaluateExpression(GET_LEFT(node), currentScope);
         if (!isTruthy(left)) {
             return makeBoolSymbol(false);
@@ -427,7 +439,8 @@ static Symbol evaluateOperator(NodeAST *node, Scope *currentScope) {
         return makeBoolSymbol(isTruthy(right));
     }
 
-    if (node->operationType == OP_OR) {
+    bool isLogicalOr = (node->operationType == OP_OR);
+    if (isLogicalOr) {
         Symbol left = evaluateExpression(GET_LEFT(node), currentScope);
         if (isTruthy(left)) {
             return makeBoolSymbol(true);
@@ -492,24 +505,31 @@ static Symbol evaluateBinaryOperator(OperationType operation, Symbol left, Symbo
             if (isFloat) {
                 float leftValue = getFloatValue(left);
                 float rightValue = getFloatValue(right);
-                if (rightValue == 0.0f) {
+                bool isDivisionByZero = (rightValue == 0.0f);
+                if (isDivisionByZero) {
                     semanticError(0, "Division por cero.");
                     return makeFloatSymbol(0.0f);
                 }
                 return makeFloatSymbol(leftValue / rightValue);
             }
-            if (right.value.intValue == 0) {
-                semanticError(0, "Division por cero.");
-                return makeIntSymbol(0);
+            {
+                bool isDivisionByZero = (right.value.intValue == 0);
+                if (isDivisionByZero) {
+                    semanticError(0, "Division por cero.");
+                    return makeIntSymbol(0);
+                }
+                return makeIntSymbol(left.value.intValue / right.value.intValue);
             }
-            return makeIntSymbol(left.value.intValue / right.value.intValue);
 
         case OP_MOD:
-            if (right.value.intValue == 0) {
-                semanticError(0, "Division por cero en operacion modulo.");
-                return makeIntSymbol(0);
+            {
+                bool isModuloByZero = (right.value.intValue == 0);
+                if (isModuloByZero) {
+                    semanticError(0, "Division por cero en operacion modulo.");
+                    return makeIntSymbol(0);
+                }
+                return makeIntSymbol(left.value.intValue % right.value.intValue);
             }
-            return makeIntSymbol(left.value.intValue % right.value.intValue);
 
         case OP_LT:
             if (isFloat) {
@@ -534,12 +554,6 @@ static Symbol evaluateBinaryOperator(OperationType operation, Symbol left, Symbo
                 return makeBoolSymbol(leftValue == rightValue);
             }
             return makeBoolSymbol(left.value.intValue == right.value.intValue);
-
-        case OP_AND:
-            return makeBoolSymbol(isTruthy(left) && isTruthy(right));
-
-        case OP_OR:
-            return makeBoolSymbol(isTruthy(left) || isTruthy(right));
 
         default:
             return makeVoidSymbol();

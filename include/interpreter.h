@@ -16,9 +16,8 @@
  * el método `main`.
  *
  * @param root Raíz del AST del programa.
- * @param parent Ámbito padre (NULL para el ámbito global).
  * @return Puntero al ámbito generado con los símbolos y valores finales.
  */
-Scope *interpreteSemantics(NodeAST *root, Scope *parent);
+Scope *interpreteSemantics(NodeAST *root);
 
 #endif // INTERPRETER_H
