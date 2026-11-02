@@ -85,10 +85,6 @@ static void registerGlobalDeclarations(NodeAST *root, Scope *globalScope) {
 }
 
 static void registerVariableDeclaration(NodeAST *node, Scope *currentScope) {
-    if (node == NULL || currentScope == NULL) {
-        return;
-    }
-
     Symbol *symbol = newSymbol(node->symbol->id, VARIABLE_SYMBOL, node->type, NULL);
     bool isFloatType = (symbol->type == TYPE_FLOAT);
     if (isFloatType) {
@@ -100,10 +96,6 @@ static void registerVariableDeclaration(NodeAST *node, Scope *currentScope) {
 }
 
 static void registerMethodDeclaration(NodeAST *node, Scope *globalScope) {
-    if (node == NULL || globalScope == NULL) {
-        return;
-    }
-
     Symbol *symbol = newSymbol(node->symbol->id, FUNCTION_ENTRY_SYMBOL, node->type, node->symbol->parameters);
     symbol->value.function = node;
     appendSymbol(globalScope, symbol);
@@ -210,11 +202,6 @@ static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argum
 
 static ExecResult executeBlock(NodeAST *node, Scope *currentScope) {
     ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
-    bool isValidInput = (node != NULL && currentScope != NULL);
-    if (!isValidInput) {
-        return result;
-    }
-
     Scope *blockScope = createScope(currentScope->level + 1, currentScope, NULL);
     if (blockScope == NULL) {
         return result;
@@ -268,10 +255,6 @@ static ExecResult executeStatement(NodeAST *node, Scope *currentScope) {
 
 static ExecResult executeAssignment(NodeAST *node, Scope *currentScope) {
     ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
-    if (node == NULL || currentScope == NULL) {
-        return result;
-    }
-
     Symbol assignedValue = evaluateExpression(GET_EXPRESSION(node), currentScope);
     Symbol *target = lookupSymbol(currentScope, node->symbol->id);
     bool hasTarget = (target != NULL);
@@ -291,10 +274,6 @@ static ExecResult executeAssignment(NodeAST *node, Scope *currentScope) {
 
 static ExecResult executeIfElse(NodeAST *node, Scope *currentScope) {
     ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
-    if (node == NULL) {
-        return result;
-    }
-
     Symbol condition = evaluateExpression(GET_CONDITION(node), currentScope);
     bool conditionHolds = isTruthy(condition);
     if (conditionHolds) {
@@ -314,10 +293,6 @@ static ExecResult executeIfElse(NodeAST *node, Scope *currentScope) {
 
 static ExecResult executeWhile(NodeAST *node, Scope *currentScope) {
     ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
-    if (node == NULL) {
-        return result;
-    }
-
     while (isTruthy(evaluateExpression(GET_CONDITION(node), currentScope))) {
         result = executeStatement(GET_WHILE_BLOCK(node), currentScope);
         if (result.hasReturned) {
@@ -330,10 +305,6 @@ static ExecResult executeWhile(NodeAST *node, Scope *currentScope) {
 
 static ExecResult executeReturn(NodeAST *node, Scope *currentScope) {
     ExecResult result = { .hasReturned = true, .value = makeVoidSymbol() };
-    if (node == NULL) {
-        return result;
-    }
-
     bool hasReturnExpression = (GET_EXPRESSION(node) != NULL);
     if (hasReturnExpression) {
         result.value = evaluateExpression(GET_EXPRESSION(node), currentScope);
@@ -343,10 +314,6 @@ static ExecResult executeReturn(NodeAST *node, Scope *currentScope) {
 }
 
 static Symbol executeMethodCall(NodeAST *node, Scope *currentScope) {
-    if (node == NULL || currentScope == NULL) {
-        return makeVoidSymbol();
-    }
-
     Symbol *functionSymbol = lookupSymbol(currentScope, node->symbol->id);
     bool isFunctionFound = (functionSymbol != NULL && functionSymbol->symbolType == FUNCTION_ENTRY_SYMBOL);
     if (!isFunctionFound) {
@@ -386,10 +353,6 @@ static Symbol evaluateExpression(NodeAST *node, Scope *currentScope) {
 }
 
 static Symbol evaluateIdentifier(NodeAST *node, Scope *currentScope) {
-    if (node == NULL || currentScope == NULL) {
-        return makeVoidSymbol();
-    }
-
     Symbol *symbol = lookupSymbol(currentScope, node->symbol->id);
     if (symbol == NULL) {
         return makeVoidSymbol();
@@ -399,10 +362,6 @@ static Symbol evaluateIdentifier(NodeAST *node, Scope *currentScope) {
 }
 
 static Symbol evaluateConstant(NodeAST *node) {
-    if (node == NULL || node->symbol == NULL) {
-        return makeVoidSymbol();
-    }
-
     switch (node->symbol->type) {
         case TYPE_INT:
             return makeIntSymbol(node->symbol->value.intValue);
@@ -419,11 +378,7 @@ static Symbol evaluateConstant(NodeAST *node) {
 }
 
 static Symbol evaluateOperator(NodeAST *node, Scope *currentScope) {
-    if (node == NULL) {
-        return makeVoidSymbol();
-    }
-
-    bool isUnary = (node->childCount == 1);
+    bool isUnary = (node->childCount == 1 || GET_RIGHT(node) == NULL);
     if (isUnary) {
         Symbol operand = evaluateExpression(GET_LEFT(node), currentScope);
         return evaluateUnaryOperator(node->operationType, operand);

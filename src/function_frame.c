@@ -83,7 +83,6 @@ int addSlot(FunctionFrame *frame, const TACOperand *operand) {
 
 int addAnonymousSlot(FunctionFrame *frame) {
     if (frame == NULL) return 0;
-
     frame->nextOffset += 4;
     return -frame->nextOffset;
 }
@@ -98,5 +97,6 @@ int getSlotOffset(const FunctionFrame *frame, const char *name) {
             return frame->slots[i].offset;
         }
     }
+    
     return 0;
 }

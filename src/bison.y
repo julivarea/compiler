@@ -59,9 +59,6 @@ Program
     : Declarations                              { $$ = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL); resolveNodeArray($$, $1); astRoot = $$; }
     ;
 
-/* Variables globales y metodos se unifican bajo Declaration para permitir
- * su declaracion intercalada y evitar el conflicto shift/reduce LR(1)
- * sobre el prefijo comun "Type ID". */
 Declarations
     : %empty                                    { $$ = NULL; }
     | Declarations Declaration                  { $$ = mergeNodeArrays($1, $2); }

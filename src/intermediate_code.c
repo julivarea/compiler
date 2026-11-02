@@ -64,10 +64,7 @@ const TACList *generateIntermediateCode(NodeAST *root) {
 }
 
 static void generateGlobalDeclarationCode(NodeAST *node) {
-    bool hasSymbol = (node != NULL && node->symbol != NULL);
-    if (hasSymbol) {
-        emit(TAC_GLOBAL_DECL, tacNone(), tacVariable(node->symbol), tacNone());
-    }
+    emit(TAC_GLOBAL_DECL, tacNone(), tacVariable(node->symbol), tacNone());
 }
 
 static void generateStatementCode(NodeAST *node) {
@@ -112,11 +109,6 @@ static void generateStatementCode(NodeAST *node) {
 }
 
 static void generateMethodDeclarationCode(NodeAST *node) {
-    bool isValidMethod = (node->symbol != NULL && node->symbol->id != NULL);
-    if (!isValidMethod) {
-        return;
-    }
-
     NodeAST *parameters = GET_LEFT(node);
     int parameterCount = (parameters != NULL) ? parameters->childCount : 0;
     TACOperand method = tacMethod(node->symbol->id, node->type);
@@ -147,30 +139,21 @@ static void generateBlockCode(NodeAST *node) {
 }
 
 static void generateVariableDeclarationCode(NodeAST *node) {
-    bool hasSymbol = (node->symbol != NULL);
-    if (hasSymbol) {
-        emit(TAC_LOCAL_DECL, tacNone(), tacVariable(node->symbol), tacNone());
-    }
+    emit(TAC_LOCAL_DECL, tacNone(), tacVariable(node->symbol), tacNone());
 }
 
 static void generateAssignmentCode(NodeAST *node) {
-    bool isValidAssignment = (node->symbol != NULL && node->symbol->id != NULL);
-    if (isValidAssignment) {
-        TACOperand value = generateExpressionCode(GET_EXPRESSION(node));
-        bool needsFloatCoercion = (node->symbol->type == TYPE_FLOAT);
-        if (needsFloatCoercion) {
-            value = coerceToFloat(value);
-        }
-        emit(TAC_ASSIGN, tacVariable(node->symbol), value, tacNone());
+    TACOperand value = generateExpressionCode(GET_EXPRESSION(node));
+    bool needsFloatCoercion = (node->symbol->type == TYPE_FLOAT);
+    if (needsFloatCoercion) {
+        value = coerceToFloat(value);
     }
+    emit(TAC_ASSIGN, tacVariable(node->symbol), value, tacNone());
 }
 
 static void generateCallStatementCode(NodeAST *node) {
     generateCallArguments(node);
-    bool isValidMethod = (node->symbol != NULL && node->symbol->id != NULL);
-    if (isValidMethod) {
-        emit(TAC_CALL, tacNone(), tacMethod(node->symbol->id, node->type), tacConstantInt(node->childCount));
-    }
+    emit(TAC_CALL, tacNone(), tacMethod(node->symbol->id, node->type), tacConstantInt(node->childCount));
 }
 
 static void generateReturnCode(NodeAST *node) {
