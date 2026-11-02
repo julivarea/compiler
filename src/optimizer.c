@@ -147,7 +147,7 @@ static bool evaluateBinary(TACOperation operation, const TACOperand *first,
 static bool evaluateUnary(TACOperation operation, const TACOperand *operand,
                           DataType resultType, TACOperand *folded) {
     switch (operation) {
-        case TAC_NEG:
+        case TAC_UMINUS:
             if (resultType == TYPE_FLOAT) {
                 *folded = tacConstantFloat(-asFloat(operand));
             } else {

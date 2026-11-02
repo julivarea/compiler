@@ -105,5 +105,8 @@ TACOperand tacMethod(const char *name, DataType returnType) {
 }
 
 const char *getOperandName(const TACOperand *operand) {
-    return (operand != NULL) ? operand->name : "";
+    if (operand == NULL || operand->kind == OPERAND_NONE) {
+        return "";
+    }
+    return operand->name;
 }

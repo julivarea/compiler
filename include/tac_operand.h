@@ -132,10 +132,10 @@ TACOperand tacMethod(const char *name, DataType returnType);
 /**
  * @brief Obtiene la representación textual del nombre de un operando.
  *
- * Retorna una cadena vacía en caso de que el operando sea nulo.
+ * Retorna una cadena vacía en caso de que el operando sea nulo o no utilizado (OPERAND_NONE).
  *
  * @param operand Puntero al operando a consultar (acepta NULL).
- * @return Cadena constante con el nombre del operando, o "" si es NULL.
+ * @return Cadena constante con el nombre del operando, o "" si es NULL o inactivo.
  */
 const char *getOperandName(const TACOperand *operand);
 

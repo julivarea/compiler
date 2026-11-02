@@ -163,7 +163,7 @@ static int runSemantic(void) {
 
 static int runIntermediateCode(const Options *options, const TACList *tacList) {
     resetBuildString();
-    printTACList(tacList);
+    formatTACList(tacList);
 
     if (options->debug) {
         printf("%s", getBuiltString());

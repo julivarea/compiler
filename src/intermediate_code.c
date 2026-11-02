@@ -23,7 +23,7 @@ static void generateIfElseCode(NodeAST *node);
 static void generateWhileCode(NodeAST *node);
 
 static TACOperand generateExpressionCode(NodeAST *node);
-static TACOperand generateBinaryOperatorCode(NodeAST *node);
+static TACOperand generateOperatorCode(NodeAST *node);
 static TACOperand generateShortCircuitCode(NodeAST *node);
 static TACOperand generateCallExpressionCode(NodeAST *node);
 static TACOperand generateConstantOperand(NodeAST *node);
@@ -223,7 +223,7 @@ static TACOperand generateExpressionCode(NodeAST *node) {
             return generateConstantOperand(node);
 
         case OPERATOR_NODE:
-            return generateBinaryOperatorCode(node);
+            return generateOperatorCode(node);
 
         case METHOD_CALL_NODE:
             return generateCallExpressionCode(node);
@@ -233,7 +233,7 @@ static TACOperand generateExpressionCode(NodeAST *node) {
     }
 }
 
-static TACOperand generateBinaryOperatorCode(NodeAST *node) {
+static TACOperand generateOperatorCode(NodeAST *node) {
     bool isLogicalShortCircuit = (node->operationType == OP_AND || node->operationType == OP_OR);
     if (isLogicalShortCircuit) {
         return generateShortCircuitCode(node);
@@ -351,7 +351,7 @@ static TACOperation getTACOperation(OperationType operation) {
         case OP_LT:       return TAC_LT;
         case OP_GT:       return TAC_GT;
         case OP_EQ:       return TAC_EQ;
-        case OP_UMINUS:   return TAC_NEG;
+        case OP_UMINUS:   return TAC_UMINUS;
         case OP_NOT:      return TAC_NOT;
         default:
             fprintf(stderr,

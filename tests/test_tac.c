@@ -78,7 +78,7 @@ static const char *compileToTACText(const char *source) {
     }
 
     resetBuildString();
-    printTACList(list);
+    formatTACList(list);
     return getBuiltString();
 }
 
@@ -190,13 +190,13 @@ void test_tac_binary_modulo(void) {
     TEST_ASSERT_EQUAL_STRING("t0", modInst->result.name);
 }
 
-// Negación aritmética unaria genera instrucción TAC_NEG con segundo operando nulo
+// Negación aritmética unaria genera instrucción TAC_UMINUS con segundo operando nulo
 void test_tac_unary_minus(void) {
     const char *source = "void main() { int a; int b; a = 5; b = -a; }";
     const TACList *list = compileToTAC(source);
     TEST_ASSERT_NOT_NULL(list);
 
-    const TACInstruction *negInst = findInstruction(list, TAC_NEG, 0);
+    const TACInstruction *negInst = findInstruction(list, TAC_UMINUS, 0);
     TEST_ASSERT_NOT_NULL(negInst);
     TEST_ASSERT_EQUAL(OPERAND_TEMP, negInst->result.kind);
     TEST_ASSERT_EQUAL_STRING("t0", negInst->result.name);
@@ -928,6 +928,24 @@ void test_tac_null_ast_root_returns_null(void) {
     TEST_ASSERT_NULL(list);
 }
 
+// getOperandName retorna cadena vacía cuando el operando es NULL o OPERAND_NONE
+void test_tac_get_operand_name_null_and_none_return_empty_string(void) {
+    TEST_ASSERT_EQUAL_STRING("", getOperandName(NULL));
+
+    TACOperand noneOperand = tacNone();
+    TEST_ASSERT_EQUAL_STRING("", getOperandName(&noneOperand));
+
+    TACOperand tempOperand = tacTemp("t0", TYPE_INT);
+    TEST_ASSERT_EQUAL_STRING("t0", getOperandName(&tempOperand));
+}
+
+// formatTACList con lista nula no realiza acciones y es seguro contra punteros nulos
+void test_tac_format_list_null_safe(void) {
+    resetBuildString();
+    formatTACList(NULL);
+    TEST_ASSERT_EQUAL_STRING("", getBuiltString());
+}
+
 /* ------------------------------------------------------------------------
  * Punto de entrada del ejecutable de pruebas
  * ------------------------------------------------------------------------ */
@@ -990,6 +1008,8 @@ int main(void) {
     RUN_TEST(test_tac_canonical_short_circuit_boolean_chain);
     RUN_TEST(test_tac_long_variable_name_collision);
     RUN_TEST(test_tac_null_ast_root_returns_null);
+    RUN_TEST(test_tac_get_operand_name_null_and_none_return_empty_string);
+    RUN_TEST(test_tac_format_list_null_safe);
 
     return UNITY_END();
 }

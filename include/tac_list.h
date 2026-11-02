@@ -46,9 +46,9 @@ void freeTACList(TACList *list);
  * Itera secuencialmente sobre todas las instrucciones enlazadas e invoca
  * @p printTACInstruction sobre cada una.
  *
- * @param list Puntero a la lista TAC a imprimir (si es NULL no realiza acción).
+ * @param list Puntero a la lista TAC a formatear (si es NULL no realiza acción).
  */
-void printTACList(const TACList *list);
+void formatTACList(const TACList *list);
 
 /**
  * @brief Agrega una instrucción al final de la lista TAC.
