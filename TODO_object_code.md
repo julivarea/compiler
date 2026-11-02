@@ -21,8 +21,7 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - ✅ **Fase 2 completa:** el generador está conectado a la CLI. `./mi_compilador archivo.ctds` produce el ejecutable `.out` y `-target assembly` produce el `.ass`.
   - ✅ **Fase 3 completa:** soporte de `float` con SSE, constantes en `.rodata`, y pasaje de parámetros con las dos clases de registros de la convención. Cierra el hallazgo 1.13.
   - ✅ **Auditoría cerrada:** los 15 hallazgos de la sección 1 están corregidos o auditados.
-  - ⚠️ **Queda la Fase 4 (testing).**
-  - ⚠️ **`generateAssembly()` todavía no está conectada a la CLI:** no hay forma de llegar a ella desde `./mi_compilador`, porque `CURRENT_TARGET` sigue en `TARGET_CODINTER` y `src/bison.y` no tiene el caso de la etapa. Mientras tanto, la única manera de probar el generador es con un arnés propio que llame a `generateIntermediateCode()` y después a `generateAssembly()`. Es el punto 2.1/2.2.
+  - ✅ **Fase 4 completa (testing):** suite exhaustiva en `tests/test_object_code.c` (82 tests) con pruebas unitarias aisladas de traducción de cada cuádrupla TAC a Assembly, verificación estructural de `FunctionFrame`, pruebas de integración con archivos en disco (`examples/factorial.ctds`, `examples/programa_sin_error.ctds`, llamadas anidadas, pasaje >6 argumentos, shadowing) y suite de ejecución con 42 programas límite (E01 a E42) integrada en `test_suite.sh`.
 
 ---
 
@@ -437,14 +436,14 @@ finalmente `param t0` pisa `%edi` con 6. Resultado: `sumar(6, 2) = 8`.
 
 ---
 
-### Fase 4: Pruebas Unitarias e Integración (Testing)
-- [ ] **4.1 Pruebas Unitarias de `object_code` (`tests/test_object_code.c`)**
-  - [ ] Verificar creación de frames, asignación correcta de offsets y alineación a 16 bytes.
-  - [ ] Probar traducción aislada de cada cuádrupla TAC a assembly.
-- [ ] **4.2 Pruebas de Integración de Punta a Punta**
-  - [ ] Compilar y ejecutar `examples/factorial.ctds`: verificar recursión y valor retornado.
-  - [ ] Compilar y ejecutar `examples/programa_sin_error.ctds`: verificar operaciones aritméticas combinadas y precedencia.
-  - [ ] Crear tests con llamadas anidadas: `sumar(doble(2), triple(3))`.
-  - [ ] Crear tests con más de 6 parámetros para verificar el pasaje por pila.
-  - [ ] Crear tests con variables globales y variables locales con el mismo nombre (shadowing).
-  - [ ] Integrar la ejecución de los binarios generados en `test_suite.sh`.
+### Fase 4: Pruebas Unitarias e Integración (Testing) — COMPLETA
+- [X] **4.1 Pruebas Unitarias de `object_code` (`tests/test_object_code.c`)**
+  - [X] Verificar creación de frames, asignación correcta de offsets y alineación a 16 bytes.
+  - [X] Probar traducción aislada de cada cuádrupla TAC a assembly (Grupo 2: asignación, aritmética, lógica, saltos, llamadas y floats).
+- [X] **4.2 Pruebas de Integración de Punta a Punta**
+  - [X] Compilar y ejecutar `examples/factorial.ctds`: verificar recursión y valor retornado.
+  - [X] Compilar y ejecutar `examples/programa_sin_error.ctds`: verificar operaciones aritméticas combinadas y precedencia.
+  - [X] Crear tests con llamadas anidadas: `sumar(doble(2), triple(3))`.
+  - [X] Crear tests con más de 6 parámetros para verificar el pasaje por pila.
+  - [X] Crear tests con variables globales y variables locales con el mismo nombre (shadowing).
+  - [X] Integrar la ejecución de los binarios generados en `test_suite.sh`.

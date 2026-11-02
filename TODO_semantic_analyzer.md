@@ -2,27 +2,27 @@
 
 Documento de seguimiento del estado del analizador semántico (`src/semantic_analyzer.c` y `src/type_checker.c`), especificando lo pendiente de implementar y el registro consolidado de tareas resueltas según la especificación de **C-TDS** (`documentacion/spec/01-TDS-spec-lenguaje.pdf`).
 
-**Estado:** las 14 reglas semánticas del enunciado están implementadas y verificadas a mano, una por una. Lo único pendiente es la suite de pruebas automatizadas.
+**Estado:** las 14 reglas semánticas del enunciado están implementadas y verificadas con una suite automatizada exhaustiva en `tests/test_semantic.c` (100% de los tests pasando).
 
 ---
 
-## 1. Tareas Pendientes (Lo que nos queda)
+## 1. Pruebas Automatizadas y Verificación — COMPLETA
 
 ### 1.1 Pruebas Unitarias y Automatización
-- [ ] **Crear suite de pruebas semánticas (`tests/test_semantic.c`):**
-  - [ ] Pruebas de variables no declaradas y redeclaración en el mismo scope.
-  - [ ] Pruebas de expresiones inválidas (`bool + int`, `3.5 % 2`, `true < false`).
-  - [ ] Pruebas de `==` con operandos de distinto tipo (`1 == 1.5`, `true == 1`), que deben fallar, y del mismo tipo, que deben pasar.
-  - [ ] Pruebas de condiciones no booleanas en `if` y `while` (`if (10) ...`).
-  - [ ] Pruebas de llamadas a métodos con argumentos de más, de menos o tipos incompatibles.
-  - [ ] Pruebas de llamadas a identificadores que son variables (`x()`).
-  - [ ] Pruebas de asignaciones inválidas a métodos (`foo = 5`).
-  - [ ] Pruebas de control de retorno: método no-void sin ningún `return`, `if` sin `else` como única salida, `while` como única salida, `return` con expresión en un método `void`, `return` sin expresión en un método no-void, y tipo de retorno incompatible.
-  - [ ] Pruebas de retorno **válidas** que no deben fallar: `return` en ambas ramas de un `if/else`, `return` dentro de un bloque anidado, y `return` duplicado (ver decisión de diseño 3).
-  - [ ] Pruebas de presencia y firma del método `main` (sin argumentos, existencia obligatoria).
-- [ ] **Integración en `test_suite.sh`:**
-  - [ ] Agregar compilación de `test_semantic.c` vinculando `unity.c`, `semantic_analyzer.c`, `type_checker.c`, `symbol_table.c`, `ast.c`, `error_handler.c`, etc.
-  - [ ] Ejecutar el binario generado (`run_semantic_tests`) dentro de la suite de pruebas automatizadas.
+- [x] **Crear suite de pruebas semánticas (`tests/test_semantic.c`):**
+  - [x] Pruebas de variables no declaradas y redeclaración en el mismo scope.
+  - [x] Pruebas de expresiones inválidas (`bool + int`, `3.5 % 2`, `true < false`).
+  - [x] Pruebas de `==` con operandos de distinto tipo (`1 == 1.5`, `true == 1`), que deben fallar, y del mismo tipo, que deben pasar.
+  - [x] Pruebas de condiciones no booleanas en `if` y `while` (`if (10) ...`).
+  - [x] Pruebas de llamadas a métodos con argumentos de más, de menos o tipos incompatibles.
+  - [x] Pruebas de llamadas a identificadores que son variables (`x()`).
+  - [x] Pruebas de asignaciones inválidas a métodos (`foo = 5`).
+  - [x] Pruebas de control de retorno: método no-void sin ningún `return`, `if` sin `else` como única salida, `while` como única salida, `return` con expresión en un método `void`, `return` sin expresión en un método no-void, y tipo de retorno incompatible.
+  - [x] Pruebas de retorno **válidas** que no deben fallar: `return` en ambas ramas de un `if/else`, `return` dentro de un bloque anidado, y `return` duplicado (ver decisión de diseño 3).
+  - [x] Pruebas de presencia y firma del método `main` (sin argumentos, existencia obligatoria).
+- [x] **Integración en `test_suite.sh`:**
+  - [x] Agregar compilación de `test_semantic.c` vinculando `unity.c`, `semantic_analyzer.c`, `type_checker.c`, `symbol_table.c`, `ast.c`, `error_handler.c`, etc.
+  - [x] Ejecutar el binario generado (`run_semantic_tests`) dentro de la suite de pruebas automatizadas.
 
 > **Nota para quien escriba los tests:** `analyzeSemantics(raiz, NULL, TYPE_VOID)` valida todo, incluida la presencia y firma de `main`; no hace falta llamar nada más. Como `semantic_errors` es una global, hay que resetearla a 0 en el `setUp()` de cada caso.
 

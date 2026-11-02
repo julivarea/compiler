@@ -16,7 +16,7 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 6. ~~**Declaraciones de variables, globales y locales (sección 3.4).**~~ **HECHO.**
 7. ~~**La CLI (sección 4).**~~ **HECHO.**
 8. ~~**Coerción `int`/`float` (sección 2.4).**~~ **HECHO.** El enunciado solo exige TAC para enteros y lógicos, así que el soporte de `float` es una extensión nuestra; se implementó igual para que sea coherente.
-9. **Pruebas unitarias (sección 5).** ← único pendiente; a cargo de Julián.
+9. ~~**Pruebas unitarias (sección 5).**~~ **HECHO (`tests/test_tac.c`).**
 
 ---
 
@@ -428,15 +428,15 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 
 ---
 
-## 5. Pruebas Unitarias y Automatización
+## 5. Pruebas Unitarias y Automatización — COMPLETA
 
-- [ ] **Crear suite de pruebas unitarias `tests/test_intermediate_code.c`:**
-  - Pruebas de expresiones aritméticas compuestas y generación correcta de temporales.
-  - Pruebas de expresiones lógicas con corto circuito (`&&`, `||`): verificar que el operando derecho no se evalúa cuando el izquierdo ya determina el resultado.
-  - Pruebas de llamadas a métodos como expresiones (validar asignación de temporales destino).
-  - Pruebas de llamadas a métodos como sentencias (validar emisión de `param` y `call`).
-  - Pruebas de control de flujo (`if-else` con y sin rama `else`, ciclos `while`): verificar que toda etiqueta referenciada por un salto esté definida.
-  - Pruebas de métodos `void` con y sin `return`.
-  - Pruebas de ocultamiento de scopes: dos variables con el mismo nombre en ámbitos distintos deben recibir nombres distintos en el TAC.
-- [ ] **Integrar en `test_suite.sh`:**
-  - Compilación y ejecución automática de las pruebas de código intermedio junto con las de lexer y parser.
+- [x] **Crear suite de pruebas unitarias `tests/test_tac.c`:**
+  - [x] Pruebas de expresiones aritméticas compuestas y generación correcta de temporales.
+  - [x] Pruebas de expresiones lógicas con corto circuito (`&&`, `||`): verificar que el operando derecho no se evalúa cuando el izquierdo ya determina el resultado.
+  - [x] Pruebas de llamadas a métodos como expresiones (validar asignación de temporales destino).
+  - [x] Pruebas de llamadas a métodos como sentencias (validar emisión de `param` y `call`).
+  - [x] Pruebas de control de flujo (`if-else` con y sin rama `else`, ciclos `while`): verificar que toda etiqueta referenciada por un salto esté definida.
+  - [x] Pruebas de métodos `void` con y sin `return`.
+  - [x] Pruebas de ocultamiento de scopes: dos variables con el mismo nombre en ámbitos distintos deben recibir nombres distintos en el TAC.
+- [x] **Integrar en `test_suite.sh`:**
+  - [x] Compilación y ejecución automática de las pruebas de código intermedio (`run_tac_tests`) junto con las de lexer y parser.
