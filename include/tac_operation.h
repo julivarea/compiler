@@ -48,7 +48,7 @@ typedef enum {
     TAC_EQ,          /**< Comparación de igualdad (@p result = @p firstOperand == @p secondOperand). */
 
     /* Operaciones unarias y conversiones */
-    TAC_NEG,         /**< Negación aritmética (@p result = -@p firstOperand). */
+    TAC_UMINUS,      /**< Negación aritmética (@p result = -@p firstOperand). */
     TAC_NOT,         /**< Negación lógica (@p result = !@p firstOperand). */
     TAC_INT_TO_FLOAT /**< Conversión de tipo entero a flotante (@p result = int_to_float @p firstOperand). */
 } TACOperation;

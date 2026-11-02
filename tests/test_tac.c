@@ -190,13 +190,13 @@ void test_tac_binary_modulo(void) {
     TEST_ASSERT_EQUAL_STRING("t0", modInst->result.name);
 }
 
-// Negación aritmética unaria genera instrucción TAC_NEG con segundo operando nulo
+// Negación aritmética unaria genera instrucción TAC_UMINUS con segundo operando nulo
 void test_tac_unary_minus(void) {
     const char *source = "void main() { int a; int b; a = 5; b = -a; }";
     const TACList *list = compileToTAC(source);
     TEST_ASSERT_NOT_NULL(list);
 
-    const TACInstruction *negInst = findInstruction(list, TAC_NEG, 0);
+    const TACInstruction *negInst = findInstruction(list, TAC_UMINUS, 0);
     TEST_ASSERT_NOT_NULL(negInst);
     TEST_ASSERT_EQUAL(OPERAND_TEMP, negInst->result.kind);
     TEST_ASSERT_EQUAL_STRING("t0", negInst->result.name);

@@ -103,7 +103,7 @@ void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
                     case TAC_MUL:
                     case TAC_DIV:
                     case TAC_MOD:
-                    case TAC_NEG:
+                    case TAC_UMINUS:
                     case TAC_NOT:
                     case TAC_INT_TO_FLOAT:
                     case TAC_LT:
@@ -369,7 +369,7 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             emitDivisionOp(instruction, frame, ASM_RDX);
             break;
 
-        case TAC_NEG: {
+        case TAC_UMINUS: {
             bool isFloat = isFloatOperand(&instruction->result);
             if (isFloat) {
                 buildStringf("    pxor %%xmm0, %%xmm0\n");
