@@ -47,12 +47,16 @@ static const char *getTokenName(int token);
  * como la emitió el generador.
  */
 static const TACList *buildIntermediateCode(const Options *options) {
-    const TACList *tacList = generateIntermediateCode(astRoot);
-
     OptimizationSet enabled = parseOptimizations(options->opt);
     bool hasOptimizations = (enabled != OPTIMIZATION_NONE);
+
+    /* Las que trabajan sobre el árbol tienen que correr antes de generar. */
+    int changes = hasOptimizations ? optimizeSyntaxTree(astRoot, enabled) : 0;
+
+    const TACList *tacList = generateIntermediateCode(astRoot);
+
     if (hasOptimizations) {
-        int changes = optimizeIntermediateCode((TACList *)tacList, enabled);
+        changes += optimizeIntermediateCode((TACList *)tacList, enabled);
         if (options->debug) {
             printf("Optimizaciones: %d instrucciones transformadas\n\n", changes);
         }

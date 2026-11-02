@@ -38,7 +38,8 @@ anda sin él, el problema está en la optimización y no en el resto del compila
 | `const-prop` | Propagación de constantes (§3.1) — **implementada** |
 | `dead-code` | Eliminación de código inalcanzable (§3.2) — **implementada** |
 | `const-branch` | Condición constante en `if` / `while` (§3.3) — **implementada** |
-| `self-assign` | Asignaciones redundantes y mirilla (§3.4) |
+| `self-assign` | Asignaciones de una variable a sí misma (§3.4) — **implementada** |
+| `peephole` | Mirilla sobre instrucciones contiguas (§3.4) — **parcial** |
 | `strength-reduce` | Reducción de fuerza en multiplicaciones (§3.5) |
 
 ---
@@ -345,7 +346,7 @@ casos que **no** deben tocarse: `if` y `while` cuya condición depende de una va
 
 ### 3.4 Asignaciones redundantes y mirilla sobre el assembly
 
-**Flag:** `self-assign` · **Nivel:** AST (asignaciones) y assembly (mirilla)
+**Flags:** `self-assign` (AST) y `peephole` (TAC y assembly)
 
 Una asignación de una variable a sí misma no tiene efecto y no debe generar código:
 
@@ -383,6 +384,61 @@ patrones que reconoce no existen en el TAC.
 **Verificación:** un programa con `x = x;` no debe generar ninguna instrucción para esa
 sentencia, y los patrones de mirilla deben reducir el conteo de instrucciones del `.ass` sin
 cambiar el resultado de la ejecución.
+
+#### Estado: `self-assign` implementada, `peephole` parcial
+
+**Asignaciones redundantes (`self-assign`).** `markRedundantAssignments()` en
+`src/optimizer.c`, sobre el AST, invocada desde `optimizeSyntaxTree()` antes de generar el TAC.
+
+```
+// sin -opt                  // con -opt self-assign
+x@2 = 5                       x@2 = 5
+x@2 = x@2                     ret x@2
+ret x@2
+```
+
+Es la optimización que usa el mecanismo `hasExecute`: el nodo no se desengancha del árbol, se
+marca, y `generateStatementCode()` lo saltea. Es también la única del catálogo que trabaja a
+nivel de AST, porque `x = x` se reconoce ahí sin necesitar nada de lo que aporta el TAC.
+
+La comparación es por **`uid`**, no por nombre. Es la diferencia entre funcionar y romper el
+ocultamiento de scopes: en
+
+```c
+int x;
+int main() { int y; x = 3; { int x; x = 7; y = x; } return y + x; }
+```
+
+hay dos variables llamadas `x`, y `y = x` no es una autoasignación. Comparando los punteros
+`id` se compararían direcciones de cadenas; comparándolos con `strcmp` daría un falso positivo
+y el programa devolvería un valor equivocado. Se verificó que devuelve 10 con y sin el flag.
+
+**Mirilla (`peephole`).** Implementado el patrón de **salto a la etiqueta inmediatamente
+siguiente**, en `removeRedundantJumps()`, sobre el TAC. Es el único de los cuatro de la tabla
+que conviene resolver ahí: no depende de registros ni de la codificación de las instrucciones,
+solo de que dos instrucciones sean contiguas. Y es donde más rinde, porque §3.3 deja
+exactamente ese patrón al resolver un `if` constante.
+
+Encadenado con las anteriores, un `if (2 > 1) { x = 5; } else { x = 9; }` queda en:
+
+```
+x@2 = 0
+t0 = true
+x@2 = 5
+ret 5
+```
+
+Desaparecieron la condición, la rama muerta, el salto, la etiqueta, y la propagación llegó
+hasta el `ret`.
+
+**Pendientes de la mirilla**, los tres que sí dependen de la máquina y van sobre el assembly
+emitido: `movl X, %eax` seguido de `movl %eax, X`, `movl $0, %eax` reemplazado por
+`xorl %eax, %eax`, y la carga de un valor que ya está en el registro.
+
+**Verificado:** 23 programas compilados dos veces y ejecutados, 23 de 23 idénticos y correctos.
+Incluye `x = x` sobre local, global y parámetro, repetido varias veces, el caso de ocultamiento
+descrito arriba, y los casos que **no** deben tocarse (`x = y`, `x = x + 1`). Los 40 tests
+siguen pasando y los 12 ejemplos conservan su código de salida.
 
 ---
 
@@ -458,7 +514,10 @@ documentarlo en el informe.
 - **Implementadas:** plegado y propagación de constantes (§3.1), eliminación de código
   inalcanzable (§3.2) junto con la limpieza de etiquetas sin referencias, y condición constante
   en `if` / `while` (§3.3).
-- **Pendientes:** asignaciones redundantes y mirilla (§3.4), reducción de fuerza (§3.5).
+- **Implementadas también:** asignaciones de una variable a sí misma (§3.4, sobre el AST con
+  `hasExecute`) y el patrón de salto redundante de la mirilla (§3.4, sobre el TAC).
+- **Pendientes:** los tres patrones de mirilla que van sobre el assembly emitido (§3.4) y la
+  reducción de fuerza (§3.5).
 
 ---
 

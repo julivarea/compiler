@@ -14,6 +14,8 @@ static int propagateConstants(TACList *tacList);
 static int removeUnreachableCode(TACList *tacList);
 static int removeUnreferencedLabels(TACList *tacList);
 static int simplifyConstantBranches(TACList *tacList);
+static int removeRedundantJumps(TACList *tacList);
+static int markRedundantAssignments(NodeAST *node);
 static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previous, TACInstruction *current);
 
 /* ------------------------------------------------------------------ */
@@ -29,9 +31,11 @@ OptimizationSet parseOptimizations(const char *option) {
     if (strcmp(option, "const-prop") == 0) return OPTIMIZATION_CONST_PROP;
     if (strcmp(option, "dead-code") == 0)  return OPTIMIZATION_DEAD_CODE;
     if (strcmp(option, "const-branch") == 0) return OPTIMIZATION_CONST_BRANCH;
+    if (strcmp(option, "self-assign") == 0)  return OPTIMIZATION_SELF_ASSIGN;
+    if (strcmp(option, "peephole") == 0)     return OPTIMIZATION_PEEPHOLE;
 
-    fprintf(stderr, "Error: optimizacion desconocida '%s'."
-                    " Soportadas: all, const-fold, const-prop, dead-code, const-branch.\n",
+    fprintf(stderr, "Error: optimizacion desconocida '%s'. Soportadas: all, const-fold,"
+                    " const-prop, dead-code, const-branch, self-assign, peephole.\n",
             option);
     return OPTIMIZATION_NONE;
 }
@@ -62,6 +66,9 @@ int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled) {
         }
         if (isOptimizationEnabled(enabled, OPTIMIZATION_DEAD_CODE)) {
             changes += removeUnreachableCode(tacList);
+        }
+        if (isOptimizationEnabled(enabled, OPTIMIZATION_PEEPHOLE)) {
+            changes += removeRedundantJumps(tacList);
         }
 
         bool hasConverged = (changes == 0);
@@ -605,6 +612,106 @@ static int simplifyConstantBranches(TACList *tacList) {
         }
 
         changes++;
+    }
+
+    return changes;
+}
+
+/* ------------------------------------------------------------------ */
+/* Saltos redundantes                                          */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Elimina los saltos cuyo destino es la etiqueta inmediatamente siguiente.
+ *
+ * Saltar a la instrucción que de todos modos venía a continuación no hace
+ * nada. Aparecen sobre todo después de resolver un `if` con condición
+ * constante (§3.3), que deja un `goto L` pegado a su propio `L:`.
+ *
+ * Es la única de las patrones de mirilla que conviene resolver sobre el TAC: no
+ * depende de registros ni de la codificación de las instrucciones, solo de la
+ * contigüidad de dos instrucciones.
+ */
+static int removeRedundantJumps(TACList *tacList) {
+    int changes = 0;
+
+    TACInstruction *previous = NULL;
+    TACInstruction *current = tacList->head;
+
+    while (current != NULL) {
+        bool isJump = (current->operation == TAC_GOTO);
+        bool jumpsToNextInstruction = false;
+
+        if (isJump && current->next != NULL) {
+            const TACInstruction *next = current->next;
+            jumpsToNextInstruction = (next->operation == TAC_LABEL &&
+                                      strcmp(next->result.name, current->firstOperand.name) == 0);
+        }
+
+        if (jumpsToNextInstruction) {
+            current = unlinkInstruction(tacList, previous, current);
+            changes++;
+        } else {
+            previous = current;
+            current = current->next;
+        }
+    }
+
+    return changes;
+}
+
+/* ------------------------------------------------------------------ */
+/* Asignaciones redundantes (sobre el AST)                              */
+/* ------------------------------------------------------------------ */
+
+int optimizeSyntaxTree(NodeAST *root, OptimizationSet enabled) {
+    if (root == NULL || enabled == OPTIMIZATION_NONE) return 0;
+
+    int changes = 0;
+    if (isOptimizationEnabled(enabled, OPTIMIZATION_SELF_ASSIGN)) {
+        changes += markRedundantAssignments(root);
+    }
+
+    return changes;
+}
+
+/*
+ * Marca como no ejecutables las asignaciones de una variable a sí misma.
+ *
+ * `x = x;` no tiene efecto: en el código objeto se traduce a una lectura y una
+ * escritura sobre la misma posición de memoria. El nodo no se desengancha del
+ * árbol, se marca con `hasExecute = false`, y `generateStatementCode()` lo
+ * saltea sin emitir nada.
+ *
+ * La comparación es por `uid` y no por nombre: el `uid` identifica a la entidad
+ * declarada, así que dos variables homónimas de scopes distintos no se
+ * confunden. Comparar los punteros `id` compararía direcciones de cadenas, y
+ * compararlas con `strcmp` daría un falso positivo en el caso del ocultamiento.
+ */
+static int markRedundantAssignments(NodeAST *node) {
+    if (node == NULL) return 0;
+
+    int changes = 0;
+
+    bool isAssignment = (node->nodeType == ASSIGNMENT_NODE);
+    if (isAssignment && node->symbol != NULL) {
+        NodeAST *expression = GET_EXPRESSION(node);
+        bool assignsAnIdentifier = (expression != NULL &&
+                                    expression->nodeType == ID_NODE &&
+                                    expression->symbol != NULL);
+
+        if (assignsAnIdentifier) {
+            bool isSameEntity = (node->symbol->uid != 0 &&
+                                 node->symbol->uid == expression->symbol->uid);
+            if (isSameEntity && node->hasExecute) {
+                node->hasExecute = false;
+                changes++;
+            }
+        }
+    }
+
+    for (int i = 0; i < node->childCount; i++) {
+        changes += markRedundantAssignments(node->children[i]);
     }
 
     return changes;

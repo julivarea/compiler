@@ -17,6 +17,7 @@
 
 #include <stdbool.h>
 
+#include "ast.h"
 #include "tac_list.h"
 
 /**
@@ -27,12 +28,15 @@ typedef enum {
     OPTIMIZATION_CONST_FOLD = 1 << 0, /**< Plegado de constantes (`const-fold`). */
     OPTIMIZATION_CONST_PROP = 1 << 1, /**< Propagación de constantes (`const-prop`). */
     OPTIMIZATION_DEAD_CODE  = 1 << 2, /**< Eliminación de código inalcanzable (`dead-code`). */
-    OPTIMIZATION_CONST_BRANCH = 1 << 3 /**< Condición constante en `if` / `while` (`const-branch`). */
+    OPTIMIZATION_CONST_BRANCH = 1 << 3, /**< Condición constante en `if` / `while` (`const-branch`). */
+    OPTIMIZATION_SELF_ASSIGN  = 1 << 4, /**< Asignaciones de una variable a sí misma (`self-assign`). */
+    OPTIMIZATION_PEEPHOLE     = 1 << 5  /**< Mirilla sobre instrucciones contiguas (`peephole`). */
 } Optimization;
 
 /** @brief Todas las optimizaciones soportadas hasta el momento. */
 #define OPTIMIZATION_ALL (OPTIMIZATION_CONST_FOLD | OPTIMIZATION_CONST_PROP | \
-                          OPTIMIZATION_DEAD_CODE | OPTIMIZATION_CONST_BRANCH)
+                          OPTIMIZATION_DEAD_CODE | OPTIMIZATION_CONST_BRANCH | \
+                          OPTIMIZATION_SELF_ASSIGN | OPTIMIZATION_PEEPHOLE)
 
 /** @brief Conjunto de optimizaciones activas en una corrida. */
 typedef unsigned int OptimizationSet;
@@ -64,5 +68,19 @@ bool isOptimizationEnabled(OptimizationSet enabled, Optimization optimization);
  * @return Cantidad total de instrucciones transformadas.
  */
 int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled);
+
+/**
+ * @brief Aplica sobre el AST las optimizaciones que trabajan a ese nivel.
+ *
+ * Se invoca antes de generar el código intermedio. En vez de desenganchar nodos
+ * del árbol —con el riesgo de romper los punteros de sus padres— marca los que
+ * no deben emitirse con `hasExecute = false`, que es lo que consulta
+ * `generateStatementCode()`.
+ *
+ * @param root Nodo raíz del programa.
+ * @param enabled Conjunto de optimizaciones a aplicar.
+ * @return Cantidad de nodos marcados como no ejecutables.
+ */
+int optimizeSyntaxTree(NodeAST *root, OptimizationSet enabled);
 
 #endif // OPTIMIZER_H
