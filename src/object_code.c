@@ -8,8 +8,6 @@
 #include "asm_instruction.h"
 #include "string_builder.h"
 
-#define MAX_GLOBAL_VARIABLES 256
-#define MAX_FLOAT_CONSTANTS 256
 #define MAX_ARG_REGISTERS 6
 #define MAX_XMM_ARG_REGISTERS 8
 
@@ -32,16 +30,21 @@ typedef enum {
     LOCATION_GLOBAL
 } OperandLocation;
 
-static char globalVariableNames[MAX_GLOBAL_VARIABLES][TAC_NAME_LENGTH];
+static char **globalVariableNames = NULL;
 static int globalVariableCount = 0;
+static int globalVariableCapacity = 0;
 static int objectCodeErrors = 0;
 
 /* Optimizaciones activas en la corrida. Las que dependen de la máquina no se
  * pueden resolver sobre el TAC, así que se deciden acá, al emitir. */
 static OptimizationSet activeOptimizations = OPTIMIZATION_NONE;
 
-static FloatConstant floatConstants[MAX_FLOAT_CONSTANTS];
+static FloatConstant *floatConstants = NULL;
 static int floatConstantCount = 0;
+static int floatConstantCapacity = 0;
+
+static void resetGlobalVariables(void);
+static void resetFloatConstants(void);
 
 static void emitFloatConstantPool(const TACList *tacList);
 static void emitGlobals(const TACList *tacList);
@@ -72,7 +75,8 @@ void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
     bool isNullList = (tacList == NULL);
     if (isNullList) return;
 
-    globalVariableCount = 0;
+    resetGlobalVariables();
+    resetFloatConstants();
     objectCodeErrors = 0;
     activeOptimizations = enabled;
 
@@ -144,10 +148,7 @@ void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
                 }
             }
 
-            bool exceedsLimit = (frame->maxPendingParams > MAX_PENDING_PARAMS);
-            if (exceedsLimit) {
-                frame->maxPendingParams = MAX_PENDING_PARAMS;
-            }
+            ensurePendingParamCapacity(frame, frame->maxPendingParams);
             for (int i = 0; i < frame->maxPendingParams; i++) {
                 frame->pendingParamSlots[i] = addAnonymousSlot(frame);
             }
@@ -177,6 +178,9 @@ void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
 
     /* Sin esta sección el enlazador asume que el stack debe ser ejecutable. */
     buildStringf("\n.section .note.GNU-stack,\"\",@progbits\n");
+
+    resetGlobalVariables();
+    resetFloatConstants();
 }
 
 int getObjectCodeErrors(void) {
@@ -478,10 +482,7 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
 
 /* Copia el argumento de la llamada en su slot correspondiente del frame. */
 static void emitParam(const TACInstruction *instruction, FunctionFrame *frame) {
-    bool reachesLimit = (frame->pendingParamCount >= MAX_PENDING_PARAMS);
-    if (reachesLimit) {
-        return;
-    }
+    ensurePendingParamCapacity(frame, frame->pendingParamCount + 1);
 
     int slot = frame->pendingParamSlots[frame->pendingParamCount];
     bool isFloat = isFloatOperand(&instruction->firstOperand);
@@ -509,8 +510,12 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
 
     int base = frame->pendingParamCount - argumentCount;
 
-    int registerIndex[MAX_PENDING_PARAMS];
-    int goesToStack[MAX_PENDING_PARAMS];
+    int *registerIndex = NULL;
+    int *goesToStack = NULL;
+    if (argumentCount > 0) {
+        registerIndex = (int *)malloc(sizeof(int) * argumentCount);
+        goesToStack = (int *)malloc(sizeof(int) * argumentCount);
+    }
     int integerIndex = 0;
     int floatIndex = 0;
     int stackArguments = 0;
@@ -564,6 +569,9 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
     }
 
     frame->pendingParamCount = base;
+
+    if (registerIndex != NULL) free(registerIndex);
+    if (goesToStack != NULL) free(goesToStack);
 
     bool hasResult = (instruction->result.kind != OPERAND_NONE);
     if (hasResult) {
@@ -798,10 +806,35 @@ static OperandLocation resolveOperandLocation(const TACOperand *operand, const F
     return LOCATION_UNRESOLVED;
 }
 
+static void resetGlobalVariables(void) {
+    if (globalVariableNames != NULL) {
+        for (int i = 0; i < globalVariableCount; i++) {
+            if (globalVariableNames[i] != NULL) {
+                free(globalVariableNames[i]);
+            }
+        }
+        free(globalVariableNames);
+        globalVariableNames = NULL;
+    }
+    globalVariableCount = 0;
+    globalVariableCapacity = 0;
+}
+
+static void resetFloatConstants(void) {
+    if (floatConstants != NULL) {
+        free(floatConstants);
+        floatConstants = NULL;
+    }
+    floatConstantCount = 0;
+    floatConstantCapacity = 0;
+}
+
 static bool isDeclaredGlobal(const TACOperand *operand) {
+    if (operand == NULL || operand->name[0] == '\0' || globalVariableNames == NULL) {
+        return false;
+    }
     for (int i = 0; i < globalVariableCount; i++) {
-        bool matchesGlobal = (strcmp(globalVariableNames[i], operand->name) == 0);
-        if (matchesGlobal) {
+        if (globalVariableNames[i] != NULL && strcmp(globalVariableNames[i], operand->name) == 0) {
             return true;
         }
     }
@@ -809,8 +842,18 @@ static bool isDeclaredGlobal(const TACOperand *operand) {
 }
 
 static void registerGlobalVariable(const TACOperand *operand) {
-    bool reachesLimit = (globalVariableCount >= MAX_GLOBAL_VARIABLES);
-    if (reachesLimit) return;
+    if (operand == NULL || operand->name[0] == '\0') return;
+
+    if (globalVariableCount >= globalVariableCapacity) {
+        int newCapacity = (globalVariableCapacity == 0) ? 64 : globalVariableCapacity * 2;
+        char **newNames = (char **)realloc(globalVariableNames, sizeof(char *) * newCapacity);
+        if (newNames == NULL) return;
+        globalVariableNames = newNames;
+        globalVariableCapacity = newCapacity;
+    }
+
+    globalVariableNames[globalVariableCount] = (char *)malloc(TAC_NAME_LENGTH);
+    if (globalVariableNames[globalVariableCount] == NULL) return;
 
     strncpy(globalVariableNames[globalVariableCount], operand->name, TAC_NAME_LENGTH - 1);
     globalVariableNames[globalVariableCount][TAC_NAME_LENGTH - 1] = '\0';
@@ -837,9 +880,14 @@ static const char *internFloatConstant(float value) {
         }
     }
 
-    bool reachesLimit = (floatConstantCount >= MAX_FLOAT_CONSTANTS);
-    if (reachesLimit) {
-        return floatConstants[0].label;
+    if (floatConstantCount >= floatConstantCapacity) {
+        int newCapacity = (floatConstantCapacity == 0) ? 64 : floatConstantCapacity * 2;
+        FloatConstant *newArray = (FloatConstant *)realloc(floatConstants, sizeof(FloatConstant) * newCapacity);
+        if (newArray == NULL) {
+            return (floatConstantCount > 0) ? floatConstants[0].label : "";
+        }
+        floatConstants = newArray;
+        floatConstantCapacity = newCapacity;
     }
 
     FloatConstant *constant = &floatConstants[floatConstantCount];

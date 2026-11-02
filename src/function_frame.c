@@ -25,6 +25,9 @@ FunctionFrame *createFrame(const char *functionName) {
     frame->nextOffset = 0;
     frame->frameSize = 0;
     frame->paramCount = 0;
+    frame->pendingParamCapacity = INITIAL_PENDING_PARAMS_CAPACITY;
+    frame->pendingParamSlots = (int *)malloc(sizeof(int) * frame->pendingParamCapacity);
+    frame->pendingParamTypes = (DataType *)malloc(sizeof(DataType) * frame->pendingParamCapacity);
     frame->pendingParamCount = 0;
     frame->maxPendingParams = 0;
     frame->integerParamCount = 0;
@@ -41,6 +44,14 @@ void freeFrame(FunctionFrame *frame) {
     if (hasSlots) {
         free(frame->slots);
         frame->slots = NULL;
+    }
+    if (frame->pendingParamSlots != NULL) {
+        free(frame->pendingParamSlots);
+        frame->pendingParamSlots = NULL;
+    }
+    if (frame->pendingParamTypes != NULL) {
+        free(frame->pendingParamTypes);
+        frame->pendingParamTypes = NULL;
     }
     free(frame);
 }
@@ -99,4 +110,25 @@ int getSlotOffset(const FunctionFrame *frame, const char *name) {
     }
     
     return 0;
+}
+
+void ensurePendingParamCapacity(FunctionFrame *frame, int neededCapacity) {
+    if (frame == NULL || neededCapacity <= frame->pendingParamCapacity) {
+        return;
+    }
+
+    int newCapacity = (frame->pendingParamCapacity > 0) ? frame->pendingParamCapacity : INITIAL_PENDING_PARAMS_CAPACITY;
+    while (newCapacity < neededCapacity) {
+        newCapacity *= 2;
+    }
+
+    int *newSlots = (int *)realloc(frame->pendingParamSlots, sizeof(int) * newCapacity);
+    if (newSlots != NULL) {
+        frame->pendingParamSlots = newSlots;
+    }
+    DataType *newTypes = (DataType *)realloc(frame->pendingParamTypes, sizeof(DataType) * newCapacity);
+    if (newTypes != NULL) {
+        frame->pendingParamTypes = newTypes;
+    }
+    frame->pendingParamCapacity = newCapacity;
 }
