@@ -1,0 +1,89 @@
+#ifndef LIVE_VARIABLE_ANALYSIS_H
+#define LIVE_VARIABLE_ANALYSIS_H
+
+/**
+ * @file live_variable_analysis.h
+ * @brief Análisis algebraico de variables vivas (Live Variable Analysis) sobre el CFG de TAC.
+ */
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+#include "tac_list.h"
+#include "tac_instruction.h"
+#include "tac_operand.h"
+
+#define MAX_LIVENESS_VARIABLES 64
+
+/**
+ * @brief Conjunto de variables representado mediante máscara de bits (1ULL << index).
+ */
+typedef uint64_t VariableSet;
+
+/**
+ * @brief Bloque básico de instrucciones TAC en el CFG con sus conjuntos de vivacidad.
+ */
+typedef struct BasicBlock {
+    int id;                               /**< Identificador del bloque básico. */
+    TACInstruction *firstInstruction;     /**< Primera instrucción del bloque. */
+    TACInstruction *lastInstruction;      /**< Última instrucción del bloque. */
+
+    struct BasicBlock *successors[2];     /**< Sucesores en el CFG (a lo sumo 2: salto y caída). */
+    size_t successorCount;
+
+    VariableSet liveIn;  /**< LIVE_IN(B): Variables vivas al entrar a B. */
+    VariableSet liveOut; /**< LIVE_OUT(B): Variables vivas al salir de B. */
+} BasicBlock;
+
+/**
+ * @brief Grafo de Flujo de Control (CFG) y estado convergido de vivacidad.
+ */
+typedef struct LiveVariableAnalysis {
+    const TACList *tacList;
+    BasicBlock **blocks;
+    size_t blockCount;
+
+    char variableNames[MAX_LIVENESS_VARIABLES][TAC_NAME_LENGTH];
+    size_t variableCount;
+} LiveVariableAnalysis;
+
+/**
+ * @brief Construye el CFG y resuelve las ecuaciones de vivacidad hasta el punto fijo.
+ *
+ * @param tacList Lista de instrucciones TAC a analizar.
+ * @return Estructura LiveVariableAnalysis convergida, o NULL si falló.
+ */
+LiveVariableAnalysis *createLiveVariableAnalysis(const TACList *tacList);
+
+/**
+ * @brief Libera los recursos del análisis de variables vivas y sus bloques básicos.
+ *
+ * @param analysis Puntero al análisis a liberar (acepta NULL).
+ */
+void freeLiveVariableAnalysis(LiveVariableAnalysis *analysis);
+
+/**
+ * @brief Obtiene el bloque básico al que pertenece una instrucción dentro del análisis.
+ */
+BasicBlock *findInstructionBlock(const LiveVariableAnalysis *analysis, const TACInstruction *instruction);
+
+/**
+ * @brief Indica si una variable o temporal está viva a la entrada del bloque básico (LIVE_IN).
+ */
+bool isVariableLiveIn(const LiveVariableAnalysis *analysis, const BasicBlock *block, const char *variableName);
+
+/**
+ * @brief Indica si una variable o temporal está viva a la salida del bloque básico (LIVE_OUT).
+ */
+bool isVariableLiveOut(const LiveVariableAnalysis *analysis, const BasicBlock *block, const char *variableName);
+
+/**
+ * @brief Determina si la definición en una instrucción es código muerto considerando el flujo global.
+ *
+ * Una asignación es muerta si su operando destino no se lee en el resto del bloque
+ * y tampoco está vivo a la salida del bloque en el CFG.
+ */
+bool isDeadDefinition(const LiveVariableAnalysis *analysis, const TACInstruction *instruction);
+
+#endif // LIVE_VARIABLE_ANALYSIS_H
