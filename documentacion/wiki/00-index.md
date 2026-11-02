@@ -13,6 +13,7 @@
 5. [Análisis Semántico y Tabla de Símbolos](04-semantic-analysis.md)
 6. [Generación de Código Intermedio (TAC)](05-intermediate-code.md)
 7. [Generación de Código Objeto y Gestión del Stack](06-object-code.md)
+8. [Análisis de Flujo de Datos (Data Flow)](dataflow.md)
 
 ---
 
