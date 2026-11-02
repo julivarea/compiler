@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "tac_instruction.h"
 #include "tac_operand.h"
 
 #define MAX_KNOWN_CONSTANTS 256
@@ -10,6 +11,7 @@
 
 static int foldConstants(TACList *tacList);
 static int propagateConstants(TACList *tacList);
+static int removeUnreachableCode(TACList *tacList);
 
 /* ------------------------------------------------------------------ */
 /* Selección de optimizaciones                                         */
@@ -22,8 +24,10 @@ OptimizationSet parseOptimizations(const char *option) {
     if (strcmp(option, "all") == 0)        return OPTIMIZATION_ALL;
     if (strcmp(option, "const-fold") == 0) return OPTIMIZATION_CONST_FOLD;
     if (strcmp(option, "const-prop") == 0) return OPTIMIZATION_CONST_PROP;
+    if (strcmp(option, "dead-code") == 0)  return OPTIMIZATION_DEAD_CODE;
 
-    fprintf(stderr, "Error: optimizacion desconocida '%s'. Soportadas: all, const-fold, const-prop.\n",
+    fprintf(stderr, "Error: optimizacion desconocida '%s'."
+                    " Soportadas: all, const-fold, const-prop, dead-code.\n",
             option);
     return OPTIMIZATION_NONE;
 }
@@ -48,6 +52,9 @@ int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled) {
         }
         if (isOptimizationEnabled(enabled, OPTIMIZATION_CONST_FOLD)) {
             changes += foldConstants(tacList);
+        }
+        if (isOptimizationEnabled(enabled, OPTIMIZATION_DEAD_CODE)) {
+            changes += removeUnreachableCode(tacList);
         }
 
         bool hasConverged = (changes == 0);
@@ -369,6 +376,97 @@ static int propagateConstants(TACList *tacList) {
         } else {
             forgetConstant(&table, &instruction->result);
         }
+    }
+
+    return changes;
+}
+
+/* ------------------------------------------------------------------ */
+/* Eliminación de código inalcanzable                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Una instrucción marca el fin del flujo lineal cuando después de ella la
+ * ejecución no continúa con la siguiente: un `ret` sale del método y un `goto`
+ * salta a otro lado. A partir de ahí, lo único que puede volver a traer el
+ * control es una etiqueta.
+ *
+ * El enunciado habla de lo que sigue a un `return`; `goto` se incluye porque el
+ * argumento es idéntico y es donde aparece la mayor parte del código muerto
+ * real, en las ramas de los `if`.
+ */
+static bool endsControlFlow(TACOperation operation) {
+    return operation == TAC_RETURN || operation == TAC_GOTO;
+}
+
+/*
+ * Una instrucción es estructural cuando no se ejecuta: no describe una acción
+ * sino una propiedad del programa que las etapas siguientes necesitan.
+ *
+ * Las etiquetas son destino de saltos, así que reanudan el flujo. Los
+ * marcadores de método delimitan las funciones. Y las declaraciones le dicen al
+ * generador de código objeto qué espacio reservar: borrar un `local` porque
+ * quedó después de un `return` le sacaría su lugar en el frame a una variable,
+ * sin ganar nada en tiempo de ejecución.
+ */
+static bool isStructural(TACOperation operation) {
+    switch (operation) {
+        case TAC_LABEL:
+        case TAC_BEGIN_FUNC:
+        case TAC_END_FUNC:
+        case TAC_GLOBAL_DECL:
+        case TAC_LOCAL_DECL:
+        case TAC_PARAM_DECL:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/*
+ * Elimina las instrucciones que no pueden ejecutarse nunca.
+ *
+ * Recorre la lista marcando si el flujo está vivo. Tras un `ret` o un `goto`
+ * pasa a estar muerto, y toda instrucción ejecutable que aparezca se descarta,
+ * hasta que una etiqueta lo reanime.
+ */
+static int removeUnreachableCode(TACList *tacList) {
+    int changes = 0;
+    bool isReachable = true;
+
+    TACInstruction *previous = NULL;
+    TACInstruction *current = tacList->head;
+
+    while (current != NULL) {
+        TACInstruction *next = current->next;
+
+        bool mustKeep = (isReachable || isStructural(current->operation));
+
+        if (mustKeep) {
+            /* Una etiqueta vuelve a traer el control; un ret o un goto lo cortan. */
+            if (current->operation == TAC_LABEL || current->operation == TAC_BEGIN_FUNC) {
+                isReachable = true;
+            } else if (endsControlFlow(current->operation)) {
+                isReachable = false;
+            }
+
+            previous = current;
+        } else {
+            if (previous == NULL) {
+                tacList->head = next;
+            } else {
+                previous->next = next;
+            }
+            if (tacList->tail == current) {
+                tacList->tail = previous;
+            }
+
+            freeTACInstruction(current);
+            tacList->count--;
+            changes++;
+        }
+
+        current = next;
     }
 
     return changes;

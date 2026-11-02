@@ -36,7 +36,7 @@ anda sin él, el problema está en la optimización y no en el resto del compila
 | --- | --- |
 | `const-fold` | Plegado de constantes (§3.1) — **implementada** |
 | `const-prop` | Propagación de constantes (§3.1) — **implementada** |
-| `dead-code` | Eliminación de código inalcanzable (§3.2) |
+| `dead-code` | Eliminación de código inalcanzable (§3.2) — **implementada** |
 | `const-branch` | Condición constante en `if` / `while` (§3.3) |
 | `self-assign` | Asignaciones redundantes y mirilla (§3.4) |
 | `strength-reduce` | Reducción de fuerza en multiplicaciones (§3.5) |
@@ -196,6 +196,60 @@ anterior.
 **Verificación:** un programa con sentencias después de un `return` en ambas ramas de un
 `if/else` no debe generar ninguna instrucción para ellas, y debe devolver el mismo resultado.
 
+#### Estado: implementada
+
+`removeUnreachableCode()` en `src/optimizer.c`. Sobre el ejemplo de arriba:
+
+```
+// sin -opt                  // con -opt dead-code
+t0 = cond@2 > 0               t0 = cond@2 > 0
+if t0 false goto L0           if t0 false goto L0
+ret true                      ret true
+x@3 = 1                       L0:
+goto L1                       ret false
+L0:                           L1:
+ret false                     end_func f
+y@4 = x@3
+x@3 = y@4
+t1 = y@4 + 1
+x@3 = t1
+L1:
+end_func f
+```
+
+**Cómo funciona.** Una sola pasada que lleva un estado de "el flujo está vivo". Tras un `ret` o
+un `goto` pasa a muerto y se descarta toda instrucción ejecutable, hasta que una etiqueta lo
+reanima.
+
+**Se extendió a `goto`, no solo a `return`.** El enunciado habla de lo que sigue a un `return`,
+pero el argumento es idéntico —después de un salto incondicional la siguiente instrucción solo
+es alcanzable por una etiqueta— y es donde aparece la mayor parte del código muerto real: en el
+ejemplo, el `goto L1` del final de la rama `then` también desaparece.
+
+**Qué nunca se elimina.** Las instrucciones *estructurales*, que no se ejecutan sino que
+describen una propiedad del programa:
+- Las **etiquetas**, porque son destino de saltos y reanudan el flujo.
+- Los **marcadores de método** (`begin_func` / `end_func`), que delimitan las funciones.
+- Las **declaraciones** (`global`, `local`, `param_decl`). Borrar un `local` porque quedó
+  después de un `return` le sacaría su lugar en el frame a una variable, sin ganar nada en
+  tiempo de ejecución. El costo de conservarlas es un slot sin usar; el de borrarlas, un bug.
+
+**Combinación con §3.1.** Las tres juntas sobre un `if (2 > 1) { return 1+2+3; c = 9; }`
+eliminan el `c = 9` y reducen la aritmética a `ret 6`, dejando la condición como `if true`, que
+es exactamente lo que habilita la optimización de §3.3.
+
+**Lo que todavía no hace.** Las asignaciones que el plegado deja atrás (`t0 = 3`, `t1 = 6`) no
+se eliminan: no son *inalcanzables*, son *muertas* —su resultado no lo lee nadie—, y detectarlo
+requiere el análisis de vivacidad que esta misma sección menciona como extensión. Por eso en
+los ejemplos del repositorio el conteo de instrucciones casi no baja: solo `two_returns.ctds`
+pierde una, su segundo `return`.
+
+**Verificado:** 20 programas compilados dos veces y ejecutados, comparando el código de salida
+entre sí y contra el esperado: 20 de 20. Entre ellos, los siete casos específicos de esta
+optimización —código tras `return`, ambas ramas retornando, `return` dentro de un bloque
+anidado, `goto` intermedio de un `if/else`, `return` dentro de un `while`, y etiquetas que sí
+son alcanzables—. Los 40 tests siguen pasando y los 12 ejemplos conservan su código de salida.
+
 ---
 
 ### 3.3 Condición constante en `if` y `while`
@@ -342,9 +396,10 @@ documentarlo en el informe.
   comportamiento no cambia. El esqueleto que había en `src/semantic_analyzer.c` se quitó porque
   no compilaba y porque el analizador semántico no debe conocer los flags de optimización; la
   transformación va en la pasada de optimización, según §3.4.
-- **Implementadas:** plegado y propagación de constantes (§3.1).
-- **Pendientes:** código inalcanzable (§3.2), condición constante (§3.3), asignaciones
-  redundantes y mirilla (§3.4), reducción de fuerza (§3.5).
+- **Implementadas:** plegado y propagación de constantes (§3.1), eliminación de código
+  inalcanzable (§3.2).
+- **Pendientes:** condición constante (§3.3), asignaciones redundantes y mirilla (§3.4),
+  reducción de fuerza (§3.5).
 
 ---
 
