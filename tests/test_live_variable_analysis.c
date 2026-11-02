@@ -1,5 +1,6 @@
 #include "unity.h"
 #include "live_variable_analysis.h"
+#include "optimizer.h"
 #include "tac_list.h"
 #include "tac_instruction.h"
 #include "tac_operand.h"
@@ -249,7 +250,45 @@ void test_compiled_program_unused_variable_detected_and_removed(void) {
     }
 
     freeLiveVariableAnalysis(analysis);
-    freeTACList(list);
+}
+
+void test_self_assignment_removed_on_tac(void) {
+    const char *source =
+        "int main() {\n"
+        "    int x;\n"
+        "    x = 42;\n"
+        "    x = x;\n"
+        "    return x;\n"
+        "}\n";
+
+    const TACList *tac = compileToTAC(source);
+    TEST_ASSERT_NOT_NULL(tac);
+    TACList *list = (TACList *)tac;
+
+    /* Verificar que inicialmente x = x está presente en el TAC */
+    bool foundSelfAssign = false;
+    for (TACInstruction *curr = list->head; curr != NULL; curr = curr->next) {
+        if (curr->operation == TAC_ASSIGN &&
+            curr->firstOperand.kind == OPERAND_VARIABLE &&
+            strcmp(curr->result.name, curr->firstOperand.name) == 0) {
+            foundSelfAssign = true;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE(foundSelfAssign);
+
+    /* Optimizar con OPTIMIZATION_SELF_ASSIGN */
+    int changes = optimizeIntermediateCode(list, OPTIMIZATION_SELF_ASSIGN);
+    TEST_ASSERT_GREATER_THAN(0, changes);
+
+    /* Verificar que ya no existe la autoasignación */
+    for (TACInstruction *curr = list->head; curr != NULL; curr = curr->next) {
+        if (curr->operation == TAC_ASSIGN &&
+            curr->firstOperand.kind == OPERAND_VARIABLE &&
+            strcmp(curr->result.name, curr->firstOperand.name) == 0) {
+            TEST_FAIL_MESSAGE("Self-assignment was not removed from TAC");
+        }
+    }
 }
 
 int main(void) {
@@ -260,5 +299,6 @@ int main(void) {
     RUN_TEST(test_live_variables_in_while_loop_back_edge);
     RUN_TEST(test_dead_definition_detected_when_never_read_globally);
     RUN_TEST(test_compiled_program_unused_variable_detected_and_removed);
+    RUN_TEST(test_self_assignment_removed_on_tac);
     return UNITY_END();
 }

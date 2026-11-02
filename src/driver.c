@@ -50,13 +50,10 @@ static const TACList *buildIntermediateCode(const Options *options) {
     OptimizationSet enabled = options->optimizations;
     bool hasOptimizations = (enabled != OPTIMIZATION_NONE);
 
-    /* Las que trabajan sobre el árbol tienen que correr antes de generar. */
-    int changes = hasOptimizations ? optimizeSyntaxTree(astRoot, enabled) : 0;
-
     const TACList *tacList = generateIntermediateCode(astRoot);
 
     if (hasOptimizations) {
-        changes += optimizeIntermediateCode((TACList *)tacList, enabled);
+        int changes = optimizeIntermediateCode((TACList *)tacList, enabled);
         if (options->debug) {
             printf("Optimizaciones: %d instrucciones transformadas\n\n", changes);
         }

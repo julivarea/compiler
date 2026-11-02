@@ -15,7 +15,7 @@ static int removeUnreachableCode(TACList *tacList);
 static int removeUnreferencedLabels(TACList *tacList);
 static int simplifyConstantBranches(TACList *tacList);
 static int removeRedundantJumps(TACList *tacList);
-static int markRedundantAssignments(NodeAST *node);
+static int removeSelfAssignments(TACList *tacList);
 static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previous, TACInstruction *current);
 
 
@@ -41,6 +41,9 @@ int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled) {
         }
         if (isOptimizationEnabled(enabled, OPTIMIZATION_DEAD_CODE)) {
             changes += removeUnreachableCode(tacList);
+        }
+        if (isOptimizationEnabled(enabled, OPTIMIZATION_SELF_ASSIGN)) {
+            changes += removeSelfAssignments(tacList);
         }
         if (isOptimizationEnabled(enabled, OPTIMIZATION_PEEPHOLE)) {
             changes += removeRedundantJumps(tacList);
@@ -622,51 +625,35 @@ static int removeRedundantJumps(TACList *tacList) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Asignaciones redundantes (sobre el AST)                              */
+/* Asignaciones de una variable a sí misma (sobre el TAC)              */
 /* ------------------------------------------------------------------ */
 
-int optimizeSyntaxTree(NodeAST *root, OptimizationSet enabled) {
-    if (root == NULL || enabled == OPTIMIZATION_NONE) return 0;
-
-    int changes = 0;
-    if (isOptimizationEnabled(enabled, OPTIMIZATION_SELF_ASSIGN)) {
-        changes += markRedundantAssignments(root);
-    }
-
-    return changes;
-}
-
 /*
- * Marca como no ejecutables las asignaciones de una variable a sí misma.
+ * Elimina las asignaciones redundantes donde el origen y destino son idénticos.
  *
- * `x = x;` no tiene efecto: en el código objeto se traduce a una lectura y una
- * escritura sobre la misma posición de memoria. El nodo no se desengancha del
- * árbol, se marca con `hasExecute = false`, y `generateStatementCode()` lo
- * saltea sin emitir nada.
- *
- * La comparación es por `uid` y no por nombre: el `uid` identifica a la entidad
- * declarada, así que dos variables homónimas de scopes distintos no se
- * confunden. Comparar los punteros `id` compararía direcciones de cadenas, y
- * compararlas con `strcmp` daría un falso positivo en el caso del ocultamiento.
+ * `x = x` no tiene efecto: en el TAC se traduce a `x@N = x@N`. Dado que el
+ * nombre en el TAC ya incluye el `@uid` único de cada declaración, esta
+ * comparación en el TAC es naturalmente segura ante ocultamiento de variables.
  */
-static int markRedundantAssignments(NodeAST *node) {
-    if (node == NULL) return 0;
-
+static int removeSelfAssignments(TACList *tacList) {
     int changes = 0;
+    TACInstruction *previous = NULL;
+    TACInstruction *current = tacList->head;
 
-    if (node->nodeType == ASSIGNMENT_NODE) {
-        NodeAST *expression = GET_EXPRESSION(node);
-        if (expression->nodeType == ID_NODE) {
-            bool isSameEntity = (node->symbol->uid == expression->symbol->uid);
-            if (isSameEntity && node->hasExecute) {
-                node->hasExecute = false;
-                changes++;
-            }
+    while (current != NULL) {
+        bool isAssignment = (current->operation == TAC_ASSIGN);
+        bool isVariableOrTemp = (current->result.kind == OPERAND_VARIABLE || current->result.kind == OPERAND_TEMP);
+        bool isSelf = isAssignment && isVariableOrTemp &&
+                      (current->firstOperand.kind == current->result.kind) &&
+                      (strcmp(current->result.name, current->firstOperand.name) == 0);
+
+        if (isSelf) {
+            current = unlinkInstruction(tacList, previous, current);
+            changes++;
+        } else {
+            previous = current;
+            current = current->next;
         }
-    }
-
-    for (int i = 0; i < node->childCount; i++) {
-        changes += markRedundantAssignments(node->children[i]);
     }
 
     return changes;

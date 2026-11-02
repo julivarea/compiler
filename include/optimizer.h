@@ -3,78 +3,61 @@
 
 /**
  * @file optimizer.h
- * @brief Transformaciones de optimización sobre el Código de Tres Direcciones.
- *
- * Las optimizaciones se activan individualmente desde la línea de comandos con
- * `-opt <nombre>`, o todas juntas con `-opt all`. Sin `-opt` no se aplica
- * ninguna y el código generado es idéntico al del compilador sin esta etapa:
- * esa equivalencia es lo que permite aislar una regresión introducida por una
- * optimización.
- *
- * El catálogo completo, con ejemplos y precondiciones, está en
- * `optimizaciones.md`.
+ * @brief Transformaciones de optimización sobre el Código de Tres Direcciones (TAC).
  */
 
 #include <stdbool.h>
 
-#include "ast.h"
 #include "tac_list.h"
 
 /**
- * @brief Optimizaciones soportadas, como máscara de bits para poder combinarlas.
+ * @brief Optimizaciones soportadas como máscara de bits para su combinación.
  */
 typedef enum {
-    OPTIMIZATION_NONE       = 0,
-    OPTIMIZATION_CONST_FOLD = 1 << 0, /**< Plegado de constantes (`const-fold`). */
-    OPTIMIZATION_CONST_PROP = 1 << 1, /**< Propagación de constantes (`const-prop`). */
-    OPTIMIZATION_DEAD_CODE  = 1 << 2, /**< Eliminación de código inalcanzable (`dead-code`). */
+    OPTIMIZATION_NONE         = 0,
+    OPTIMIZATION_CONST_FOLD   = 1 << 0, /**< Plegado de constantes (`const-fold`). */
+    OPTIMIZATION_CONST_PROP   = 1 << 1, /**< Propagación de constantes (`const-prop`). */
+    OPTIMIZATION_DEAD_CODE    = 1 << 2, /**< Eliminación de código inalcanzable (`dead-code`). */
     OPTIMIZATION_CONST_BRANCH = 1 << 3, /**< Condición constante en `if` / `while` (`const-branch`). */
     OPTIMIZATION_SELF_ASSIGN  = 1 << 4, /**< Asignaciones de una variable a sí misma (`self-assign`). */
     OPTIMIZATION_PEEPHOLE     = 1 << 5, /**< Mirilla sobre instrucciones contiguas (`peephole`). */
     OPTIMIZATION_STRENGTH     = 1 << 6  /**< Reducción de fuerza en multiplicaciones (`strength-reduce`). */
 } Optimization;
 
-/** @brief Todas las optimizaciones soportadas hasta el momento. */
+/**
+ * @brief Máscara con todas las optimizaciones soportadas activas.
+ */
 #define OPTIMIZATION_ALL (OPTIMIZATION_CONST_FOLD | OPTIMIZATION_CONST_PROP | \
                           OPTIMIZATION_DEAD_CODE | OPTIMIZATION_CONST_BRANCH | \
                           OPTIMIZATION_SELF_ASSIGN | OPTIMIZATION_PEEPHOLE | \
                           OPTIMIZATION_STRENGTH)
 
-/** @brief Conjunto de optimizaciones activas en una corrida. */
+/**
+ * @brief Conjunto de optimizaciones activas en una corrida.
+ */
 typedef unsigned int OptimizationSet;
 
 /**
- * @brief Indica si una optimización está activa en el conjunto.
- */
-static inline bool isOptimizationEnabled(OptimizationSet enabled, Optimization optimization) {
-    return (enabled & (OptimizationSet)optimization) != 0;
-}
-
-/**
- * @brief Aplica sobre la lista las optimizaciones activas.
+ * @brief Aplica sobre la lista las optimizaciones activas hasta alcanzar punto fijo.
  *
- * Las pasadas se repiten hasta que ninguna introduce cambios, porque se
- * habilitan entre sí: propagar una constante crea una operación entre
- * constantes, que al plegarse crea una nueva constante que propagar.
+ * Las pasadas de optimización se repiten iterativamente hasta que ninguna
+ * introduce cambios adicionales o se alcanza el límite de rondas.
  *
- * @param tacList Lista de instrucciones, modificada en el lugar.
- * @param enabled Conjunto de optimizaciones a aplicar.
+ * @param tacList Lista de instrucciones TAC a transformar en el lugar (acepta NULL).
+ * @param enabled Conjunto de optimizaciones habilitadas.
  * @return Cantidad total de instrucciones transformadas.
  */
 int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled);
 
 /**
- * @brief Aplica sobre el AST las optimizaciones que trabajan a ese nivel.
+ * @brief Indica si una optimización específica está activa en el conjunto.
  *
- * Se invoca antes de generar el código intermedio. En vez de desenganchar nodos
- * del árbol —con el riesgo de romper los punteros de sus padres— marca los que
- * no deben emitirse con `hasExecute = false`, que es lo que consulta
- * `generateStatementCode()`.
- *
- * @param root Nodo raíz del programa.
- * @param enabled Conjunto de optimizaciones a aplicar.
- * @return Cantidad de nodos marcados como no ejecutables.
+ * @param enabled Conjunto de optimizaciones activas.
+ * @param optimization Bandera de la optimización a consultar.
+ * @return true si la optimización está activa, false en caso contrario.
  */
-int optimizeSyntaxTree(NodeAST *root, OptimizationSet enabled);
+static inline bool isOptimizationEnabled(OptimizationSet enabled, Optimization optimization) {
+    return (enabled & (OptimizationSet)optimization) != 0;
+}
 
 #endif // OPTIMIZER_H

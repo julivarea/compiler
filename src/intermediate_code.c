@@ -72,10 +72,6 @@ static void generateStatementCode(NodeAST *node) {
         return;
     }
 
-    if(!node->hasExecute){
-        return;
-    }
-
     switch (node->nodeType) {
         case METHOD_DECLARATION_NODE:
             generateMethodDeclarationCode(node);
