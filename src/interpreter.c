@@ -81,7 +81,7 @@ static void registerGlobalDeclarations(NodeAST *root, Scope *globalScope) {
 }
 
 static void registerVariableDeclaration(NodeAST *node, Scope *currentScope) {
-    Symbol *symbol = newSymbol(node->symbol->id, VARIABLE_SYMBOL, node->type, NULL);
+    Symbol *symbol = newSymbol(strdup(node->symbol->id), VARIABLE_SYMBOL, node->type, NULL);
     bool isFloatType = (symbol->type == TYPE_FLOAT);
     if (isFloatType) {
         symbol->value.floatValue = 0.0f;
@@ -92,7 +92,7 @@ static void registerVariableDeclaration(NodeAST *node, Scope *currentScope) {
 }
 
 static void registerMethodDeclaration(NodeAST *node, Scope *globalScope) {
-    Symbol *symbol = newSymbol(node->symbol->id, FUNCTION_ENTRY_SYMBOL, node->type, node->symbol->parameters);
+    Symbol *symbol = newSymbol(strdup(node->symbol->id), FUNCTION_ENTRY_SYMBOL, node->type, node->symbol->parameters);
     symbol->value.function = node;
     appendSymbol(globalScope, symbol);
 }
@@ -129,6 +129,8 @@ static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argum
     NodeAST *bodyNode = methodDeclarationNode->children[1];
     ExecResult result = executeBlock(bodyNode, functionScope);
 
+    freeScope(functionScope);
+
     return coerceReturnValue(methodDeclarationNode->type, result.value);
 }
 
@@ -149,11 +151,7 @@ static Symbol *evaluateArguments(NodeAST *argumentsNode, Scope *callerScope) {
 }
 
 static Scope *createFunctionScope(Scope *globalScope) {
-    Scope *functionScope = createScope(1, globalScope, NULL);
-    if (functionScope != NULL) {
-        appendChildScope(globalScope, functionScope);
-    }
-    return functionScope;
+    return createScope(1, globalScope, NULL);
 }
 
 static void assignSymbolValue(Symbol *target, Symbol source) {
@@ -178,7 +176,7 @@ static void bindParameters(Scope *functionScope, NodeAST *parametersNode, Symbol
 
     for (int i = 0; i < parametersNode->childCount; i++) {
         NodeAST *parameterNode = parametersNode->children[i];
-        Symbol *parameterSymbol = newSymbol(parameterNode->symbol->id, VARIABLE_SYMBOL, parameterNode->type, NULL);
+        Symbol *parameterSymbol = newSymbol(strdup(parameterNode->symbol->id), VARIABLE_SYMBOL, parameterNode->type, NULL);
         if (argumentValues != NULL) {
             assignSymbolValue(parameterSymbol, argumentValues[i]);
         }

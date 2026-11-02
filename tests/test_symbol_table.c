@@ -20,29 +20,13 @@
 
 static Scope *testRootScope = NULL;
 
-// Helper local para liberar jerarquías de scopes y sus símbolos al finalizar cada test
-static void freeTestScope(Scope *scope) {
-    if (scope == NULL) return;
-
-    for (int index = 0; index < scope->childrenCount; index++) {
-        freeTestScope(scope->children[index]);
-    }
-    free(scope->children);
-
-    for (int index = 0; index < scope->symbolCount; index++) {
-        freeSymbol(scope->symbols[index]);
-    }
-    free(scope->symbols);
-    free(scope);
-}
-
 void setUp(void) {
     testRootScope = NULL;
 }
 
 void tearDown(void) {
     if (testRootScope != NULL) {
-        freeTestScope(testRootScope);
+        freeScope(testRootScope);
         testRootScope = NULL;
     }
 }
@@ -466,6 +450,17 @@ void test_append_child_scope_null_safe(void) {
     TEST_ASSERT_EQUAL_INT(0, testRootScope->childrenCount);
 }
 
+// freeScope maneja punteros nulos de forma segura y libera jerarquías completas
+void test_free_scope_null_safe(void) {
+    freeScope(NULL);
+    Scope *scope = createScope(0, NULL, NULL);
+    appendSymbol(scope, newSymbol(strdup("x"), VARIABLE_SYMBOL, TYPE_INT, NULL));
+    Scope *child = createScope(1, scope, NULL);
+    appendSymbol(child, newSymbol(strdup("y"), VARIABLE_SYMBOL, TYPE_INT, NULL));
+    appendChildScope(scope, child);
+    freeScope(scope);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -482,6 +477,7 @@ int main(void) {
     RUN_TEST(test_create_scope_initial_state);
     RUN_TEST(test_create_nested_scope);
     RUN_TEST(test_nested_blocks_retain_enclosing_function_reference);
+    RUN_TEST(test_free_scope_null_safe);
 
     // Inserción y UIDs
     RUN_TEST(test_append_symbol_assigns_incremental_positive_uid);

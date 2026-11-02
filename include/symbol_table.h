@@ -110,6 +110,13 @@ typedef struct Scope {
 Scope *createScope(int level, Scope *parent, Symbol *function);
 
 /**
+ * @brief Libera recursivamente un ámbito léxico, sus sub-ámbitos y todos sus símbolos.
+ *
+ * @param scope Ámbito raíz de la jerarquía a liberar (acepta NULL).
+ */
+void freeScope(Scope *scope);
+
+/**
  * @brief Agrega un símbolo al ámbito asignándole un uid si aún no poseía uno.
  *
  * @param scope Ámbito donde se registra el símbolo (acepta NULL).

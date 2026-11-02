@@ -99,6 +99,23 @@ Scope *createScope(int level, Scope *parent, Symbol *function) {
     return scope;
 }
 
+void freeScope(Scope *scope) {
+    if (scope == NULL) {
+        return;
+    }
+
+    for (int index = 0; index < scope->childrenCount; index++) {
+        freeScope(scope->children[index]);
+    }
+    free(scope->children);
+
+    for (int index = 0; index < scope->symbolCount; index++) {
+        freeSymbol(scope->symbols[index]);
+    }
+    free(scope->symbols);
+    free(scope);
+}
+
 void appendSymbol(Scope *scope, Symbol *symbol) {
     bool isInvalidInput = (scope == NULL || symbol == NULL);
     if (isInvalidInput) return;
