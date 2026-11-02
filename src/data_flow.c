@@ -172,7 +172,7 @@ static InstructionDataFlow analyzeInstruction(TACInstruction *instruction) {
             break;
 
         case TAC_ASSIGN:
-        case TAC_NEG:
+        case TAC_UMINUS:
         case TAC_NOT:
         case TAC_INT_TO_FLOAT:
             if (isCandidate(&instruction->result))        flow.defs[flow.defCount++] = &instruction->result;
