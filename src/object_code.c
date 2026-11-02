@@ -36,6 +36,10 @@ static char globalVariableNames[MAX_GLOBAL_VARIABLES][TAC_NAME_LENGTH];
 static int globalVariableCount = 0;
 static int objectCodeErrors = 0;
 
+/* Optimizaciones activas en la corrida. Las que dependen de la máquina no se
+ * pueden resolver sobre el TAC, así que se deciden acá, al emitir. */
+static OptimizationSet activeOptimizations = OPTIMIZATION_NONE;
+
 static FloatConstant floatConstants[MAX_FLOAT_CONSTANTS];
 static int floatConstantCount = 0;
 
@@ -44,6 +48,7 @@ static void emitGlobals(const TACList *tacList);
 static void emitParam(const TACInstruction *instruction, FunctionFrame *frame);
 static void emitCall(const TACInstruction *instruction, FunctionFrame *frame);
 static void emitBinaryOp(const TACInstruction *instruction, AsmOpcode opcode, const FunctionFrame *frame);
+static bool emitStrengthReducedMultiplication(const TACInstruction *instruction, const FunctionFrame *frame);
 static void emitFloatBinaryOp(const TACInstruction *instruction, const char *mnemonic, const FunctionFrame *frame);
 static void emitDivisionOp(const TACInstruction *instruction, const FunctionFrame *frame, AsmRegister resultRegister);
 static void emitRelationalOp(const TACInstruction *instruction, const char *conditionMnemonic, const FunctionFrame *frame);
@@ -63,12 +68,13 @@ static const char *internFloatConstant(float value);
 static unsigned int getFloatBits(float value);
 static const char *getRegisterName(AsmRegister registerType);
 
-void generateAssembly(const TACList *tacList) {
+void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
     bool isNullList = (tacList == NULL);
     if (isNullList) return;
 
     globalVariableCount = 0;
     objectCodeErrors = 0;
+    activeOptimizations = enabled;
 
     emitFloatConstantPool(tacList);
     emitGlobals(tacList);
@@ -339,7 +345,11 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             bool isFloat = isFloatOperand(&instruction->result);
             if (isFloat) {
                 emitFloatBinaryOp(instruction, "mulss", frame);
-            } else {
+                break;
+            }
+
+            bool wasReduced = emitStrengthReducedMultiplication(instruction, frame);
+            if (!wasReduced) {
                 emitBinaryOp(instruction, ASM_IMUL, frame);
             }
             break;
@@ -564,6 +574,83 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
             storeOperand(&instruction->result, "%eax", frame);
         }
     }
+}
+
+/* Exponente de una potencia de dos positiva, o -1 si el valor no lo es. */
+static int powerOfTwoExponent(int value) {
+    bool isPowerOfTwo = (value > 0 && (value & (value - 1)) == 0);
+    if (!isPowerOfTwo) return -1;
+
+    int exponent = 0;
+    while ((value >> exponent) > 1) {
+        exponent++;
+    }
+    return exponent;
+}
+
+/*
+ * Reemplaza una multiplicación entera por constante por una instrucción más
+ * barata que `imull`, cuando se puede.
+ *
+ * `x * 2` equivale a desplazar un bit a la izquierda, y en general multiplicar
+ * por 2^n equivale a desplazar n bits. El desplazamiento es correcto para la
+ * multiplicación con signo: desborda exactamente igual que `imull`, truncando
+ * módulo 2^32.
+ *
+ * Solo se aplica a potencias de dos **positivas**. Con un multiplicador
+ * negativo haría falta además negar el resultado, y con la **división** el
+ * desplazamiento directamente no sirve: `sarl` redondea los negativos hacia
+ * abajo y la división entera del lenguaje redondea hacia cero.
+ *
+ * @return true si emitió la versión reducida; false si hay que usar `imull`.
+ */
+static bool emitStrengthReducedMultiplication(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool isEnabled = isOptimizationEnabled(activeOptimizations, OPTIMIZATION_STRENGTH);
+    if (!isEnabled) return false;
+
+    const TACOperand *first = &instruction->firstOperand;
+    const TACOperand *second = &instruction->secondOperand;
+
+    /* La constante puede estar de cualquiera de los dos lados. */
+    const TACOperand *constantOperand = NULL;
+    const TACOperand *valueOperand = NULL;
+
+    if (second->kind == OPERAND_CONSTANT && second->type != TYPE_FLOAT) {
+        constantOperand = second;
+        valueOperand = first;
+    } else if (first->kind == OPERAND_CONSTANT && first->type != TYPE_FLOAT) {
+        constantOperand = first;
+        valueOperand = second;
+    } else {
+        return false;
+    }
+
+    int multiplier = constantOperand->value.intValue;
+
+    if (multiplier == 0) {
+        /* El resultado es cero sin importar el otro operando. */
+        AsmInstruction clear = asmOpReg(ASM_XOR, ASM_RAX, ASM_RAX);
+        emitAsm(&clear);
+        storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+        return true;
+    }
+
+    if (multiplier == 1) {
+        /* El resultado es el otro operando tal cual. */
+        loadRegisterBasedOnOperand(ASM_RAX, valueOperand, frame);
+        storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+        return true;
+    }
+
+    int exponent = powerOfTwoExponent(multiplier);
+    bool canShift = (exponent > 0);
+    if (!canShift) return false;
+
+    loadRegisterBasedOnOperand(ASM_RAX, valueOperand, frame);
+    buildStringf("    sall $%d, %%eax\n", exponent);
+    storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+
+    return true;
 }
 
 static void emitBinaryOp(const TACInstruction *instruction, AsmOpcode opcode, const FunctionFrame *frame) {

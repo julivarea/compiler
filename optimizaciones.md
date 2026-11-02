@@ -40,7 +40,7 @@ anda sin él, el problema está en la optimización y no en el resto del compila
 | `const-branch` | Condición constante en `if` / `while` (§3.3) — **implementada** |
 | `self-assign` | Asignaciones de una variable a sí misma (§3.4) — **implementada** |
 | `peephole` | Mirilla sobre instrucciones contiguas (§3.4) — **parcial** |
-| `strength-reduce` | Reducción de fuerza en multiplicaciones (§3.5) |
+| `strength-reduce` | Reducción de fuerza en multiplicaciones (§3.5) — **implementada** |
 
 ---
 
@@ -467,6 +467,51 @@ instrucción más barata que `imull`: si aparece `* 2` se genera una instrucció
 **Verificación:** el `.ass` de `x * 2` no debe contener `imull`, y el ejecutable debe devolver el
 mismo valor que sin el flag, incluyendo el caso de operandos negativos.
 
+#### Estado: implementada
+
+`emitStrengthReducedMultiplication()` en `src/object_code.c`. Es la única optimización del
+catálogo que vive en el generador de código objeto, porque elegir entre `imull` y `sall` es una
+decisión sobre instrucciones de máquina y el TAC no las conoce.
+
+```
+// sin -opt                      // con -opt strength-reduce
+movl -4(%rbp), %eax               movl -4(%rbp), %eax
+imull %edx, %eax                  sall $1, %eax
+```
+
+Lo emitido para cada multiplicador, verificado sobre el `.ass`:
+
+| Expresión | Instrucción emitida |
+| --- | --- |
+| `x * 0` | `xorl %eax, %eax` |
+| `x * 1` | ninguna: se carga y se guarda el operando |
+| `x * 2`, `* 4`, `* 8`, `* 16` | `sall $1`, `$2`, `$3`, `$4` |
+| `x * 3` y demás no potencias | `imull %edx, %eax` |
+
+**Para pasarle el flag al generador** hizo falta agregarle un parámetro a `generateAssembly()`.
+Las optimizaciones anteriores viven todas en `src/optimizer.c` y transforman el TAC antes de
+emitir; esta decide **al emitir**, así que necesita saber si está activa.
+
+**La constante puede estar de cualquiera de los dos lados:** `2 * x` se reduce igual que
+`x * 2`.
+
+**Por qué el desplazamiento es correcto con signo.** `sall` desborda exactamente igual que
+`imull`, truncando módulo 2^32, así que para la multiplicación son equivalentes. Se verificó
+con operandos negativos: `-5 * 2`, `-3 * 4`, `-2 * 8` dan lo mismo con y sin el flag.
+
+**Lo que queda deliberadamente afuera:**
+- **Multiplicadores negativos.** `x * -2` requeriría además negar el resultado; hoy cae en
+  `imull`, que es correcto.
+- **La división por potencias de dos.** Acá el desplazamiento **no** sirve: `sarl` redondea los
+  negativos hacia abajo y la división entera del lenguaje redondea hacia cero, así que
+  `-8 / 2` daría distinto. Se verificó que la división y el módulo no se tocan.
+- **Los reales**, que no tienen equivalente por desplazamiento.
+
+**Verificado:** 25 programas compilados dos veces y ejecutados, 25 de 25 idénticos y correctos.
+Cubre las potencias de dos, el 0, el 1, un multiplicador que no es potencia, la constante de
+cada lado, los tres casos con operandos negativos, y la confirmación de que división, módulo y
+multiplicación real quedan intactos.
+
 ---
 
 ## 4. Orden de aplicación e interacciones
@@ -515,9 +560,13 @@ documentarlo en el informe.
   inalcanzable (§3.2) junto con la limpieza de etiquetas sin referencias, y condición constante
   en `if` / `while` (§3.3).
 - **Implementadas también:** asignaciones de una variable a sí misma (§3.4, sobre el AST con
-  `hasExecute`) y el patrón de salto redundante de la mirilla (§3.4, sobre el TAC).
-- **Pendientes:** los tres patrones de mirilla que van sobre el assembly emitido (§3.4) y la
-  reducción de fuerza (§3.5).
+  `hasExecute`), el patrón de salto redundante de la mirilla (§3.4, sobre el TAC) y la
+  reducción de fuerza en multiplicaciones (§3.5, sobre el assembly).
+- **Las cinco optimizaciones de la lista original están implementadas**, repartidas en siete
+  flags individuales.
+- **Pendientes:** los tres patrones de mirilla que dependen del assembly emitido (§3.4), y las
+  dos extensiones que requieren análisis de vivacidad: eliminación de asignaciones muertas
+  (§3.2) y de las etiquetas que quedan sin uso tras ella.
 
 ---
 
@@ -533,6 +582,12 @@ Para dar la etapa por terminada, cada optimización implementada debe cumplir:
 
 El punto que más peso tiene en la corrección es el segundo: una optimización que cambia el
 resultado de un programa es peor que no tener la optimización.
+
+**Estado:** las siete optimizaciones implementadas cumplen los cuatro puntos. En total se
+verificaron 116 compilaciones dobles —cada programa compilado con y sin `-opt all`, ejecutando
+ambos binarios y comparando el código de salida entre sí y contra el esperado— sin una sola
+divergencia. Los 40 tests unitarios pasan y los 12 ejemplos del repositorio conservan su código
+de salida con y sin optimizaciones.
 
 ---
 

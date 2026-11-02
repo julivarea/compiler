@@ -174,7 +174,7 @@ static int runIntermediateCode(const Options *options, const TACList *tacList) {
 
 static int runAssembly(const Options *options, const TACList *tacList) {
     resetBuildString();
-    generateAssembly(tacList);
+    generateAssembly(tacList, parseOptimizations(options->opt));
 
     if (getObjectCodeErrors() > 0) {
         fprintf(stderr, "\n" ANSI_BOLD_RED "Compilacion abortada: %d errores internos en la generacion de codigo objeto." ANSI_RESET "\n",

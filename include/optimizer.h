@@ -30,13 +30,15 @@ typedef enum {
     OPTIMIZATION_DEAD_CODE  = 1 << 2, /**< Eliminación de código inalcanzable (`dead-code`). */
     OPTIMIZATION_CONST_BRANCH = 1 << 3, /**< Condición constante en `if` / `while` (`const-branch`). */
     OPTIMIZATION_SELF_ASSIGN  = 1 << 4, /**< Asignaciones de una variable a sí misma (`self-assign`). */
-    OPTIMIZATION_PEEPHOLE     = 1 << 5  /**< Mirilla sobre instrucciones contiguas (`peephole`). */
+    OPTIMIZATION_PEEPHOLE     = 1 << 5, /**< Mirilla sobre instrucciones contiguas (`peephole`). */
+    OPTIMIZATION_STRENGTH     = 1 << 6  /**< Reducción de fuerza en multiplicaciones (`strength-reduce`). */
 } Optimization;
 
 /** @brief Todas las optimizaciones soportadas hasta el momento. */
 #define OPTIMIZATION_ALL (OPTIMIZATION_CONST_FOLD | OPTIMIZATION_CONST_PROP | \
                           OPTIMIZATION_DEAD_CODE | OPTIMIZATION_CONST_BRANCH | \
-                          OPTIMIZATION_SELF_ASSIGN | OPTIMIZATION_PEEPHOLE)
+                          OPTIMIZATION_SELF_ASSIGN | OPTIMIZATION_PEEPHOLE | \
+                          OPTIMIZATION_STRENGTH)
 
 /** @brief Conjunto de optimizaciones activas en una corrida. */
 typedef unsigned int OptimizationSet;

@@ -33,9 +33,11 @@ OptimizationSet parseOptimizations(const char *option) {
     if (strcmp(option, "const-branch") == 0) return OPTIMIZATION_CONST_BRANCH;
     if (strcmp(option, "self-assign") == 0)  return OPTIMIZATION_SELF_ASSIGN;
     if (strcmp(option, "peephole") == 0)     return OPTIMIZATION_PEEPHOLE;
+    if (strcmp(option, "strength-reduce") == 0) return OPTIMIZATION_STRENGTH;
 
     fprintf(stderr, "Error: optimizacion desconocida '%s'. Soportadas: all, const-fold,"
-                    " const-prop, dead-code, const-branch, self-assign, peephole.\n",
+                    " const-prop, dead-code, const-branch, self-assign, peephole,"
+                    " strength-reduce.\n",
             option);
     return OPTIMIZATION_NONE;
 }

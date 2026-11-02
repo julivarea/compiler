@@ -11,6 +11,7 @@
  */
 
 #include "function_frame.h"
+#include "optimizer.h"
 #include "tac_list.h"
 #include "types.h"
 
@@ -23,7 +24,11 @@
  *
  * @param tacList Puntero a la lista de instrucciones de tres direcciones a traducir.
  */
-void generateAssembly(const TACList *tacList);
+/**
+ * @param enabled Optimizaciones activas; las que dependen de la máquina, como
+ *        la reducción de fuerza, se deciden al emitir cada instrucción.
+ */
+void generateAssembly(const TACList *tacList, OptimizationSet enabled);
 
 /**
  * @brief Obtiene la cantidad de errores internos detectados durante la última generación.
