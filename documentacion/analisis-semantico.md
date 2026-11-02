@@ -22,7 +22,91 @@ La resolución léxica se apoya en un árbol de ámbitos (`Scope`) donde cada bl
 
 ---
 
-## 2. Sistema de Tipos y Expresiones
+## 2. Modelado de Símbolos (`Symbol`) y Variantes de `SymbolType`
+
+El compilador clasifica todas las entidades semánticas registradas en los entornos o referenciadas en el AST mediante el enumerado [`SymbolType`](file:///home/francisco/compiler/include/symbol_table.h#L16-L20) definido en [`include/symbol_table.h`](file:///home/francisco/compiler/include/symbol_table.h):
+
+```c
+typedef enum SymbolType {
+    VARIABLE_SYMBOL,    /**< Identificador de variable o parámetro. */
+    METHOD_SYMBOL,      /**< Identificador de método o función. */
+    CONSTANT_SYMBOL     /**< Literal o valor constante primitivo. */
+} SymbolType;
+```
+
+Cada entidad en memoria dinámica se modela a través de la estructura [`Symbol`](file:///home/francisco/compiler/include/symbol_table.h#L25-L35):
+
+```c
+typedef struct Symbol {
+    char *id;                   /**< Nombre textual del identificador en el código fuente. */
+    int uid;                    /**< Identificador único asignado al entrar a un ámbito (0 si no está declarado). */
+    DataType type;              /**< Tipo de dato semántico asociado al símbolo. */
+    SymbolType symbolType;      /**< Categoría sintáctico-semántica del símbolo. */
+    struct NodeAST *parameters; /**< Lista de parámetros formales (solo si symbolType es METHOD_SYMBOL). */
+    union {
+        int intValue;           /**< Valor numérico para constantes de tipo entero o booleano. */
+        float floatValue;       /**< Valor numérico para constantes de punto flotante. */
+    } value;
+} Symbol;
+```
+
+### Las 3 Variantes de `SymbolType` y Uso de Cada Campo
+
+A continuación se describen las 3 variantes de [`SymbolType`](file:///home/francisco/compiler/include/symbol_table.h#L16-L20), su propósito semántico en el compilador y para qué se utiliza cada campo de [`Symbol`](file:///home/francisco/compiler/include/symbol_table.h#L25-L35):
+
+#### 1. `VARIABLE_SYMBOL` (Variables y Parámetros)
+Representa identificadores de variables locales, variables globales y parámetros formales dentro de métodos.
+
+- **`id` (`char*`):** Almacena el nombre textual del identificador en el código fuente (duplicado en el heap mediante `strdup`, por ejemplo `"x"`, `"total"`). Es utilizado por [`lookupSymbol`](file:///home/francisco/compiler/include/symbol_table.h#L112) y [`lookupSymbolInScope`](file:///home/francisco/compiler/include/symbol_table.h#L97) para la resolución de identificadores en expresiones y asignaciones, y para prevenir declaraciones duplicadas dentro del mismo ámbito.
+- **`uid` (`int`):** Identificador numérico único incremental ($\ge 1$) asignado por [`appendSymbol`](file:///home/francisco/compiler/include/symbol_table.h#L83) al registrar la variable en su [`Scope`](file:///home/francisco/compiler/include/symbol_table.h#L65). Permite resolver colisiones por sombreado (*shadowing*) distinguiendo variables con el mismo nombre en distintos bloques. En etapas posteriores (código intermedio TAC y código objeto), el `uid` identifica unívocamente la variable y determina su ubicación en el marco de activación / stack (`FunctionFrame`). Si el símbolo es temporal o no ha sido declarado, se mantiene en `0`.
+- **`type` (`DataType`):** Tipo de dato estático declarado para la variable (`TYPE_INT`, `TYPE_FLOAT` o `TYPE_BOOL`). Es consumido por [`type_checker.c`](file:///home/francisco/compiler/src/type_checker.c) para chequear la validez de operaciones aritméticas/lógicas, verificar asignaciones mediante [`isAssignable`](file:///home/francisco/compiler/include/type_checker.h#L40) y aplicar coerciones de tipo si corresponde.
+- **`symbolType`:** Fijo en `VARIABLE_SYMBOL`. Permite al analizador semántico comprobar que el identificador usado en una asignación (`x = ...`) o expresión sea efectivamente una variable y no un método (evita que se use un método como valor o se intente asignar a una función).
+- **`parameters` (`NodeAST*`):** No se utiliza (`NULL`), ya que las variables y parámetros no definen una firma de parámetros.
+- **`value` (`union`):** No se utiliza durante el análisis semántico. Las variables obtienen su valor dinámico en tiempo de ejecución o mediante instrucciones TAC (`TAC_ASSIGN`).
+
+#### 2. `METHOD_SYMBOL` (Métodos y Funciones)
+Representa la firma y declaración de una función o método en el ámbito global (incluyendo el punto de entrada obligatorio `main`).
+
+- **`id` (`char*`):** Nombre textual de la función (ej. `"factorial"`, `"main"`). Se usa para registrar el método en el ámbito global (`level = 0`) y resolver invocaciones (`METHOD_CALL_NODE`) en cualquier punto del programa mediante [`lookupSymbol`](file:///home/francisco/compiler/include/symbol_table.h#L112).
+- **`uid` (`int`):** Identificador único asignado al insertar el método en el ámbito global. Sirve de referencia unívoca para rotular etiquetas y saltos en la generación de código intermedio (`TAC_LABEL`, `TAC_CALL`) y en las directivas de ensamblador.
+- **`type` (`DataType`):** Tipo de dato retornado por el método (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL` o `TYPE_VOID`). Se usa para:
+  - Validar que las sentencias `return` dentro de su cuerpo retornen expresiones de tipo compatible (`isAssignable`).
+  - Prohibir que métodos `void` contengan sentencias `return` con valor.
+  - Asignar el tipo resultante al nodo de invocación (`node->type = method->type`) y rechazar llamadas a métodos `void` dentro de expresiones aritméticas o condicionales.
+- **`symbolType`:** Fijo en `METHOD_SYMBOL`. Permite distinguir llamadas a métodos de usos de variables, impidiendo invocar una variable como función (ej. `mi_variable()`) o asignar a un método.
+- **`parameters` (`NodeAST*`):** Puntero directo al subárbol del AST (`PARAMETERS_NODE`) que contiene la lista de parámetros formales declarados. Se utiliza para:
+  - **Validación de aridad:** Comprobar que la cantidad de argumentos provistos en la llamada (`node->childCount`) coincida exactamente con la cantidad de parámetros esperados (`parameters->childCount`).
+  - **Chequeo de tipos en invocación:** Recorrer ordenadamente los argumentos reales e inspeccionar con [`isAssignable`](file:///home/francisco/compiler/include/type_checker.h#L40) que cada uno sea compatible con el tipo del parámetro formal en esa posición (`parameters->children[i]->type`).
+  - **Poblado del ámbito local:** Al abrir el [`Scope`](file:///home/francisco/compiler/include/symbol_table.h#L65) del cuerpo del método, cada parámetro formal de este subárbol se inserta como una variable local (`VARIABLE_SYMBOL`).
+- **`value` (`union`):** No se utiliza en esta variante.
+
+#### 3. `CONSTANT_SYMBOL` (Literales y Constantes Primitivas)
+Representa valores inmediatos o literales numéricos y booleanos presentes en las expresiones del código fuente (ej. `42`, `3.1415`, `true`, `false`).
+
+- **`id` (`char*`):** Es `NULL`, dado que los literales son anónimos y no corresponden a identificadores con nombre.
+- **`uid` (`int`):** Es `0`, ya que los literales no se insertan en las tablas de símbolos de los ámbitos léxicos (`Scope`).
+- **`type` (`DataType`):** Tipo de dato primitivo del literal (`TYPE_INT`, `TYPE_FLOAT` o `TYPE_BOOL`). Permite al verificador de tipos inferir de forma directa e inmediata el tipo del nodo constante (`CONSTANT_NODE`) en expresiones.
+- **`symbolType`:** Fijo en `CONSTANT_SYMBOL`. Identifica que el nodo AST encapsula un valor constante inmediato y no requiere búsqueda en la tabla de símbolos.
+- **`parameters` (`NodeAST*`):** No se utiliza (`NULL`).
+- **`value` (`union`):** Almacena el valor evaluado directamente en memoria binaria nativa:
+  - `value.intValue`: Almacena el valor numérico entero para `TYPE_INT`, o `1`/`0` para constantes booleanas `true`/`false` (`TYPE_BOOL`).
+  - `value.floatValue`: Almacena el número en punto flotante para `TYPE_FLOAT`.
+  - **Uso posterior:** Este campo evita repetir conversiones de texto a número a lo largo del pipeline. En la etapa de código intermedio se mapea directamente a operandos inmediatos TAC (`tacConstantInt`, `tacConstantBool`, `tacConstantFloat`) y en la generación de código objeto se convierte en valores inmediatos de ensamblador (`asmLoad(..., opImm(...))`).
+
+### Resumen de Uso de Campos según la Variante
+
+| Campo en [`Symbol`](file:///home/francisco/compiler/include/symbol_table.h#L25-L35) | `VARIABLE_SYMBOL` | `METHOD_SYMBOL` | `CONSTANT_SYMBOL` |
+| :--- | :--- | :--- | :--- |
+| **`id`** | Nombre de la variable (`char*`) | Nombre de la función (`char*`) | `NULL` (anónimo) |
+| **`uid`** | Secuencial único ($\ge 1$, $0$ si no declarada) | Secuencial único ($\ge 1$) | `0` (no registrado en `Scope`) |
+| **`type`** | Tipo de la variable (`int`, `float`, `boolean`) | Tipo de retorno (`int`, `float`, `boolean`, `void`) | Tipo del literal (`int`, `float`, `boolean`) |
+| **`symbolType`** | `VARIABLE_SYMBOL` | `METHOD_SYMBOL` | `CONSTANT_SYMBOL` |
+| **`parameters`** | `NULL` (no aplica) | Puntero al AST de parámetros (`PARAMETERS_NODE`) | `NULL` (no aplica) |
+| **`value`** | No utilizado en análisis semántico | No utilizado | `intValue` (int/bool) o `floatValue` (float) |
+
+---
+
+## 3. Sistema de Tipos y Expresiones
 
 El chequeo de tipos se implementa en `src/type_checker.c`:
 
@@ -42,13 +126,13 @@ El chequeo de tipos se implementa en `src/type_checker.c`:
 
 ---
 
-## 3. Sentencias de Control de Flujo
+## 4. Sentencias de Control de Flujo
 
 - **Condiciones en `if` y `while`:** La expresión condicional de un nodo `IF_ELSE_NODE` o `WHILE_NODE` debe inferirse obligatoriamente como `TYPE_BOOL`. Si se proporciona un valor numérico o incompatible, se emite un error semántico.
 
 ---
 
-## 4. Métodos, Parámetros y Retornos
+## 5. Métodos, Parámetros y Retornos
 
 - **Firmas e Invocaciones:**
   - Toda llamada a método (`METHOD_CALL_NODE`) verifica que la función exista en la tabla de símbolos.
@@ -63,13 +147,13 @@ El chequeo de tipos se implementa en `src/type_checker.c`:
 
 ---
 
-## 5. Estructura Global del Programa
+## 6. Estructura Global del Programa
 
 - **Método `main()` Obligatorio:** Al finalizar el recorrido semántico del AST, `checkMainMethodExists()` valida que en el ámbito global exista un método llamado `"main"`, que no reciba parámetros. De no encontrarse, se aborta la compilación con un error semántico específico.
 
 ---
 
-## 6. Manejo de Errores y Casos Anómalos
+## 7. Manejo de Errores y Casos Anómalos
 
 El compilador aplica un modelo de diagnóstico acumulativo y robusto:
 

@@ -100,7 +100,38 @@ Referencia: [`convenciones_comentarios.md`](convenciones_comentarios.md). Se doc
 
 ---
 
-## 6. Checklist de refactor
+## 6. Responsabilidad única en validación de guardas (Dispatchers vs. Submétodos)
+
+La programación defensiva es correcta y esperada en las fronteras públicas de un módulo o en la entrada de funciones despachadoras (*dispatchers* como `executeStatement`, `evaluateExpression`, `analyzeNodeSemantics`, `generateStatementCode`). Allí se valida `if (node == NULL)` una sola vez antes de ramificar (`switch`).
+
+- **Regla:** Los submétodos o casos especializados llamados exclusivamente por el despachador (`executeAssignment`, `executeIfElse`, `analyzeMethodNode`, etc.) **no deben repetir** `if (node == NULL)` ni volver a validar condiciones que el despachador ya resolvió antes de invocarlos.
+- Preguntar abajo por algo que ya se garantizó arriba es redundante, introduce ruido visual y oculta el flujo real del código.
+- **Invariantes del AST:** Si un nodo ya fue filtrado por el despachador según su tipo (ej. `ASSIGNMENT_NODE`, `METHOD_DECLARATION_NODE`), los submétodos especializados deben asumir la estructura canónica del AST construida por el parser y validada por el análisis semántico, evitando guardas defensivas superfluas sobre campos garantizados (como `node->symbol != NULL` en nodos que siempre poseen símbolo).
+
+```c
+// BIEN: el despachador valida la guarda defensiva una sola vez
+static ExecResult executeStatement(NodeAST *node, Scope *currentScope) {
+    if (node == NULL) {
+        return makeVoidResult();
+    }
+
+    switch (node->nodeType) {
+        case ASSIGNMENT_NODE:
+            return executeAssignment(node, currentScope); // node nunca es NULL aquí
+        ...
+    }
+}
+
+// BIEN: el submétodo especializado va directo a su lógica sin re-validar
+static ExecResult executeAssignment(NodeAST *node, Scope *currentScope) {
+    Symbol assignedValue = evaluateExpression(GET_EXPRESSION(node), currentScope);
+    ...
+}
+```
+
+---
+
+## 7. Checklist de refactor
 
 - [ ] Orden descendente en el código nuevo o modificado: principal → submétodos → helpers.
 - [ ] Cabecera con guard `_H`, bloque `@file`/`@brief` e includes agrupados.
@@ -109,3 +140,4 @@ Referencia: [`convenciones_comentarios.md`](convenciones_comentarios.md). Se doc
 - [ ] Intenciones expresadas con booleanos descriptivos (`bool var = (cond); if (var)`) en vez de bloques de comentarios.
 - [ ] Documentación solo de contratos y restricciones no evidentes; sin repetir el código.
 - [ ] Sin comentarios redundantes; `//` solo para aclaraciones puntuales.
+- [ ] Guardas sin redundancia: validación defensiva en el despachador o frontera pública, sin repetir chequeos de `NULL` o invariantes en submétodos especializados.

@@ -21,6 +21,11 @@ static void registerVariableDeclaration(NodeAST *node, Scope *currentScope);
 static void executeMainMethod(Scope *globalScope);
 
 static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argumentsNode, Scope *callerScope, Scope *globalScope);
+static Symbol *evaluateArguments(NodeAST *argumentsNode, Scope *callerScope);
+static Scope *createFunctionScope(Scope *globalScope);
+static void bindParameters(Scope *functionScope, NodeAST *parametersNode, Symbol *argumentValues);
+static void assignSymbolValue(Symbol *target, Symbol source);
+static Symbol coerceReturnValue(DataType expectedType, Symbol result);
 static ExecResult executeBlock(NodeAST *node, Scope *currentScope);
 static ExecResult executeStatement(NodeAST *node, Scope *currentScope);
 static ExecResult executeAssignment(NodeAST *node, Scope *currentScope);
@@ -108,57 +113,85 @@ static void executeMainMethod(Scope *globalScope) {
     }
 }
 
-static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argumentsNode, Scope *callerScope, Scope *globalScope) {
-    int argumentCount = (argumentsNode != NULL) ? argumentsNode->childCount : 0;
-    bool hasArguments = (argumentCount > 0);
-    Symbol *argumentValues = NULL;
-    if (hasArguments) {
-        argumentValues = malloc(sizeof(Symbol) * argumentCount);
-        if (argumentValues != NULL) {
-            for (int i = 0; i < argumentCount; i++) {
-                argumentValues[i] = evaluateExpression(argumentsNode->children[i], callerScope);
-            }
-        }
-    }
 
-    Scope *functionScope = createScope(1, globalScope, NULL);
+static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argumentsNode, Scope *callerScope, Scope *globalScope) {
+    Symbol *argumentValues = evaluateArguments(argumentsNode, callerScope);
+
+    Scope *functionScope = createFunctionScope(globalScope);
     if (functionScope == NULL) {
         free(argumentValues);
         return makeVoidSymbol();
     }
-    appendChildScope(globalScope, functionScope);
 
-    NodeAST *parametersNode = methodDeclarationNode->children[0];
-    bool hasParameters = (parametersNode != NULL);
-    if (hasParameters) {
-        for (int i = 0; i < parametersNode->childCount; i++) {
-            NodeAST *parameterNode = parametersNode->children[i];
-            Symbol *parameterSymbol = newSymbol(parameterNode->symbol->id, VARIABLE_SYMBOL, parameterNode->type, NULL);
-            if (argumentValues != NULL) {
-                bool needsFloatCoercion = (parameterSymbol->type == TYPE_FLOAT && argumentValues[i].type == TYPE_INT);
-                if (needsFloatCoercion) {
-                    parameterSymbol->value.floatValue = (float)argumentValues[i].value.intValue;
-                } else if (parameterSymbol->type == TYPE_FLOAT) {
-                    parameterSymbol->value.floatValue = argumentValues[i].value.floatValue;
-                } else {
-                    parameterSymbol->value.intValue = argumentValues[i].value.intValue;
-                }
-            }
-            appendSymbol(functionScope, parameterSymbol);
-        }
-    }
-
+    bindParameters(functionScope, methodDeclarationNode->children[0], argumentValues);
     free(argumentValues);
 
     NodeAST *bodyNode = methodDeclarationNode->children[1];
     ExecResult result = executeBlock(bodyNode, functionScope);
 
-    bool needsFloatCoercion = (methodDeclarationNode->type == TYPE_FLOAT && result.value.type == TYPE_INT);
-    if (needsFloatCoercion) {
-        result.value = makeFloatSymbol((float)result.value.value.intValue);
+    return coerceReturnValue(methodDeclarationNode->type, result.value);
+}
+
+
+static Symbol *evaluateArguments(NodeAST *argumentsNode, Scope *callerScope) {
+    int argumentCount = (argumentsNode != NULL) ? argumentsNode->childCount : 0;
+    if (argumentCount == 0) {
+        return NULL;
     }
 
-    return result.value;
+    Symbol *argumentValues = malloc(sizeof(Symbol) * argumentCount);
+    if (argumentValues != NULL) {
+        for (int i = 0; i < argumentCount; i++) {
+            argumentValues[i] = evaluateExpression(argumentsNode->children[i], callerScope);
+        }
+    }
+    return argumentValues;
+}
+
+static Scope *createFunctionScope(Scope *globalScope) {
+    Scope *functionScope = createScope(1, globalScope, NULL);
+    if (functionScope != NULL) {
+        appendChildScope(globalScope, functionScope);
+    }
+    return functionScope;
+}
+
+static void assignSymbolValue(Symbol *target, Symbol source) {
+    if (target == NULL) {
+        return;
+    }
+
+    bool needsFloatCoercion = (target->type == TYPE_FLOAT && source.type == TYPE_INT);
+    if (needsFloatCoercion) {
+        target->value.floatValue = (float)source.value.intValue;
+    } else if (target->type == TYPE_FLOAT) {
+        target->value.floatValue = source.value.floatValue;
+    } else {
+        target->value.intValue = source.value.intValue;
+    }
+}
+
+static void bindParameters(Scope *functionScope, NodeAST *parametersNode, Symbol *argumentValues) {
+    if (parametersNode == NULL) {
+        return;
+    }
+
+    for (int i = 0; i < parametersNode->childCount; i++) {
+        NodeAST *parameterNode = parametersNode->children[i];
+        Symbol *parameterSymbol = newSymbol(parameterNode->symbol->id, VARIABLE_SYMBOL, parameterNode->type, NULL);
+        if (argumentValues != NULL) {
+            assignSymbolValue(parameterSymbol, argumentValues[i]);
+        }
+        appendSymbol(functionScope, parameterSymbol);
+    }
+}
+
+static Symbol coerceReturnValue(DataType expectedType, Symbol result) {
+    bool needsFloatCoercion = (expectedType == TYPE_FLOAT && result.type == TYPE_INT);
+    if (needsFloatCoercion) {
+        return makeFloatSymbol((float)result.value.intValue);
+    }
+    return result;
 }
 
 static ExecResult executeBlock(NodeAST *node, Scope *currentScope) {
@@ -218,14 +251,7 @@ static ExecResult executeAssignment(NodeAST *node, Scope *currentScope) {
     ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
     Symbol assignedValue = evaluateExpression(GET_EXPRESSION(node), currentScope);
     Symbol *target = lookupSymbol(currentScope, node->symbol->id);
-    bool needsFloatCoercion = (target->type == TYPE_FLOAT && assignedValue.type == TYPE_INT);
-    if (needsFloatCoercion) {
-        target->value.floatValue = (float)assignedValue.value.intValue;
-    } else if (target->type == TYPE_FLOAT) {
-        target->value.floatValue = assignedValue.value.floatValue;
-    } else {
-        target->value.intValue = assignedValue.value.intValue;
-    }
+    assignSymbolValue(target, assignedValue);
 
     return result;
 }
