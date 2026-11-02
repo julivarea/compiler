@@ -1,6 +1,8 @@
 #ifndef CLI_H
 #define CLI_H
 
+#include "optimizer.h"
+
 /**
  * @file cli.h
  * @brief Parseo y configuración de la línea de comandos del compilador.
@@ -44,7 +46,7 @@ typedef struct Options {
     Target target;       /**< Etapa objetivo hasta la que compila el pipeline. */
     int explicitTarget;  /**< 1 si se especificó explícitamente -target; 0 si es el default. */
     int debug;           /**< 1 si se activó la bandera -debug; 0 en caso contrario. */
-    const char *opt;     /**< Nombre de optimización (-opt); "all", nombre o NULL si se omitió. */
+    OptimizationSet optimizations; /**< Máscara de optimizaciones activas; OPTIMIZATION_NONE si se omitió. */
 } Options;
 
 /**

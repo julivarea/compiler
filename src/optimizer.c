@@ -18,33 +18,6 @@ static int removeRedundantJumps(TACList *tacList);
 static int markRedundantAssignments(NodeAST *node);
 static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previous, TACInstruction *current);
 
-/* ------------------------------------------------------------------ */
-/* Selección de optimizaciones                                         */
-/* ------------------------------------------------------------------ */
-
-OptimizationSet parseOptimizations(const char *option) {
-    bool hasNoOptimizations = (option == NULL);
-    if (hasNoOptimizations) return OPTIMIZATION_NONE;
-
-    if (strcmp(option, "all") == 0)        return OPTIMIZATION_ALL;
-    if (strcmp(option, "const-fold") == 0) return OPTIMIZATION_CONST_FOLD;
-    if (strcmp(option, "const-prop") == 0) return OPTIMIZATION_CONST_PROP;
-    if (strcmp(option, "dead-code") == 0)  return OPTIMIZATION_DEAD_CODE;
-    if (strcmp(option, "const-branch") == 0) return OPTIMIZATION_CONST_BRANCH;
-    if (strcmp(option, "self-assign") == 0)  return OPTIMIZATION_SELF_ASSIGN;
-    if (strcmp(option, "peephole") == 0)     return OPTIMIZATION_PEEPHOLE;
-    if (strcmp(option, "strength-reduce") == 0) return OPTIMIZATION_STRENGTH;
-
-    fprintf(stderr, "Error: optimizacion desconocida '%s'. Soportadas: all, const-fold,"
-                    " const-prop, dead-code, const-branch, self-assign, peephole,"
-                    " strength-reduce.\n",
-            option);
-    return OPTIMIZATION_NONE;
-}
-
-bool isOptimizationEnabled(OptimizationSet enabled, Optimization optimization) {
-    return (enabled & (OptimizationSet)optimization) != 0;
-}
 
 int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled) {
     if (tacList == NULL || enabled == OPTIMIZATION_NONE) return 0;
@@ -90,15 +63,12 @@ static bool isConstant(const TACOperand *operand) {
     return operand->kind == OPERAND_CONSTANT;
 }
 
-/* Lee una constante como real, sirva o no su valor original de entero. */
 static float asFloat(const TACOperand *operand) {
-    bool isFloat = (operand->type == TYPE_FLOAT);
-    return isFloat ? operand->value.floatValue : (float)operand->value.intValue;
+    return operand->value.floatValue;
 }
 
 static int asInt(const TACOperand *operand) {
-    bool isFloat = (operand->type == TYPE_FLOAT);
-    return isFloat ? (int)operand->value.floatValue : operand->value.intValue;
+    return operand->value.intValue;
 }
 
 /*
@@ -111,7 +81,7 @@ static int asInt(const TACOperand *operand) {
  */
 static bool evaluateBinary(TACOperation operation, const TACOperand *first,
                            const TACOperand *second, DataType resultType, TACOperand *folded) {
-    bool usesFloat = (first->type == TYPE_FLOAT || second->type == TYPE_FLOAT);
+    bool isFloatOperation = (first->type == TYPE_FLOAT);
 
     switch (operation) {
         case TAC_ADD:
@@ -155,18 +125,18 @@ static bool evaluateBinary(TACOperation operation, const TACOperand *first,
         }
 
         case TAC_LT:
-            *folded = tacConstantBool(usesFloat ? (asFloat(first) < asFloat(second))
-                                                : (asInt(first) < asInt(second)));
+            *folded = tacConstantBool(isFloatOperation ? (asFloat(first) < asFloat(second))
+                                                       : (asInt(first) < asInt(second)));
             return true;
 
         case TAC_GT:
-            *folded = tacConstantBool(usesFloat ? (asFloat(first) > asFloat(second))
-                                                : (asInt(first) > asInt(second)));
+            *folded = tacConstantBool(isFloatOperation ? (asFloat(first) > asFloat(second))
+                                                       : (asInt(first) > asInt(second)));
             return true;
 
         case TAC_EQ:
-            *folded = tacConstantBool(usesFloat ? (asFloat(first) == asFloat(second))
-                                                : (asInt(first) == asInt(second)));
+            *folded = tacConstantBool(isFloatOperation ? (asFloat(first) == asFloat(second))
+                                                       : (asInt(first) == asInt(second)));
             return true;
 
         default:
@@ -483,9 +453,8 @@ static int removeUnreferencedLabels(TACList *tacList) {
             target = &instruction->secondOperand;
         }
 
-        bool isLabelReference = (target != NULL && target->kind == OPERAND_LABEL);
         bool hasRoom = (referencedCount < MAX_KNOWN_CONSTANTS);
-        if (isLabelReference && hasRoom) {
+        if (target != NULL && hasRoom) {
             snprintf(referenced[referencedCount], TAC_NAME_LENGTH, "%s", target->name);
             referencedCount++;
         }
@@ -685,16 +654,10 @@ static int markRedundantAssignments(NodeAST *node) {
 
     int changes = 0;
 
-    bool isAssignment = (node->nodeType == ASSIGNMENT_NODE);
-    if (isAssignment && node->symbol != NULL) {
+    if (node->nodeType == ASSIGNMENT_NODE) {
         NodeAST *expression = GET_EXPRESSION(node);
-        bool assignsAnIdentifier = (expression != NULL &&
-                                    expression->nodeType == ID_NODE &&
-                                    expression->symbol != NULL);
-
-        if (assignsAnIdentifier) {
-            bool isSameEntity = (node->symbol->uid != 0 &&
-                                 node->symbol->uid == expression->symbol->uid);
+        if (expression->nodeType == ID_NODE) {
+            bool isSameEntity = (node->symbol->uid == expression->symbol->uid);
             if (isSameEntity && node->hasExecute) {
                 node->hasExecute = false;
                 changes++;

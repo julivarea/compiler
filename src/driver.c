@@ -47,7 +47,7 @@ static const char *getTokenName(int token);
  * como la emitió el generador.
  */
 static const TACList *buildIntermediateCode(const Options *options) {
-    OptimizationSet enabled = parseOptimizations(options->opt);
+    OptimizationSet enabled = options->optimizations;
     bool hasOptimizations = (enabled != OPTIMIZATION_NONE);
 
     /* Las que trabajan sobre el árbol tienen que correr antes de generar. */
@@ -174,7 +174,7 @@ static int runIntermediateCode(const Options *options, const TACList *tacList) {
 
 static int runAssembly(const Options *options, const TACList *tacList) {
     resetBuildString();
-    generateAssembly(tacList, parseOptimizations(options->opt));
+    generateAssembly(tacList, options->optimizations);
 
     if (getObjectCodeErrors() > 0) {
         fprintf(stderr, "\n" ANSI_BOLD_RED "Compilacion abortada: %d errores internos en la generacion de codigo objeto." ANSI_RESET "\n",

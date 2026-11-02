@@ -9,6 +9,7 @@ static const char *INPUT_EXTENSION = ".ctds";
 
 static void printUsage(const char *program);
 static bool parseTarget(const char *value, Target *target);
+static bool parseOptimization(const char *value, OptimizationSet *optimizations);
 static bool hasInputExtension(const char *name);
 static char *buildOutputName(const char *input, const char *extension);
 static const char *getTargetExtension(const Options *options);
@@ -22,7 +23,7 @@ int parseArguments(int argc, char **argv, Options *options) {
     options->target = CURRENT_TARGET;
     options->explicitTarget = 0;
     options->debug = 0;
-    options->opt = NULL;
+    options->optimizations = OPTIMIZATION_NONE;
 
     for (int i = 1; i < argc; i++) {
         char *argument = argv[i];
@@ -57,10 +58,18 @@ int parseArguments(int argc, char **argv, Options *options) {
             bool nextIsInputFile = (hasNextArgument && hasInputExtension(argv[i + 1]));
             bool hasOptimizationName = (hasNextArgument && !nextIsOption && !nextIsInputFile);
 
+            const char *optName = "all";
             if (hasOptimizationName) {
-                options->opt = argv[++i];
-            } else {
-                options->opt = "all";
+                optName = argv[++i];
+            }
+
+            if (!parseOptimization(optName, &options->optimizations)) {
+                fprintf(stderr, "Error: optimizacion desconocida '%s'. Soportadas: all, const-fold,"
+                                " const-prop, dead-code, const-branch, self-assign, peephole,"
+                                " strength-reduce.\n",
+                        optName);
+                printUsage(program);
+                return 1;
             }
 
         } else if (strcmp(argument, "-debug") == 0) {
@@ -158,6 +167,25 @@ static bool parseTarget(const char *value, Target *target) {
     return true;
 }
 
+static bool parseOptimization(const char *value, OptimizationSet *optimizations) {
+    if (value == NULL) {
+        *optimizations = OPTIMIZATION_NONE;
+        return true;
+    }
+
+    if (strcmp(value, "all") == 0)             *optimizations = OPTIMIZATION_ALL;
+    else if (strcmp(value, "const-fold") == 0) *optimizations = OPTIMIZATION_CONST_FOLD;
+    else if (strcmp(value, "const-prop") == 0) *optimizations = OPTIMIZATION_CONST_PROP;
+    else if (strcmp(value, "dead-code") == 0)  *optimizations = OPTIMIZATION_DEAD_CODE;
+    else if (strcmp(value, "const-branch") == 0) *optimizations = OPTIMIZATION_CONST_BRANCH;
+    else if (strcmp(value, "self-assign") == 0)  *optimizations = OPTIMIZATION_SELF_ASSIGN;
+    else if (strcmp(value, "peephole") == 0)     *optimizations = OPTIMIZATION_PEEPHOLE;
+    else if (strcmp(value, "strength-reduce") == 0) *optimizations = OPTIMIZATION_STRENGTH;
+    else return false;
+
+    return true;
+}
+
 static bool hasInputExtension(const char *name) {
     size_t nameLength = strlen(name);
     size_t extensionLength = strlen(INPUT_EXTENSION);
@@ -186,7 +214,7 @@ static const char *getTargetExtension(const Options *options) {
     bool producesExecutable = BUILDS_EXECUTABLE(options);
     if (producesExecutable) return ".out";
 
-    bool hasOptimization = (options->opt != NULL);
+    bool hasOptimization = (options->optimizations != OPTIMIZATION_NONE);
     if (hasOptimization) return ".opt";
 
     switch (options->target) {

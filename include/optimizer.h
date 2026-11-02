@@ -44,19 +44,11 @@ typedef enum {
 typedef unsigned int OptimizationSet;
 
 /**
- * @brief Traduce el valor recibido en `-opt` al conjunto de optimizaciones activas.
- *
- * @param option Nombre de la optimización, `"all"`, o NULL si no se pasó `-opt`.
- * @return El conjunto correspondiente, u `OPTIMIZATION_NONE` si @p option es NULL.
- *         Si el nombre no se reconoce, informa el error por stderr y devuelve
- *         `OPTIMIZATION_NONE`.
- */
-OptimizationSet parseOptimizations(const char *option);
-
-/**
  * @brief Indica si una optimización está activa en el conjunto.
  */
-bool isOptimizationEnabled(OptimizationSet enabled, Optimization optimization);
+static inline bool isOptimizationEnabled(OptimizationSet enabled, Optimization optimization) {
+    return (enabled & (OptimizationSet)optimization) != 0;
+}
 
 /**
  * @brief Aplica sobre la lista las optimizaciones activas.
