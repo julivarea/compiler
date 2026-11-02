@@ -21,7 +21,8 @@ typedef enum Target {
     TARGET_PARSE,     /**< Análisis sintáctico (produce .sint). */
     TARGET_SEM,       /**< Análisis semántico (produce .sem). */
     TARGET_CODINTER,  /**< Generación de código intermedio TAC (produce .ci). */
-    TARGET_ASSEMBLY   /**< Generación de código objeto x86-64 (produce .ass). */
+    TARGET_ASSEMBLY,  /**< Generación de código objeto x86-64 (produce .ass). */
+    TARGET_INTERP     /**< Intérprete directo del AST. */
 } Target;
 
 /**
