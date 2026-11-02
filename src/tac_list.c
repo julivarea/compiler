@@ -26,7 +26,7 @@ void freeTACList(TACList *list) {
     free(list);
 }
 
-void printTACList(const TACList *list) {
+void formatTACList(const TACList *list) {
     if (list == NULL) return;
 
     for (const TACInstruction *current = list->head; current != NULL; current = current->next) {
