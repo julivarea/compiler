@@ -12,12 +12,11 @@
 #include "cli.h"
 #include "error_handler.h"
 #include "intermediate_code.h"
+#include "interpreter.h"
 #include "object_code.h"
 #include "semantic_analyzer.h"
 #include "string_builder.h"
-/* 
-    @brief ejecuta lo que le pide el cli y devuelve errores en caso de tenerlos
-*/
+
 #define ANSI_BOLD_RED "\033[1;31m"
 #define ANSI_RESET    "\033[0m"
 #define MAX_PATH_LENGTH 4096
@@ -69,6 +68,13 @@ int compile(const Options *options) {
             if (runSemantic() != 0) { return 1; }
             const TACList *tacList = generateIntermediateCode(astRoot);
             return runAssembly(options, tacList);
+        }
+
+        case TARGET_INTERP: {
+            if (runParse() != 0) { return 1; }
+            if (runSemantic() != 0) { return 1; }
+            interpreteSemantics(astRoot, NULL);
+            return 0;
         }
 
         default:

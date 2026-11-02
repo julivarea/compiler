@@ -9,6 +9,7 @@
 #include "types.h"
 
 struct NodeAST;
+typedef struct NodeAST NodeAST;
 
 /**
  * @brief Categorías de símbolos gestionados por el compilador.

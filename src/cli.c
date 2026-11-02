@@ -131,7 +131,7 @@ static void printUsage(const char *program) {
         "Uso: %s [opciones] archivo%s\n"
         "\n"
         "  -o <salida>      Nombre del archivo de salida\n"
-        "  -target <etapa>  Compila hasta esa etapa: scan | parse | sem | codinter | assembly\n"
+        "  -target <etapa>  Compila hasta esa etapa: scan | parse | interpret | sem | codinter | assembly\n"
         "                   (por defecto: %s, la etapa mas avanzada implementada)\n"
         "  -opt [nombre]    Aplica optimizaciones; 'all' son todas. Por defecto ninguna\n"
         "  -debug           Imprime informacion de debugging por stdout\n",
@@ -149,6 +149,8 @@ static bool parseTarget(const char *value, Target *target) {
         *target = TARGET_CODINTER;
     } else if (strcmp(value, "assembly") == 0) {
         *target = TARGET_ASSEMBLY;
+    } else if (strcmp(value, "interp") == 0) {
+        *target = TARGET_INTERP;
     } else {
         return false;
     }
@@ -193,6 +195,7 @@ static const char *getTargetExtension(const Options *options) {
         case TARGET_SEM:      return ".sem";
         case TARGET_CODINTER: return ".ci";
         case TARGET_ASSEMBLY: return ".ass";
+        case TARGET_INTERP:   return ".interp";
     }
 
     return ".out";
@@ -205,6 +208,7 @@ const char *getTargetName(Target target) {
         case TARGET_SEM:      return "sem";
         case TARGET_CODINTER: return "codinter";
         case TARGET_ASSEMBLY: return "assembly";
+        case TARGET_INTERP:   return "interp";
     }
 
     return "?";
