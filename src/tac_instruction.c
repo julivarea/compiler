@@ -145,8 +145,6 @@ static const char *getOperatorSymbol(TACOperation operation) {
         case TAC_LT:  return "<";
         case TAC_GT:  return ">";
         case TAC_EQ:  return "==";
-        case TAC_AND: return "&&";
-        case TAC_OR:  return "||";
         case TAC_NEG: return "-";
         case TAC_NOT: return "!";
         default:      return "?";

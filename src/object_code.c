@@ -103,8 +103,6 @@ void generateAssembly(const TACList *tacList) {
                     case TAC_LT:
                     case TAC_GT:
                     case TAC_EQ:
-                    case TAC_AND:
-                    case TAC_OR:
                     case TAC_CALL: {
                         bool isTemporary = (current->result.kind == OPERAND_TEMP);
                         if (isTemporary) {
@@ -414,14 +412,6 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             }
             break;
         }
-
-        case TAC_AND:
-            emitBinaryOp(instruction, ASM_AND, frame);
-            break;
-
-        case TAC_OR:
-            emitBinaryOp(instruction, ASM_OR, frame);
-            break;
 
         case TAC_INT_TO_FLOAT:
             loadOperand(&instruction->firstOperand, "%eax", frame);

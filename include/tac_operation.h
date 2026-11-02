@@ -42,12 +42,10 @@ typedef enum {
     TAC_DIV,         /**< División binaria (@p result = @p firstOperand / @p secondOperand). */
     TAC_MOD,         /**< Módulo binario (@p result = @p firstOperand % @p secondOperand). */
 
-    /* Operaciones relacionales y lógicas */
+    /* Operaciones relacionales */
     TAC_LT,          /**< Comparación menor que (@p result = @p firstOperand < @p secondOperand). */
     TAC_GT,          /**< Comparación mayor que (@p result = @p firstOperand > @p secondOperand). */
     TAC_EQ,          /**< Comparación de igualdad (@p result = @p firstOperand == @p secondOperand). */
-    TAC_AND,         /**< Operación lógica Y (@p result = @p firstOperand && @p secondOperand). */
-    TAC_OR,          /**< Operación lógica O (@p result = @p firstOperand || @p secondOperand). */
 
     /* Operaciones unarias y conversiones */
     TAC_NEG,         /**< Negación aritmética (@p result = -@p firstOperand). */

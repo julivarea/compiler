@@ -340,6 +340,7 @@ static TACOperand coerceToFloat(TACOperand operand) {
     return result;
 }
 
+// OP_AND y OP_OR no se mapean aqui porque se traducen a saltos de corto circuito antes de esta funcion.
 static TACOperation getTACOperation(OperationType operation) {
     switch (operation) {
         case OP_ADD:      return TAC_ADD;
@@ -350,11 +351,13 @@ static TACOperation getTACOperation(OperationType operation) {
         case OP_LT:       return TAC_LT;
         case OP_GT:       return TAC_GT;
         case OP_EQ:       return TAC_EQ;
-        case OP_AND:      return TAC_AND;
-        case OP_OR:       return TAC_OR;
         case OP_UMINUS:   return TAC_NEG;
         case OP_NOT:      return TAC_NOT;
-        default:          return TAC_ASSIGN;
+        default:
+            fprintf(stderr,
+                    "\033[1;31mError interno del TAC:\033[0m tipo de operacion no soportada (%d).\n",
+                    operation);
+            return TAC_ASSIGN;
     }
 }
 

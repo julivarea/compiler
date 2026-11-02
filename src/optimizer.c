@@ -167,16 +167,6 @@ static bool evaluateBinary(TACOperation operation, const TACOperand *first,
                                                 : (asInt(first) == asInt(second)));
             return true;
 
-        /* El corto circuito hace que estas dos no se emitan hoy, pero plegarlas
-         * es correcto cuando ambos operandos ya son constantes. */
-        case TAC_AND:
-            *folded = tacConstantBool(asInt(first) && asInt(second));
-            return true;
-
-        case TAC_OR:
-            *folded = tacConstantBool(asInt(first) || asInt(second));
-            return true;
-
         default:
             return false;
     }
