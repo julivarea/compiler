@@ -33,8 +33,10 @@ step "compilacion de tests del analisis semantico" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_semantic.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_semantic_tests
 step "compilacion de tests del TAC" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_tac.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c src/string_builder.c build/bison.tab.c build/lex.yy.c -o build/run_tac_tests
-step "compilacion de tests de flujo de datos" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_data_flow.c src/data_flow.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c src/string_builder.c build/bison.tab.c build/lex.yy.c -o build/run_data_flow_tests
+step "compilacion de tests del analisis de variables vivas" \
+    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_live_variable_analysis.c src/live_variable_analysis.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c src/string_builder.c build/bison.tab.c build/lex.yy.c -o build/run_live_variable_tests
+step "compilacion de tests de codigo objeto" \
+    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_object_code.c src/object_code.c src/function_frame.c src/asm_instruction.c src/string_builder.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_object_code_tests
 
 # Convierte la salida de Unity a una linea por test y descarta los mensajes
 # de error que imprime el propio compilador ("Error <etapa> en la linea N: ...")
@@ -70,11 +72,13 @@ run "SEMANTIC" ./build/run_semantic_tests
 SEMANTIC_EXIT=$?
 run "TAC" ./build/run_tac_tests
 TAC_EXIT=$?
-run "DATA FLOW" ./build/run_data_flow_tests
-DATA_FLOW_EXIT=$?
+run "LIVE VARIABLES" ./build/run_live_variable_tests
+LIVE_VAR_EXIT=$?
+run "OBJECT CODE" ./build/run_object_code_tests
+OBJECT_CODE_EXIT=$?
 
 echo ""
-if [ $LEXER_EXIT -eq 0 ] && [ $PARSER_EXIT -eq 0 ] && [ $AST_EXIT -eq 0 ] && [ $SYMBOL_TABLE_EXIT -eq 0 ] && [ $SEMANTIC_EXIT -eq 0 ] && [ $TAC_EXIT -eq 0 ] && [ $DATA_FLOW_EXIT -eq 0 ]; then
+if [ $LEXER_EXIT -eq 0 ] && [ $PARSER_EXIT -eq 0 ] && [ $AST_EXIT -eq 0 ] && [ $SYMBOL_TABLE_EXIT -eq 0 ] && [ $SEMANTIC_EXIT -eq 0 ] && [ $TAC_EXIT -eq 0 ] && [ $LIVE_VAR_EXIT -eq 0 ] && [ $OBJECT_CODE_EXIT -eq 0 ]; then
     echo "✅ TODOS LOS TESTS PASARON"
 else
     echo "❌ ALGUNOS TESTS FALLARON"

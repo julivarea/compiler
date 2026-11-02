@@ -21,10 +21,10 @@ La etapa vale **15% de la nota final** y su entrega es el **miércoles 12 de nov
 | `-opt all` | Se aplican todas las optimizaciones soportadas |
 | `-opt <nombre>` | Se aplica únicamente la indicada |
 
-`src/cli.c` parsea la opción y la deja en `Options.opt` (`NULL` si no se pasó, `"all"` si se
-pasó sin nombre), y la extensión de salida pasa a `.opt`. `parseOptimizations()` en
-`src/optimizer.c` traduce ese valor al conjunto de optimizaciones activas, y un nombre
-desconocido se informa por stderr.
+`src/cli.c` parsea la opción y deja el conjunto activo en `Options.optimizations`
+(`OPTIMIZATION_NONE` si se omitió, o el flag correspondiente), y la extensión de salida
+pasa a `.opt`. Si se pasa un nombre desconocido, se informa el error por stderr y se
+aborta la ejecución antes de iniciar el pipeline.
 
 **Requisito no negociable:** sin `-opt`, el compilador tiene que producir exactamente lo mismo
 que antes. Es la propiedad que permite aislar una regresión: si un programa falla con `-opt` y

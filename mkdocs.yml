@@ -57,6 +57,7 @@ nav:
       - 5. Análisis Semántico: wiki/04-semantic-analysis.md
       - 6. Código Intermedio (TAC): wiki/05-intermediate-code.md
       - 7. Código Objeto y Stack: wiki/06-object-code.md
+      - 8. Live Variable Analysis: live_variable_analysis.md
   - Documentación Técnica:
       - Alcance Análisis Semántico: analisis-semantico.md
       - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md

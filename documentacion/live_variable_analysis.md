@@ -81,7 +81,7 @@ $$\boxed{\text{OUT} = \bigcup \text{IN}_{\text{sucesores}}}$$
 
 ## 5. Aplicación Concreta al Compilador C-TDS
 
-Esta formulación algebraica resuelve de forma exacta las limitaciones de control de flujo identificadas en [`data_flow.h`](../include/data_flow.h) al analizar estructuras con `if` y `while`.
+Esta formulación algebraica resuelve de forma exacta el análisis de control de flujo al analizar estructuras con `if` y `while`.
 
 ```mermaid
 flowchart TD
