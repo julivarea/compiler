@@ -37,7 +37,7 @@ anda sin él, el problema está en la optimización y no en el resto del compila
 | `const-fold` | Plegado de constantes (§3.1) — **implementada** |
 | `const-prop` | Propagación de constantes (§3.1) — **implementada** |
 | `dead-code` | Eliminación de código inalcanzable (§3.2) — **implementada** |
-| `const-branch` | Condición constante en `if` / `while` (§3.3) |
+| `const-branch` | Condición constante en `if` / `while` (§3.3) — **implementada** |
 | `self-assign` | Asignaciones redundantes y mirilla (§3.4) |
 | `strength-reduce` | Reducción de fuerza en multiplicaciones (§3.5) |
 
@@ -254,7 +254,7 @@ son alcanzables—. Los 40 tests siguen pasando y los 12 ejemplos conservan su c
 
 ### 3.3 Condición constante en `if` y `while`
 
-**Flag:** `const-branch` · **Nivel:** AST
+**Flag:** `const-branch` · **Nivel:** TAC *(ver la nota sobre el cambio de nivel más abajo)*
 
 Si la condición de una estructura de control se reduce a una constante, no hace falta evaluarla
 ni emitir el salto.
@@ -281,6 +281,65 @@ La rama descartada se marca con `hasExecute = false` en vez de desenganchar el n
 
 **Verificación:** el `.ci` de un `if (true)` no debe contener ninguna instrucción `if ... goto`
 ni etiquetas asociadas a esa condición.
+
+#### Estado: implementada
+
+`simplifyConstantBranches()` en `src/optimizer.c`. Sobre `if (2 > 1) { x = 5; } else { x = 9; }`:
+
+```
+// sin -opt                  // con -opt all
+x@2 = 0                       x@2 = 0
+t0 = 2 > 1                    t0 = true
+if t0 false goto L0           x@2 = 5
+x@2 = 5                       goto L1
+goto L1                       L1:
+L0:                           ret x@2
+x@2 = 9
+L1:
+ret x@2
+```
+
+**Cambio de nivel respecto de lo planificado: se implementó sobre el TAC y no sobre el AST.**
+El motivo es que en el AST las condiciones todavía no están plegadas: `if (2 > 1)` sigue siendo
+una operación entre dos literales, así que a nivel AST solo se reconocería un `if (true)`
+escrito literalmente. Para el resto habría que implementar un segundo evaluador de constantes
+sobre el árbol, duplicando la lógica de §3.1. Sobre el TAC, en cambio, §3.1 ya dejó la
+condición reducida a `true` o `false` y la transformación se vuelve trivial. Resultó entonces a
+la vez más simple y más efectiva.
+
+**Consecuencia:** el mecanismo `hasExecute` no lo usa esta optimización. Queda disponible para
+§3.4, que sí trabaja sobre el AST.
+
+**Cómo funciona.** Un `if <cond> false goto L` salta cuando la condición es falsa y un
+`if <cond> true goto L` cuando es verdadera; si la condición es literal, se sabe de antemano
+cuál de las dos cosas ocurre:
+
+- El salto **nunca** se toma: la instrucción no hace nada y se elimina. El bloque que seguía
+  pasa a ejecutarse siempre, sin preguntar la condición.
+- El salto **siempre** se toma: se reemplaza por un `goto` incondicional, y lo que venía
+  después queda inalcanzable.
+
+**Hizo falta una limpieza extra: eliminar las etiquetas sin referencias.** Sin eso, la
+optimización quedaba a medias y vale la pena explicar por qué. Al resolver el `if` desaparece el
+salto, pero la etiqueta a la que apuntaba sobrevive; y como una etiqueta reanuda el flujo, §3.2
+seguía considerando alcanzable toda la rama muerta que la seguía. En el ejemplo, el `x@2 = 9` no
+se iba. Con `removeUnreferencedLabels()` corriendo antes del análisis de alcance, la rama queda
+expuesta y se elimina. El programa ya era correcto sin esa limpieza —el `goto L1` saltaba por
+encima de la rama muerta—, pero el código no se reducía.
+
+**Orden dentro de la ronda:** esta pasada corre **antes** que §3.2, para que el `goto` que
+genera deje su cola inalcanzable en la misma vuelta.
+
+**Lo que queda sin limpiar.** El `goto L1` seguido inmediatamente de `L1:` es un salto
+redundante, y lo aborda la mirilla de §3.4. Y los `t0 = true` que quedan son asignaciones
+muertas, que necesitan el análisis de vivacidad mencionado en §3.2.
+
+**Verificado:** 25 programas compilados dos veces y ejecutados: 25 de 25 con resultados
+idénticos y correctos. Cubre los seis casos de la tabla de arriba, condicionales constantes
+anidados, y la mezcla de condición constante con condición sobre variable. Y especialmente los
+casos que **no** deben tocarse: `if` y `while` cuya condición depende de una variable,
+`while` anidados, `factorial` y `fib`. Sobre los ejemplos del repositorio,
+`if_not_equals_type.ctds` baja de 12 a 11 instrucciones y `two_returns.ctds` de 7 a 6.
 
 ---
 
@@ -397,9 +456,9 @@ documentarlo en el informe.
   no compilaba y porque el analizador semántico no debe conocer los flags de optimización; la
   transformación va en la pasada de optimización, según §3.4.
 - **Implementadas:** plegado y propagación de constantes (§3.1), eliminación de código
-  inalcanzable (§3.2).
-- **Pendientes:** condición constante (§3.3), asignaciones redundantes y mirilla (§3.4),
-  reducción de fuerza (§3.5).
+  inalcanzable (§3.2) junto con la limpieza de etiquetas sin referencias, y condición constante
+  en `if` / `while` (§3.3).
+- **Pendientes:** asignaciones redundantes y mirilla (§3.4), reducción de fuerza (§3.5).
 
 ---
 

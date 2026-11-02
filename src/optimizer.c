@@ -12,6 +12,9 @@
 static int foldConstants(TACList *tacList);
 static int propagateConstants(TACList *tacList);
 static int removeUnreachableCode(TACList *tacList);
+static int removeUnreferencedLabels(TACList *tacList);
+static int simplifyConstantBranches(TACList *tacList);
+static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previous, TACInstruction *current);
 
 /* ------------------------------------------------------------------ */
 /* Selección de optimizaciones                                         */
@@ -25,9 +28,10 @@ OptimizationSet parseOptimizations(const char *option) {
     if (strcmp(option, "const-fold") == 0) return OPTIMIZATION_CONST_FOLD;
     if (strcmp(option, "const-prop") == 0) return OPTIMIZATION_CONST_PROP;
     if (strcmp(option, "dead-code") == 0)  return OPTIMIZATION_DEAD_CODE;
+    if (strcmp(option, "const-branch") == 0) return OPTIMIZATION_CONST_BRANCH;
 
     fprintf(stderr, "Error: optimizacion desconocida '%s'."
-                    " Soportadas: all, const-fold, const-prop, dead-code.\n",
+                    " Soportadas: all, const-fold, const-prop, dead-code, const-branch.\n",
             option);
     return OPTIMIZATION_NONE;
 }
@@ -52,6 +56,9 @@ int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled) {
         }
         if (isOptimizationEnabled(enabled, OPTIMIZATION_CONST_FOLD)) {
             changes += foldConstants(tacList);
+        }
+        if (isOptimizationEnabled(enabled, OPTIMIZATION_CONST_BRANCH)) {
+            changes += simplifyConstantBranches(tacList);
         }
         if (isOptimizationEnabled(enabled, OPTIMIZATION_DEAD_CODE)) {
             changes += removeUnreachableCode(tacList);
@@ -386,6 +393,30 @@ static int propagateConstants(TACList *tacList) {
 /* ------------------------------------------------------------------ */
 
 /*
+ * Saca la instrucción de la lista y la libera.
+ *
+ * @param previous Instrucción anterior, o NULL si @p current es la cabeza.
+ * @return La instrucción que quedó en el lugar de la eliminada.
+ */
+static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previous, TACInstruction *current) {
+    TACInstruction *next = current->next;
+
+    if (previous == NULL) {
+        tacList->head = next;
+    } else {
+        previous->next = next;
+    }
+    if (tacList->tail == current) {
+        tacList->tail = previous;
+    }
+
+    freeTACInstruction(current);
+    tacList->count--;
+
+    return next;
+}
+
+/*
  * Una instrucción marca el fin del flujo lineal cuando después de ella la
  * ejecución no continúa con la siguiente: un `ret` sale del método y un `goto`
  * salta a otro lado. A partir de ahí, lo único que puede volver a traer el
@@ -430,8 +461,65 @@ static bool isStructural(TACOperation operation) {
  * pasa a estar muerto, y toda instrucción ejecutable que aparezca se descarta,
  * hasta que una etiqueta lo reanime.
  */
-static int removeUnreachableCode(TACList *tacList) {
+/*
+ * Elimina las etiquetas a las que ya no salta nadie.
+ *
+ * Hace falta para que la eliminación de código inalcanzable sirva de algo
+ * después de descartar una rama: al resolver un `if` con condición constante
+ * desaparece el salto, pero la etiqueta a la que apuntaba queda, y como una
+ * etiqueta reanuda el flujo, todo el bloque que la seguía se seguiría
+ * considerando alcanzable. Sacándola primero, la rama muerta queda expuesta.
+ */
+static int removeUnreferencedLabels(TACList *tacList) {
+    /* Qué etiquetas son destino de algún salto. */
+    char referenced[MAX_KNOWN_CONSTANTS][TAC_NAME_LENGTH];
+    int referencedCount = 0;
+
+    for (const TACInstruction *instruction = tacList->head; instruction != NULL; instruction = instruction->next) {
+        const TACOperand *target = NULL;
+
+        if (instruction->operation == TAC_GOTO) {
+            target = &instruction->firstOperand;
+        } else if (instruction->operation == TAC_IF_FALSE || instruction->operation == TAC_IF_TRUE) {
+            target = &instruction->secondOperand;
+        }
+
+        bool isLabelReference = (target != NULL && target->kind == OPERAND_LABEL);
+        bool hasRoom = (referencedCount < MAX_KNOWN_CONSTANTS);
+        if (isLabelReference && hasRoom) {
+            snprintf(referenced[referencedCount], TAC_NAME_LENGTH, "%s", target->name);
+            referencedCount++;
+        }
+    }
+
     int changes = 0;
+    TACInstruction *previous = NULL;
+    TACInstruction *current = tacList->head;
+
+    while (current != NULL) {
+        bool isLabel = (current->operation == TAC_LABEL);
+        bool isReferenced = false;
+
+        for (int i = 0; isLabel && i < referencedCount; i++) {
+            if (strcmp(referenced[i], current->result.name) == 0) {
+                isReferenced = true;
+            }
+        }
+
+        if (isLabel && !isReferenced) {
+            current = unlinkInstruction(tacList, previous, current);
+            changes++;
+        } else {
+            previous = current;
+            current = current->next;
+        }
+    }
+
+    return changes;
+}
+
+static int removeUnreachableCode(TACList *tacList) {
+    int changes = removeUnreferencedLabels(tacList);
     bool isReachable = true;
 
     TACInstruction *previous = NULL;
@@ -452,21 +540,71 @@ static int removeUnreachableCode(TACList *tacList) {
 
             previous = current;
         } else {
-            if (previous == NULL) {
-                tacList->head = next;
-            } else {
-                previous->next = next;
-            }
-            if (tacList->tail == current) {
-                tacList->tail = previous;
-            }
-
-            freeTACInstruction(current);
-            tacList->count--;
+            unlinkInstruction(tacList, previous, current);
             changes++;
         }
 
         current = next;
+    }
+
+    return changes;
+}
+
+/* ------------------------------------------------------------------ */
+/* Condición constante en if y while                                    */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Resuelve en tiempo de compilación los saltos cuya condición ya es constante.
+ *
+ * Un `if <cond> false goto L` salta cuando la condición es falsa, y un
+ * `if <cond> true goto L` cuando es verdadera. Si la condición es un literal, se
+ * sabe de antemano cuál de las dos cosas pasa:
+ *
+ *   - El salto **nunca** se toma: la instrucción no hace nada y se elimina. El
+ *     bloque que seguía pasa a ejecutarse siempre, sin preguntar la condición.
+ *   - El salto **siempre** se toma: se reemplaza por un `goto` incondicional.
+ *     Lo que venía después queda inalcanzable, y lo elimina §3.2 en la misma
+ *     ronda, porque esta pasada corre antes.
+ *
+ * Las etiquetas se dejan en su lugar aunque queden sin referencias: son
+ * estructurales y no generan código de máquina. Quitar las que nadie referencia
+ * sería una limpieza aparte.
+ */
+static int simplifyConstantBranches(TACList *tacList) {
+    int changes = 0;
+
+    TACInstruction *previous = NULL;
+    TACInstruction *current = tacList->head;
+
+    while (current != NULL) {
+        bool isConditionalJump = (current->operation == TAC_IF_FALSE ||
+                                  current->operation == TAC_IF_TRUE);
+        bool hasConstantCondition = isConditionalJump && isConstant(&current->firstOperand);
+
+        if (!hasConstantCondition) {
+            previous = current;
+            current = current->next;
+            continue;
+        }
+
+        bool conditionHolds = (asInt(&current->firstOperand) != 0);
+        bool jumpIsTaken = (current->operation == TAC_IF_TRUE) ? conditionHolds : !conditionHolds;
+
+        if (jumpIsTaken) {
+            /* El destino del salto condicional viaja en el segundo operando, y
+             * el de un goto en el primero. */
+            current->operation = TAC_GOTO;
+            current->firstOperand = current->secondOperand;
+            current->secondOperand = tacNone();
+
+            previous = current;
+            current = current->next;
+        } else {
+            current = unlinkInstruction(tacList, previous, current);
+        }
+
+        changes++;
     }
 
     return changes;

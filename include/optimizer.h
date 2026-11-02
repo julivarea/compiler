@@ -26,12 +26,13 @@ typedef enum {
     OPTIMIZATION_NONE       = 0,
     OPTIMIZATION_CONST_FOLD = 1 << 0, /**< Plegado de constantes (`const-fold`). */
     OPTIMIZATION_CONST_PROP = 1 << 1, /**< Propagación de constantes (`const-prop`). */
-    OPTIMIZATION_DEAD_CODE  = 1 << 2  /**< Eliminación de código inalcanzable (`dead-code`). */
+    OPTIMIZATION_DEAD_CODE  = 1 << 2, /**< Eliminación de código inalcanzable (`dead-code`). */
+    OPTIMIZATION_CONST_BRANCH = 1 << 3 /**< Condición constante en `if` / `while` (`const-branch`). */
 } Optimization;
 
 /** @brief Todas las optimizaciones soportadas hasta el momento. */
 #define OPTIMIZATION_ALL (OPTIMIZATION_CONST_FOLD | OPTIMIZATION_CONST_PROP | \
-                          OPTIMIZATION_DEAD_CODE)
+                          OPTIMIZATION_DEAD_CODE | OPTIMIZATION_CONST_BRANCH)
 
 /** @brief Conjunto de optimizaciones activas en una corrida. */
 typedef unsigned int OptimizationSet;
