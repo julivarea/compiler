@@ -346,7 +346,7 @@ casos que **no** deben tocarse: `if` y `while` cuya condición depende de una va
 
 ### 3.4 Asignaciones redundantes y mirilla sobre el assembly
 
-**Flags:** `self-assign` (AST) y `peephole` (TAC y assembly)
+**Flags:** `self-assign` (TAC) y `peephole` (TAC y assembly)
 
 Una asignación de una variable a sí misma no tiene efecto y no debe generar código:
 
@@ -357,15 +357,11 @@ x = x;      // se ignora por completo
 En el TAC, `x@3 = x@3` se traduce a un `movl` desde un slot al mismo slot, o sea dos
 instrucciones de máquina que no hacen nada.
 
-**Mecanismo:** es el caso para el que `hasExecute` fue pensado. El chequeo es, sobre un
-`ASSIGNMENT_NODE`, comparar el símbolo del destino con el de la expresión asignada: si la
-expresión es un `ID_NODE` y ambos refieren a la **misma entidad declarada**, se marca el nodo
-como no ejecutable.
-
-> **Cuidado con la comparación.** Hay que comparar la identidad de la entidad, no la cadena del
-> nombre: dos variables homónimas en scopes distintos son variables distintas. El compilador ya
-> resuelve esto con el campo `uid` del `Symbol`, que es único por declaración; comparar
-> `uid` es correcto, y comparar `id` con `==` compara punteros de cadenas, que es un error.
+**Mecanismo:** Se implementa directamente sobre el TAC en `removeSelfAssignments()`. Al generar
+TAC, cada operando califica el nombre con su `@uid` único (`tacVariable`), por lo que comparar
+los nombres en el TAC distingue automáticamente variables homónimas en distintos scopes.
+Esto evita contaminar los nodos del AST con campos ad-hoc (`hasExecute`) y centraliza las
+optimizaciones en la lista de cuádruplas.
 
 **Mirilla (peephole) sobre el assembly.** El mismo criterio se extiende a patrones que solo son
 visibles en el código generado:
@@ -387,8 +383,8 @@ cambiar el resultado de la ejecución.
 
 #### Estado: `self-assign` implementada, `peephole` parcial
 
-**Asignaciones redundantes (`self-assign`).** `markRedundantAssignments()` en
-`src/optimizer.c`, sobre el AST, invocada desde `optimizeSyntaxTree()` antes de generar el TAC.
+**Asignaciones redundantes (`self-assign`).** `removeSelfAssignments()` en
+`src/optimizer.c`, sobre el TAC, invocada dentro de `optimizeIntermediateCode()`.
 
 ```
 // sin -opt                  // con -opt self-assign
@@ -397,21 +393,15 @@ x@2 = x@2                     ret x@2
 ret x@2
 ```
 
-Es la optimización que usa el mecanismo `hasExecute`: el nodo no se desengancha del árbol, se
-marca, y `generateStatementCode()` lo saltea. Es también la única del catálogo que trabaja a
-nivel de AST, porque `x = x` se reconoce ahí sin necesitar nada de lo que aporta el TAC.
-
-La comparación es por **`uid`**, no por nombre. Es la diferencia entre funcionar y romper el
-ocultamiento de scopes: en
+La comparación es segura ante ocultamiento porque los operandos en el TAC ya incorporan su
+`@uid` correspondiente: en
 
 ```c
 int x;
 int main() { int y; x = 3; { int x; x = 7; y = x; } return y + x; }
 ```
 
-hay dos variables llamadas `x`, y `y = x` no es una autoasignación. Comparando los punteros
-`id` se compararían direcciones de cadenas; comparándolos con `strcmp` daría un falso positivo
-y el programa devolvería un valor equivocado. Se verificó que devuelve 10 con y sin el flag.
+las variables generan `x@1` y `x@2`, impidiendo falsos positivos.
 
 **Mirilla (`peephole`).** Implementado el patrón de **salto a la etiqueta inmediatamente
 siguiente**, en `removeRedundantJumps()`, sobre el TAC. Es el único de los cuatro de la tabla
