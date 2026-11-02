@@ -6,6 +6,8 @@
  * @brief Estructuras y operaciones sobre la tabla de símbolos y ámbitos léxicos (scopes).
  */
 
+#include <stdbool.h>
+
 #include "types.h"
 
 struct NodeAST;
