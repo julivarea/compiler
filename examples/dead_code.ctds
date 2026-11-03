@@ -1,0 +1,9 @@
+int a;
+int b;
+void main(){
+    int c;  
+    int b;
+    b = 10;
+    c = b;
+    c = 10;
+}

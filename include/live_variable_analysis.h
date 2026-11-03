@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "tac_list.h"
 #include "tac_instruction.h"
@@ -85,5 +86,13 @@ bool isVariableLiveOut(const LiveVariableAnalysis *analysis, const BasicBlock *b
  * y tampoco está vivo a la salida del bloque en el CFG.
  */
 bool isDeadDefinition(const LiveVariableAnalysis *analysis, const TACInstruction *instruction);
+
+/**
+ * @brief Imprime en un stream el CFG, los bloques básicos, instrucciones y conjuntos USE/DEF/IN/OUT.
+ *
+ * @param analysis Estructura del análisis de variables vivas.
+ * @param output Stream de salida (acepta NULL, por defecto stdout).
+ */
+void printLiveVariableAnalysis(const LiveVariableAnalysis *analysis, FILE *output);
 
 #endif // LIVE_VARIABLE_ANALYSIS_H

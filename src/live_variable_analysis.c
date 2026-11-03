@@ -94,18 +94,21 @@ bool isDeadDefinition(const LiveVariableAnalysis *analysis, const TACInstruction
     int varIndex = getVariableIndex(analysis, instruction->result.name);
     if (varIndex < 0) return false;
 
-    /* Buscar si se lee en instrucciones posteriores dentro del bloque */
-    for (const TACInstruction *curr = instruction->next; curr != NULL; curr = curr->next) {
-        bool uses = (isCandidate(&curr->firstOperand) && strcmp(curr->firstOperand.name, instruction->result.name) == 0) ||
-                    (isCandidate(&curr->secondOperand) && strcmp(curr->secondOperand.name, instruction->result.name) == 0);
-        if (uses) return false;
+    // verifica si la variable se lee o se reescribe antes de terminar el bloque.
+    if (instruction != block->lastInstruction) {
+        for (const TACInstruction *curr = instruction->next; curr != NULL; curr = curr->next) {
+            bool uses = (isCandidate(&curr->firstOperand) && strcmp(curr->firstOperand.name, instruction->result.name) == 0) ||
+                        (isCandidate(&curr->secondOperand) && strcmp(curr->secondOperand.name, instruction->result.name) == 0);
+            if (uses) return false;
 
-        bool redefines = (isCandidate(&curr->result) && strcmp(curr->result.name, instruction->result.name) == 0);
-        if (redefines) return true;
+            bool redefines = (isCandidate(&curr->result) && strcmp(curr->result.name, instruction->result.name) == 0);
+            if (redefines) return true;
 
-        if (curr == block->lastInstruction) break;
+            if (curr == block->lastInstruction) break;
+        }
     }
 
+    // criterio de código muerto: no se lee en B y no pertenece a LIVE_OUT(B).
     return (block->liveOut & (1ULL << varIndex)) == 0;
 }
 
@@ -188,6 +191,7 @@ static void computeBlockUseAndDef(LiveVariableAnalysis *analysis, const BasicBlo
                        curr->operation == TAC_LOCAL_DECL ||
                        curr->operation == TAC_PARAM_DECL);
         if (!isDecl) {
+            // USE(B): variables leídas en el bloque antes de cualquier definición previa.
             if (isCandidate(&curr->firstOperand)) {
                 int id = getVariableIndex(analysis, curr->firstOperand.name);
                 if (id >= 0 && (*def & (1ULL << id)) == 0) *use |= (1ULL << id);
@@ -196,6 +200,7 @@ static void computeBlockUseAndDef(LiveVariableAnalysis *analysis, const BasicBlo
                 int id = getVariableIndex(analysis, curr->secondOperand.name);
                 if (id >= 0 && (*def & (1ULL << id)) == 0) *use |= (1ULL << id);
             }
+            // DEF(B): variables asignadas en el bloque antes de haber sido utilizadas.
             if (isCandidate(&curr->result)) {
                 int id = getVariableIndex(analysis, curr->result.name);
                 if (id >= 0 && (*use & (1ULL << id)) == 0) *def |= (1ULL << id);
@@ -208,16 +213,20 @@ static void computeBlockUseAndDef(LiveVariableAnalysis *analysis, const BasicBlo
 static void solveFixedPointLiveness(LiveVariableAnalysis *analysis, const VariableSet *useTable, const VariableSet *defTable) {
     bool hasChanged = true;
 
+    // algoritmo de punto fijo: itera hasta que ningún conjunto IN/OUT sufra cambios.
     while (hasChanged) {
         hasChanged = false;
+        // análisis backward: se recorren los bloques en orden inverso (hacia atrás).
         for (long i = (long)analysis->blockCount - 1; i >= 0; i--) {
             BasicBlock *block = analysis->blocks[i];
 
+            // ecuacion 1: LIVE_OUT(B) = Union(LIVE_IN(S)) para todo sucesor S de B.
             VariableSet newOut = 0;
             for (size_t s = 0; s < block->successorCount; s++) {
                 newOut |= block->successors[s]->liveIn;
             }
 
+            // ecuacion 2: LIVE_IN(B) = USE(B) U (LIVE_OUT(B) - DEF(B)).
             VariableSet newIn = useTable[i] | (newOut & ~defTable[i]);
 
             if (newIn != block->liveIn || newOut != block->liveOut) {
@@ -270,4 +279,156 @@ static bool isLeader(const TACInstruction *instruction, const TACInstruction *pr
     return (previous->operation == TAC_GOTO || previous->operation == TAC_IF_FALSE ||
             previous->operation == TAC_IF_TRUE || previous->operation == TAC_RETURN ||
             previous->operation == TAC_END_FUNC);
+}
+
+static void printInstructionText(FILE *output, const TACInstruction *instruction) {
+    if (instruction == NULL) return;
+
+    const char *result = getOperandName(&instruction->result);
+    const char *first = getOperandName(&instruction->firstOperand);
+    const char *second = getOperandName(&instruction->secondOperand);
+
+    switch (instruction->operation) {
+        case TAC_BEGIN_FUNC:
+            fprintf(output, "begin_func %s, %s\n", result, first);
+            break;
+        case TAC_END_FUNC:
+            fprintf(output, "end_func %s\n", result);
+            break;
+        case TAC_PARAM_DECL:
+            fprintf(output, "param_decl %s\n", first);
+            break;
+        case TAC_GLOBAL_DECL:
+        case TAC_LOCAL_DECL:
+            fprintf(output, "%s %s, %s\n",
+                    instruction->operation == TAC_GLOBAL_DECL ? "global" : "local",
+                    first, getDataTypeName(instruction->firstOperand.type));
+            break;
+        case TAC_LABEL:
+            fprintf(output, "%s:\n", result);
+            break;
+        case TAC_GOTO:
+            fprintf(output, "goto %s\n", first);
+            break;
+        case TAC_IF_FALSE:
+            fprintf(output, "if %s false goto %s\n", first, second);
+            break;
+        case TAC_IF_TRUE:
+            fprintf(output, "if %s true goto %s\n", first, second);
+            break;
+        case TAC_PARAM:
+            fprintf(output, "param %s\n", first);
+            break;
+        case TAC_CALL:
+            if (instruction->result.kind != OPERAND_NONE) {
+                fprintf(output, "%s = call %s, %s\n", result, first, second);
+            } else {
+                fprintf(output, "call %s, %s\n", first, second);
+            }
+            break;
+        case TAC_RETURN:
+            if (instruction->firstOperand.kind != OPERAND_NONE) {
+                fprintf(output, "ret %s\n", first);
+            } else {
+                fprintf(output, "ret\n");
+            }
+            break;
+        case TAC_ASSIGN:
+            fprintf(output, "%s = %s\n", result, first);
+            break;
+        case TAC_UMINUS:
+            fprintf(output, "%s = -%s\n", result, first);
+            break;
+        case TAC_NOT:
+            fprintf(output, "%s = !%s\n", result, first);
+            break;
+        case TAC_INT_TO_FLOAT:
+            fprintf(output, "%s = int_to_float %s\n", result, first);
+            break;
+        case TAC_ADD: fprintf(output, "%s = %s + %s\n", result, first, second); break;
+        case TAC_SUB: fprintf(output, "%s = %s - %s\n", result, first, second); break;
+        case TAC_MUL: fprintf(output, "%s = %s * %s\n", result, first, second); break;
+        case TAC_DIV: fprintf(output, "%s = %s / %s\n", result, first, second); break;
+        case TAC_MOD: fprintf(output, "%s = %s %% %s\n", result, first, second); break;
+        case TAC_LT:  fprintf(output, "%s = %s < %s\n", result, first, second); break;
+        case TAC_GT:  fprintf(output, "%s = %s > %s\n", result, first, second); break;
+        case TAC_EQ:  fprintf(output, "%s = %s == %s\n", result, first, second); break;
+        default:
+            fprintf(output, "(tac op %d)\n", instruction->operation);
+            break;
+    }
+}
+
+static void printVariableSet(FILE *output, const LiveVariableAnalysis *analysis, VariableSet set) {
+    fprintf(output, "{ ");
+    bool first = true;
+    for (size_t i = 0; i < analysis->variableCount; i++) {
+        if ((set & (1ULL << i)) != 0) {
+            if (!first) {
+                fprintf(output, ", ");
+            }
+            fprintf(output, "%s", analysis->variableNames[i]);
+            first = false;
+        }
+    }
+    fprintf(output, " }\n");
+}
+
+void printLiveVariableAnalysis(const LiveVariableAnalysis *analysis, FILE *output) {
+    if (analysis == NULL) return;
+    if (output == NULL) output = stdout;
+
+    fprintf(output, "\n======================================================================\n");
+    fprintf(output, "Grafo de Flujo de Control (CFG) y Analisis de Variables Vivas\n");
+    fprintf(output, "======================================================================\n");
+    fprintf(output, "Variables candidatas (%zu): ", analysis->variableCount);
+    for (size_t i = 0; i < analysis->variableCount; i++) {
+        fprintf(output, "%s%s", analysis->variableNames[i], (i + 1 < analysis->variableCount) ? ", " : "\n");
+    }
+    if (analysis->variableCount == 0) fprintf(output, "(ninguna)\n");
+    fprintf(output, "Total de bloques basicos: %zu\n\n", analysis->blockCount);
+
+    VariableSet *useTable = calloc(analysis->blockCount, sizeof(VariableSet));
+    VariableSet *defTable = calloc(analysis->blockCount, sizeof(VariableSet));
+    if (useTable != NULL && defTable != NULL) {
+        for (size_t i = 0; i < analysis->blockCount; i++) {
+            computeBlockUseAndDef((LiveVariableAnalysis *)analysis, analysis->blocks[i], &useTable[i], &defTable[i]);
+        }
+    }
+
+    for (size_t i = 0; i < analysis->blockCount; i++) {
+        const BasicBlock *block = analysis->blocks[i];
+        fprintf(output, "--------------------------------------------------\n");
+        fprintf(output, "[Bloque %d]\n", block->id);
+        fprintf(output, "  Instrucciones:\n");
+        for (const TACInstruction *curr = block->firstInstruction; curr != NULL; curr = curr->next) {
+            fprintf(output, "    ");
+            printInstructionText(output, curr);
+            if (curr == block->lastInstruction) break;
+        }
+
+        fprintf(output, "  Sucesores (%zu): ", block->successorCount);
+        if (block->successorCount == 0) {
+            fprintf(output, "(ninguno - fin de funcion/retorno)\n");
+        } else {
+            for (size_t s = 0; s < block->successorCount; s++) {
+                fprintf(output, "Bloque %d%s", block->successors[s]->id, (s + 1 < block->successorCount) ? ", " : "\n");
+            }
+        }
+
+        if (useTable != NULL && defTable != NULL) {
+            fprintf(output, "  USE:      ");
+            printVariableSet(output, analysis, useTable[i]);
+            fprintf(output, "  DEF:      ");
+            printVariableSet(output, analysis, defTable[i]);
+        }
+        fprintf(output, "  LIVE_IN:  ");
+        printVariableSet(output, analysis, block->liveIn);
+        fprintf(output, "  LIVE_OUT: ");
+        printVariableSet(output, analysis, block->liveOut);
+    }
+    fprintf(output, "======================================================================\n\n");
+
+    free(useTable);
+    free(defTable);
 }

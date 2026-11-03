@@ -1,8 +1,10 @@
 #include "optimizer.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "live_variable_analysis.h"
 #include "tac_instruction.h"
 #include "tac_operand.h"
 
@@ -24,6 +26,7 @@ static int propagateConstants(TACList *tacList);
 static int foldConstants(TACList *tacList);
 static int simplifyConstantBranches(TACList *tacList);
 static int removeUnreachableCode(TACList *tacList);
+static int removeDeadStores(TACList *tacList);
 static int removeSelfAssignments(TACList *tacList);
 static int removeRedundantJumps(TACList *tacList);
 
@@ -45,6 +48,8 @@ static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previ
 static bool endsControlFlow(TACOperation operation);
 static bool isStructural(TACOperation operation);
 static int removeUnreferencedLabels(TACList *tacList);
+static bool isDeadStoreCandidate(const TACList *tacList, const TACInstruction *instruction);
+static bool isGlobalVariable(const TACList *tacList, const char *variableName);
 
 int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled) {
     if (tacList == NULL || enabled == OPTIMIZATION_NONE) {
@@ -67,6 +72,7 @@ int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled) {
         }
         if (isOptimizationEnabled(enabled, OPTIMIZATION_DEAD_CODE)) {
             changes += removeUnreachableCode(tacList);
+            changes += removeDeadStores(tacList);
         }
         if (isOptimizationEnabled(enabled, OPTIMIZATION_SELF_ASSIGN)) {
             changes += removeSelfAssignments(tacList);
@@ -243,6 +249,63 @@ static int removeUnreachableCode(TACList *tacList) {
         current = next;
     }
 
+    return changes;
+}
+
+static int removeDeadStores(TACList *tacList) {
+    if (tacList == NULL || tacList->head == NULL) {
+        return 0;
+    }
+
+    // Resuelve el punto fijo de vivacidad (LIVE_IN / LIVE_OUT) sobre el CFG de TAC.
+    LiveVariableAnalysis *analysis = createLiveVariableAnalysis(tacList);
+    if (analysis == NULL) {
+        return 0;
+    }
+
+    TACInstruction **deadInstructions = malloc(sizeof(TACInstruction *) * (size_t)tacList->count);
+    if (deadInstructions == NULL) {
+        freeLiveVariableAnalysis(analysis);
+        return 0;
+    }
+
+    // Marca como muerta toda asignación cuyo destino no esté en LIVE_OUT ni se lea después en el bloque.
+    size_t deadCount = 0;
+    for (TACInstruction *current = tacList->head; current != NULL; current = current->next) {
+        bool canBeDeadStore = isDeadStoreCandidate(tacList, current);
+        bool isDead = (canBeDeadStore && isDeadDefinition(analysis, current));
+        if (isDead) {
+            deadInstructions[deadCount++] = current;
+        }
+    }
+
+    freeLiveVariableAnalysis(analysis);
+
+    bool hasNoDeadStores = (deadCount == 0);
+    if (hasNoDeadStores) {
+        free(deadInstructions);
+        return 0;
+    }
+
+    // Remueve de la lista TAC las instrucciones identificadas como código muerto.
+    int changes = 0;
+    size_t deadIndex = 0;
+    TACInstruction *previous = NULL;
+    TACInstruction *current = tacList->head;
+
+    while (current != NULL && deadIndex < deadCount) {
+        bool isTarget = (current == deadInstructions[deadIndex]);
+        if (isTarget) {
+            current = unlinkInstruction(tacList, previous, current);
+            deadIndex++;
+            changes++;
+        } else {
+            previous = current;
+            current = current->next;
+        }
+    }
+
+    free(deadInstructions);
     return changes;
 }
 
@@ -549,4 +612,46 @@ static int removeUnreferencedLabels(TACList *tacList) {
     }
 
     return changes;
+}
+
+static bool isGlobalVariable(const TACList *tacList, const char *variableName) {
+    for (const TACInstruction *current = tacList->head; current != NULL; current = current->next) {
+        if (current->operation == TAC_GLOBAL_DECL) {
+            bool matchesName = (strcmp(current->firstOperand.name, variableName) == 0);
+            if (matchesName) {
+                return true;
+            }
+        } else if (current->operation == TAC_BEGIN_FUNC) {
+            break;
+        }
+    }
+    return false;
+}
+
+static bool isDeadStoreCandidate(const TACList *tacList, const TACInstruction *instruction) {
+    bool hasCandidateResult = (instruction->result.kind == OPERAND_VARIABLE ||
+                               instruction->result.kind == OPERAND_TEMP);
+    if (!hasCandidateResult) {
+        return false;
+    }
+
+    bool hasSideEffects = (instruction->operation == TAC_CALL);
+    if (hasSideEffects) {
+        return false;
+    }
+
+    bool isDeclaration = (instruction->operation == TAC_GLOBAL_DECL ||
+                          instruction->operation == TAC_LOCAL_DECL ||
+                          instruction->operation == TAC_PARAM_DECL);
+    if (isDeclaration) {
+        return false;
+    }
+
+    bool isGlobal = (instruction->result.kind == OPERAND_VARIABLE &&
+                     isGlobalVariable(tacList, instruction->result.name));
+    if (isGlobal) {
+        return false;
+    }
+
+    return true;
 }

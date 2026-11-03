@@ -13,6 +13,7 @@
 #include "error_handler.h"
 #include "intermediate_code.h"
 #include "interpreter.h"
+#include "live_variable_analysis.h"
 #include "object_code.h"
 #include "optimizer.h"
 #include "semantic_analyzer.h"
@@ -51,6 +52,14 @@ static const TACList *buildIntermediateCode(const Options *options) {
     bool hasOptimizations = (enabled != OPTIMIZATION_NONE);
 
     const TACList *tacList = generateIntermediateCode(astRoot);
+
+    if (options->debug) {
+        LiveVariableAnalysis *analysis = createLiveVariableAnalysis(tacList);
+        if (analysis != NULL) {
+            printLiveVariableAnalysis(analysis, stdout);
+            freeLiveVariableAnalysis(analysis);
+        }
+    }
 
     if (hasOptimizations) {
         int changes = optimizeIntermediateCode((TACList *)tacList, enabled);

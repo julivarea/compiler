@@ -291,6 +291,37 @@ void test_self_assignment_removed_on_tac(void) {
     }
 }
 
+void test_optimizer_dead_store_elimination_removes_unused_variable(void) {
+    const char *source =
+        "int main() {\n"
+        "    int deadVar;\n"
+        "    int liveVar;\n"
+        "    deadVar = 999;\n"
+        "    liveVar = 42;\n"
+        "    return liveVar;\n"
+        "}\n";
+
+    TACList *list = (TACList *)compileToTAC(source);
+    TEST_ASSERT_NOT_NULL(list);
+
+    bool hasDeadVarAssign = false;
+    for (TACInstruction *curr = list->head; curr != NULL; curr = curr->next) {
+        if (curr->operation == TAC_ASSIGN && strstr(curr->result.name, "deadVar@") != NULL) {
+            hasDeadVarAssign = true;
+            break;
+        }
+    }
+    TEST_ASSERT_TRUE(hasDeadVarAssign);
+
+    int changes = optimizeIntermediateCode(list, OPTIMIZATION_DEAD_CODE);
+    TEST_ASSERT_GREATER_THAN(0, changes);
+
+    for (TACInstruction *curr = list->head; curr != NULL; curr = curr->next) {
+        bool isDeadVarAssign = (curr->operation == TAC_ASSIGN && strstr(curr->result.name, "deadVar@") != NULL);
+        TEST_ASSERT_FALSE(isDeadVarAssign);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_algebraic_bitmask_equations);
@@ -300,5 +331,6 @@ int main(void) {
     RUN_TEST(test_dead_definition_detected_when_never_read_globally);
     RUN_TEST(test_compiled_program_unused_variable_detected_and_removed);
     RUN_TEST(test_self_assignment_removed_on_tac);
+    RUN_TEST(test_optimizer_dead_store_elimination_removes_unused_variable);
     return UNITY_END();
 }
