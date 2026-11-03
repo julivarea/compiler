@@ -53,11 +53,9 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame);
 static void emitBinaryOp(const TACInstruction *instruction, AsmOpcode opcode, const FunctionFrame *frame);
 static bool emitStrengthReducedMultiplication(const TACInstruction *instruction, const FunctionFrame *frame);
 static void emitFloatBinaryOp(const TACInstruction *instruction, const char *mnemonic, const FunctionFrame *frame);
-static void emitDivisionOp(const TACInstruction *instruction, const FunctionFrame *frame, AsmRegister resultRegister);
+static void emitDivisionOp(const TACInstruction *instruction, const FunctionFrame *frame, const char *resultRegisterName);
 static void emitRelationalOp(const TACInstruction *instruction, const char *conditionMnemonic, const FunctionFrame *frame);
 static void emitFloatRelationalOp(const TACInstruction *instruction, const char *conditionMnemonic, const FunctionFrame *frame);
-static void loadRegisterBasedOnOperand(AsmRegister registerType, const TACOperand *operand, const FunctionFrame *frame);
-static void storeRegisterToOperand(const TACOperand *operand, AsmRegister registerType, const FunctionFrame *frame);
 static void loadOperand(const TACOperand *operand, const char *registerName, const FunctionFrame *frame);
 static void storeOperand(const TACOperand *operand, const char *registerName, const FunctionFrame *frame);
 static void loadFloatOperand(const TACOperand *operand, const char *xmmRegister, const FunctionFrame *frame);
@@ -69,7 +67,6 @@ static const char *getGlobalName(const TACOperand *operand);
 static bool isFloatOperand(const TACOperand *operand);
 static const char *internFloatConstant(float value);
 static unsigned int getFloatBits(float value);
-static const char *getRegisterName(AsmRegister registerType);
 
 void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
     bool isNullList = (tacList == NULL);
@@ -305,8 +302,6 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             } else {
                 frame->stackParamCount++;
             }
-
-            frame->paramCount++;
             break;
         }
 
@@ -319,8 +314,8 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
                 loadFloatOperand(&instruction->firstOperand, "%xmm0", frame);
                 storeFloatOperand(&instruction->result, "%xmm0", frame);
             } else {
-                loadRegisterBasedOnOperand(ASM_RAX, &instruction->firstOperand, frame);
-                storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+                loadOperand(&instruction->firstOperand, "%eax", frame);
+                storeOperand(&instruction->result, "%eax", frame);
             }
             break;
         }
@@ -364,13 +359,13 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             if (isFloat) {
                 emitFloatBinaryOp(instruction, "divss", frame);
             } else {
-                emitDivisionOp(instruction, frame, ASM_RAX);
+                emitDivisionOp(instruction, frame, "%eax");
             }
             break;
         }
 
         case TAC_MOD:
-            emitDivisionOp(instruction, frame, ASM_RDX);
+            emitDivisionOp(instruction, frame, "%edx");
             break;
 
         case TAC_UMINUS: {
@@ -382,18 +377,18 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
                 storeFloatOperand(&instruction->result, "%xmm0", frame);
                 break;
             }
-            loadRegisterBasedOnOperand(ASM_RAX, &instruction->firstOperand, frame);
+            loadOperand(&instruction->firstOperand, "%eax", frame);
             AsmInstruction negate = asmOpUnary(ASM_NEG, ASM_RAX);
             emitAsm(&negate);
-            storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+            storeOperand(&instruction->result, "%eax", frame);
             break;
         }
 
         case TAC_NOT: {
-            loadRegisterBasedOnOperand(ASM_RAX, &instruction->firstOperand, frame);
+            loadOperand(&instruction->firstOperand, "%eax", frame);
             AsmInstruction instructionAsm = asmOpImm(ASM_XOR, ASM_RAX, 1);
             emitAsm(&instructionAsm);
-            storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+            storeOperand(&instruction->result, "%eax", frame);
             break;
         }
 
@@ -491,7 +486,7 @@ static void emitParam(const TACInstruction *instruction, FunctionFrame *frame) {
         loadFloatOperand(&instruction->firstOperand, "%xmm0", frame);
         buildStringf("    movss %%xmm0, %d(%%rbp)\n", slot);
     } else {
-        loadRegisterBasedOnOperand(ASM_RAX, &instruction->firstOperand, frame);
+        loadOperand(&instruction->firstOperand, "%eax", frame);
         AsmInstruction store = asmStore(opMem(slot), opReg(ASM_RAX));
         emitAsm(&store);
     }
@@ -639,14 +634,14 @@ static bool emitStrengthReducedMultiplication(const TACInstruction *instruction,
         /* El resultado es cero sin importar el otro operando. */
         AsmInstruction clear = asmOpReg(ASM_XOR, ASM_RAX, ASM_RAX);
         emitAsm(&clear);
-        storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+        storeOperand(&instruction->result, "%eax", frame);
         return true;
     }
 
     if (multiplier == 1) {
         /* El resultado es el otro operando tal cual. */
-        loadRegisterBasedOnOperand(ASM_RAX, valueOperand, frame);
-        storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+        loadOperand(valueOperand, "%eax", frame);
+        storeOperand(&instruction->result, "%eax", frame);
         return true;
     }
 
@@ -654,19 +649,19 @@ static bool emitStrengthReducedMultiplication(const TACInstruction *instruction,
     bool canShift = (exponent > 0);
     if (!canShift) return false;
 
-    loadRegisterBasedOnOperand(ASM_RAX, valueOperand, frame);
+    loadOperand(valueOperand, "%eax", frame);
     buildStringf("    sall $%d, %%eax\n", exponent);
-    storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+    storeOperand(&instruction->result, "%eax", frame);
 
     return true;
 }
 
 static void emitBinaryOp(const TACInstruction *instruction, AsmOpcode opcode, const FunctionFrame *frame) {
-    loadRegisterBasedOnOperand(ASM_RAX, &instruction->firstOperand, frame);
-    loadRegisterBasedOnOperand(ASM_RDX, &instruction->secondOperand, frame);
+    loadOperand(&instruction->firstOperand, "%eax", frame);
+    loadOperand(&instruction->secondOperand, "%edx", frame);
     AsmInstruction asmInstruction = asmOpReg(opcode, ASM_RAX, ASM_RDX);
     emitAsm(&asmInstruction);
-    storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+    storeOperand(&instruction->result, "%eax", frame);
 }
 
 static void emitFloatBinaryOp(const TACInstruction *instruction, const char *mnemonic, const FunctionFrame *frame) {
@@ -677,9 +672,9 @@ static void emitFloatBinaryOp(const TACInstruction *instruction, const char *mne
 }
 
 /* idivl divide %edx:%eax; cociente en %eax y resto en %edx. Usa %ecx para no pisar %edx. */
-static void emitDivisionOp(const TACInstruction *instruction, const FunctionFrame *frame, AsmRegister resultRegister) {
-    loadRegisterBasedOnOperand(ASM_RAX, &instruction->firstOperand, frame);
-    loadRegisterBasedOnOperand(ASM_RCX, &instruction->secondOperand, frame);
+static void emitDivisionOp(const TACInstruction *instruction, const FunctionFrame *frame, const char *resultRegisterName) {
+    loadOperand(&instruction->firstOperand, "%eax", frame);
+    loadOperand(&instruction->secondOperand, "%ecx", frame);
 
     AsmInstruction signExtend = asmCltd();
     emitAsm(&signExtend);
@@ -687,17 +682,17 @@ static void emitDivisionOp(const TACInstruction *instruction, const FunctionFram
     AsmInstruction divide = asmOpUnary(ASM_IDIV, ASM_RCX);
     emitAsm(&divide);
 
-    storeRegisterToOperand(&instruction->result, resultRegister, frame);
+    storeOperand(&instruction->result, resultRegisterName, frame);
 }
 
 static void emitRelationalOp(const TACInstruction *instruction, const char *conditionMnemonic, const FunctionFrame *frame) {
-    loadRegisterBasedOnOperand(ASM_RAX, &instruction->firstOperand, frame);
-    loadRegisterBasedOnOperand(ASM_RDX, &instruction->secondOperand, frame);
+    loadOperand(&instruction->firstOperand, "%eax", frame);
+    loadOperand(&instruction->secondOperand, "%edx", frame);
     AsmInstruction cmpInstruction = asmOpReg(ASM_CMP, ASM_RAX, ASM_RDX);
     emitAsm(&cmpInstruction);
     buildStringf("    %s %%al\n", conditionMnemonic);
     buildStringf("    movzbl %%al, %%eax\n");
-    storeRegisterToOperand(&instruction->result, ASM_RAX, frame);
+    storeOperand(&instruction->result, "%eax", frame);
 }
 
 static void emitFloatRelationalOp(const TACInstruction *instruction, const char *conditionMnemonic, const FunctionFrame *frame) {
@@ -715,14 +710,6 @@ static void emitFloatRelationalOp(const TACInstruction *instruction, const char 
 
     buildStringf("    movzbl %%al, %%eax\n");
     storeOperand(&instruction->result, "%eax", frame);
-}
-
-static void loadRegisterBasedOnOperand(AsmRegister registerType, const TACOperand *operand, const FunctionFrame *frame) {
-    loadOperand(operand, getRegisterName(registerType), frame);
-}
-
-static void storeRegisterToOperand(const TACOperand *operand, AsmRegister registerType, const FunctionFrame *frame) {
-    storeOperand(operand, getRegisterName(registerType), frame);
 }
 
 static void loadOperand(const TACOperand *operand, const char *registerName, const FunctionFrame *frame) {
@@ -910,13 +897,4 @@ static unsigned int getFloatBits(float value) {
     union { float asFloat; unsigned int asBits; } conversion;
     conversion.asFloat = value;
     return conversion.asBits;
-}
-
-static const char *getRegisterName(AsmRegister registerType) {
-    switch (registerType) {
-        case ASM_RAX: return "%eax";
-        case ASM_RDX: return "%edx";
-        case ASM_RCX: return "%ecx";
-        default:      return "%eax";
-    }
 }

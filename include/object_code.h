@@ -23,8 +23,6 @@
  * @brief Recorre la lista de TAC y genera el código Assembly x86-64 completo.
  *
  * @param tacList Puntero a la lista de instrucciones de tres direcciones a traducir.
- */
-/**
  * @param enabled Optimizaciones activas; las que dependen de la máquina, como
  *        la reducción de fuerza, se deciden al emitir cada instrucción.
  */

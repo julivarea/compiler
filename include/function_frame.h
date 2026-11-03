@@ -39,7 +39,6 @@ typedef struct FunctionFrame {
     int slotCapacity;
     int nextOffset;   /**< Acumulador de bytes ocupados en el stack. */
     int frameSize;    /**< Tamaño total del frame alineado a 16 bytes. */
-    int paramCount;   /**< Contador de parámetros procesados en el prólogo. */
 
     /**
      * Pila dinámica de argumentos pendientes de la llamada en curso.

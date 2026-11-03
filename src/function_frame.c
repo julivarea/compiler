@@ -24,7 +24,6 @@ FunctionFrame *createFrame(const char *functionName) {
     frame->slots = (StackSlot *)malloc(sizeof(StackSlot) * frame->slotCapacity);
     frame->nextOffset = 0;
     frame->frameSize = 0;
-    frame->paramCount = 0;
     frame->pendingParamCapacity = INITIAL_PENDING_PARAMS_CAPACITY;
     frame->pendingParamSlots = (int *)malloc(sizeof(int) * frame->pendingParamCapacity);
     frame->pendingParamTypes = (DataType *)malloc(sizeof(DataType) * frame->pendingParamCapacity);
