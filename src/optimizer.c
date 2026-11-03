@@ -44,10 +44,11 @@ static bool evaluateUnary(TACOperation operation, const TACOperand *operand,
 static const TACOperand *lookupKnownConstant(const KnownConstantTable *table, const TACOperand *operand);
 static void forgetConstant(KnownConstantTable *table, const TACOperand *operand);
 static void rememberConstant(KnownConstantTable *table, const TACOperand *destination, const TACOperand *value);
-static void forgetVariables(KnownConstantTable *table);
+static void forgetGlobalVariables(KnownConstantTable *table, const TACList *tacList);
 static bool replaceWithKnownConstant(const KnownConstantTable *table, TACOperand *operand);
 
 static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previous, TACInstruction *current);
+static int unlinkInstructionList(TACList *tacList, TACInstruction **instructions, size_t count);
 static bool endsControlFlow(TACOperation operation);
 static bool isStructural(TACOperation operation);
 static int removeUnreferencedLabels(TACList *tacList);
@@ -125,7 +126,7 @@ static int propagateConstants(TACList *tacList) {
             }
 
             case TAC_CALL:
-                forgetVariables(&table);
+                forgetGlobalVariables(&table, tacList);
                 forgetConstant(&table, &instruction->result);
                 continue;
 
@@ -254,32 +255,11 @@ static int removeUnreachableCode(TACList *tacList) {
         }
     }
 
-    if (unreachableCount == 0) {
-        free(unreachableList);
-        return changes;
-    }
-
-    if (isOptimizerDebugEnabled) {
+    if (isOptimizerDebugEnabled && unreachableCount > 0) {
         printTACWithDeletedInRed(tacList, unreachableList, unreachableCount, "Codigo Inalcanzable (tras ret / goto)");
     }
 
-    size_t unreachIndex = 0;
-    TACInstruction *previous = NULL;
-    TACInstruction *current = tacList->head;
-
-    while (current != NULL && unreachIndex < unreachableCount) {
-        bool isTarget = (current == unreachableList[unreachIndex]);
-        if (isTarget) {
-            current = unlinkInstruction(tacList, previous, current);
-            unreachIndex++;
-            changes++;
-        } else {
-            previous = current;
-            current = current->next;
-        }
-    }
-
-    free(unreachableList);
+    changes += unlinkInstructionList(tacList, unreachableList, unreachableCount);
     return changes;
 }
 
@@ -312,36 +292,11 @@ static int removeDeadStores(TACList *tacList) {
 
     freeLiveVariableAnalysis(analysis);
 
-    bool hasNoDeadStores = (deadCount == 0);
-    if (hasNoDeadStores) {
-        free(deadInstructions);
-        return 0;
-    }
-
-    if (isOptimizerDebugEnabled) {
+    if (isOptimizerDebugEnabled && deadCount > 0) {
         printTACWithDeletedInRed(tacList, deadInstructions, deadCount, "Variables y Asignaciones Muertas (Live Variables)");
     }
 
-    // Remueve de la lista TAC las instrucciones identificadas como código muerto.
-    int changes = 0;
-    size_t deadIndex = 0;
-    TACInstruction *previous = NULL;
-    TACInstruction *current = tacList->head;
-
-    while (current != NULL && deadIndex < deadCount) {
-        bool isTarget = (current == deadInstructions[deadIndex]);
-        if (isTarget) {
-            current = unlinkInstruction(tacList, previous, current);
-            deadIndex++;
-            changes++;
-        } else {
-            previous = current;
-            current = current->next;
-        }
-    }
-
-    free(deadInstructions);
-    return changes;
+    return unlinkInstructionList(tacList, deadInstructions, deadCount);
 }
 
 static int removeSelfAssignments(TACList *tacList) {
@@ -363,34 +318,11 @@ static int removeSelfAssignments(TACList *tacList) {
         }
     }
 
-    if (selfCount == 0) {
-        free(selfList);
-        return 0;
-    }
-
-    if (isOptimizerDebugEnabled) {
+    if (isOptimizerDebugEnabled && selfCount > 0) {
         printTACWithDeletedInRed(tacList, selfList, selfCount, "Autoasignaciones Redundantes (x = x)");
     }
 
-    int changes = 0;
-    size_t selfIndex = 0;
-    TACInstruction *previous = NULL;
-    TACInstruction *current = tacList->head;
-
-    while (current != NULL && selfIndex < selfCount) {
-        bool isTarget = (current == selfList[selfIndex]);
-        if (isTarget) {
-            current = unlinkInstruction(tacList, previous, current);
-            selfIndex++;
-            changes++;
-        } else {
-            previous = current;
-            current = current->next;
-        }
-    }
-
-    free(selfList);
-    return changes;
+    return unlinkInstructionList(tacList, selfList, selfCount);
 }
 
 static int removeRedundantJumps(TACList *tacList) {
@@ -416,34 +348,11 @@ static int removeRedundantJumps(TACList *tacList) {
         }
     }
 
-    if (jumpCount == 0) {
-        free(jumpList);
-        return 0;
-    }
-
-    if (isOptimizerDebugEnabled) {
+    if (isOptimizerDebugEnabled && jumpCount > 0) {
         printTACWithDeletedInRed(tacList, jumpList, jumpCount, "Saltos Redundantes a la Siguiente Etiqueta");
     }
 
-    int changes = 0;
-    size_t jumpIndex = 0;
-    TACInstruction *previous = NULL;
-    TACInstruction *current = tacList->head;
-
-    while (current != NULL && jumpIndex < jumpCount) {
-        bool isTarget = (current == jumpList[jumpIndex]);
-        if (isTarget) {
-            current = unlinkInstruction(tacList, previous, current);
-            jumpIndex++;
-            changes++;
-        } else {
-            previous = current;
-            current = current->next;
-        }
-    }
-
-    free(jumpList);
-    return changes;
+    return unlinkInstructionList(tacList, jumpList, jumpCount);
 }
 
 static const TACOperand *lookupKnownConstant(const KnownConstantTable *table, const TACOperand *operand) {
@@ -485,11 +394,12 @@ static void rememberConstant(KnownConstantTable *table, const TACOperand *destin
     table->count++;
 }
 
-static void forgetVariables(KnownConstantTable *table) {
+static void forgetGlobalVariables(KnownConstantTable *table, const TACList *tacList) {
     int keptEntriesCount = 0;
     for (int i = 0; i < table->count; i++) {
-        bool isTemporary = (table->entries[i].destinationKind == OPERAND_TEMP);
-        if (isTemporary) {
+        bool isGlobal = (table->entries[i].destinationKind == OPERAND_VARIABLE &&
+                         isGlobalVariable(tacList, table->entries[i].name));
+        if (!isGlobal) {
             table->entries[keptEntriesCount++] = table->entries[i];
         }
     }
@@ -637,6 +547,33 @@ static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previ
     return next;
 }
 
+static int unlinkInstructionList(TACList *tacList, TACInstruction **instructions, size_t count) {
+    if (instructions == NULL || count == 0) {
+        free(instructions);
+        return 0;
+    }
+
+    int changes = 0;
+    size_t targetIndex = 0;
+    TACInstruction *previous = NULL;
+    TACInstruction *current = tacList->head;
+
+    while (current != NULL && targetIndex < count) {
+        bool isTarget = (current == instructions[targetIndex]);
+        if (isTarget) {
+            current = unlinkInstruction(tacList, previous, current);
+            targetIndex++;
+            changes++;
+        } else {
+            previous = current;
+            current = current->next;
+        }
+    }
+
+    free(instructions);
+    return changes;
+}
+
 static bool endsControlFlow(TACOperation operation) {
     return operation == TAC_RETURN || operation == TAC_GOTO;
 }
@@ -736,34 +673,11 @@ static int removeUnreferencedLabels(TACList *tacList) {
 
     free(referencedSet.names);
 
-    if (deadLabelCount == 0) {
-        free(deadLabelList);
-        return 0;
-    }
-
-    if (isOptimizerDebugEnabled) {
+    if (isOptimizerDebugEnabled && deadLabelCount > 0) {
         printTACWithDeletedInRed(tacList, deadLabelList, deadLabelCount, "Etiquetas sin Referencias");
     }
 
-    int changes = 0;
-    size_t labelIndex = 0;
-    TACInstruction *previous = NULL;
-    TACInstruction *current = tacList->head;
-
-    while (current != NULL && labelIndex < deadLabelCount) {
-        bool isTarget = (current == deadLabelList[labelIndex]);
-        if (isTarget) {
-            current = unlinkInstruction(tacList, previous, current);
-            labelIndex++;
-            changes++;
-        } else {
-            previous = current;
-            current = current->next;
-        }
-    }
-
-    free(deadLabelList);
-    return changes;
+    return unlinkInstructionList(tacList, deadLabelList, deadLabelCount);
 }
 
 static bool isGlobalVariable(const TACList *tacList, const char *variableName) {
