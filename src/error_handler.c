@@ -3,17 +3,14 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 #define MAX_MESSAGE_LENGTH 256
 
 static void reportError(const char *stage, int *counter, int line, const char *format, va_list formatArguments);
-static void printSourceLine(int line);
 
 int lexical_errors = 0;
 int semantic_errors = 0;
 
-static const char *sourcePath = NULL;
 static int lastErrorLine = 0;
 static char lastErrorMessage[MAX_MESSAGE_LENGTH] = "";
 
@@ -38,10 +35,6 @@ void semanticError(int line, const char *format, ...) {
     va_end(formatArguments);
 }
 
-void setErrorSource(const char *path) {
-    sourcePath = path;
-}
-
 int getLastErrorLine(void) {
     return lastErrorLine;
 }
@@ -62,38 +55,8 @@ static void reportError(const char *stage, int *counter, int line, const char *f
     lastErrorLine = line;
 
     fprintf(stderr, "\033[1;31mError %s en la linea %d:\033[0m %s\n", stage, line, lastErrorMessage);
-    printSourceLine(line);
 
-    bool hasCounter = (counter != NULL);
-    if (hasCounter) {
+    if (counter) {
         (*counter)++;
     }
-}
-
-static void printSourceLine(int line) {
-    bool hasNoSourcePath = (sourcePath == NULL);
-    bool isInvalidLine = (line < 1);
-    if (hasNoSourcePath || isInvalidLine) return;
-
-    FILE *sourceFile = fopen(sourcePath, "r");
-    bool failedToOpenFile = (sourceFile == NULL);
-    if (failedToOpenFile) return;
-
-    char *lineBuffer = NULL;
-    size_t bufferCapacity = 0;
-    ssize_t bytesRead = 0;
-    for (int currentLine = 0; currentLine < line && bytesRead >= 0; currentLine++) {
-        bytesRead = getline(&lineBuffer, &bufferCapacity, sourceFile);
-    }
-
-    bool hasValidLine = (bytesRead >= 0);
-    if (hasValidLine) {
-        while (bytesRead > 0 && (lineBuffer[bytesRead - 1] == '\n' || lineBuffer[bytesRead - 1] == '\r')) {
-            lineBuffer[--bytesRead] = '\0';
-        }
-        fprintf(stderr, "%5d | %s\n", line, lineBuffer);
-    }
-
-    free(lineBuffer);
-    fclose(sourceFile);
 }

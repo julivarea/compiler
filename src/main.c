@@ -22,7 +22,6 @@ int main(int argc, char **argv) {
         freeOptions(&options);
         return 1;
     }
-    setErrorSource(options.input);
 
     int exitCode = compile(&options);
 

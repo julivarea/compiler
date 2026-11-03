@@ -24,13 +24,6 @@ void syntaxError(int line, const char *format, ...);
 void semanticError(int line, const char *format, ...);
 
 /**
- * @brief Establece la ruta del archivo fuente para mostrar la línea afectada en cada error.
- *
- * @param path Ruta del archivo fuente (acepta NULL para omitir la línea del código). No se copia: debe mantenerse válida mientras se informen errores.
- */
-void setErrorSource(const char *path);
-
-/**
  * @brief Devuelve la línea del último error informado.
  *
  * @return Número de línea, o 0 si no hubo ningún error.
