@@ -273,39 +273,33 @@ static bool parseOptimization(const char *value, OptimizationSet *optimizations)
         return true;
     }
 
-    bool hasComma = (strchr(value, ',') != NULL);
-    if (!hasComma) {
-        OptimizationSet flag = 0;
-        bool isValid = parseSingleOptimization(value, &flag);
-        if (!isValid) {
+    OptimizationSet accumulated = 0;
+    const char *cursor = value;
+
+    while (true) {
+        const char *comma = strchr(cursor, ',');
+        size_t len = comma ? (size_t)(comma - cursor) : strlen(cursor);
+
+        if (len == 0 || len >= 64) {
             return false;
         }
-        *optimizations |= flag;
-        return true;
-    }
 
-    char *copy = strdup(value);
-    if (copy == NULL) {
-        return false;
-    }
+        char token[64];
+        memcpy(token, cursor, len);
+        token[len] = '\0';
 
-    OptimizationSet accumulated = 0;
-    char *savePointer = NULL;
-    char *token = strtok_r(copy, ",", &savePointer);
-
-    while (token != NULL) {
         OptimizationSet flag = 0;
-        bool isValid = parseSingleOptimization(token, &flag);
-        if (!isValid) {
-            free(copy);
+        if (!parseSingleOptimization(token, &flag)) {
             return false;
         }
 
         accumulated |= flag;
-        token = strtok_r(NULL, ",", &savePointer);
+        if (comma == NULL) {
+            break;
+        }
+        cursor = comma + 1;
     }
 
-    free(copy);
     *optimizations |= accumulated;
     return true;
 }

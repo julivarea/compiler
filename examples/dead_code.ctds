@@ -1,9 +1,13 @@
 int a;
 int b;
-void main(){
+int main(){
     int c;  
     int b;
     b = 10;
+    while(b < 0){
+        b = b - 1;
+    }
     c = b;
     c = 10;
+    return c + a;
 }

@@ -12,8 +12,7 @@ extern FILE *yyin;
 
 int main(int argc, char **argv) {
     Options options;
-    bool hasError = parseArguments(argc, argv, &options) != CLI_SUCCESS;
-    if (hasError) {
+    if (parseArguments(argc, argv, &options) != CLI_SUCCESS){ 
         return 1;
     }
 
