@@ -1306,14 +1306,12 @@ void test_asm_exec_limit_300_global_variables(void) {
 
 // E24: Comparacion de igualdad entre reales con NaN debe ser falsa segun IEEE
 void test_asm_exec_float_nan_equality(void) {
-    TEST_IGNORE_MESSAGE("Falla conocido -> comiss con NaN activa ZF y sete lee igual");
     const char *source = "int main() { float z; float n; z = 0.0; n = z / z; if (n == n) { return 1; } return 0; }";
     TEST_ASSERT_EQUAL_INT(0, compileAndRun(source));
 }
 
 // E41: Comparacion menor con NaN en reales debe ser falsa segun IEEE
 void test_asm_exec_float_nan_less_than(void) {
-    TEST_IGNORE_MESSAGE("Falla conocido -> comiss con NaN activa CF y setb lee menor");
     const char *source = "int main() { float z; float n; z = 0.0; n = z / z; if (n < 1.0) { return 1; } return 0; }";
     TEST_ASSERT_EQUAL_INT(0, compileAndRun(source));
 }
