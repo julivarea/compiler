@@ -37,6 +37,10 @@ step "compilacion de tests del analisis de variables vivas" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_live_variable_analysis.c src/live_variable_analysis.c src/optimizer.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c src/string_builder.c build/bison.tab.c build/lex.yy.c -o build/run_live_variable_tests
 step "compilacion de tests de codigo objeto" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_object_code.c src/object_code.c src/function_frame.c src/asm_instruction.c src/string_builder.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_object_code_tests
+step "compilacion del compilador" \
+    gcc -Iinclude -Isrc -Ibuild build/bison.tab.c build/lex.yy.c src/main.c src/driver.c src/ast.c src/parser_helpers.c src/symbol_table.c src/type_checker.c src/semantic_analyzer.c src/error_handler.c src/string_builder.c src/tac_operand.c src/tac_instruction.c src/tac_list.c src/live_variable_analysis.c src/intermediate_code.c src/optimizer.c src/asm_instruction.c src/function_frame.c src/object_code.c src/cli.c src/interpreter.c -o mi_compilador
+step "compilacion de tests de la linea de comandos" \
+    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_cli.c src/cli.c -o build/run_cli_tests
 
 # Convierte la salida de Unity a una linea por test y descarta los mensajes
 # de error que imprime el propio compilador ("Error <etapa> en la linea N: ...")
@@ -76,9 +80,11 @@ run "LIVE VARIABLES" ./build/run_live_variable_tests
 LIVE_VAR_EXIT=$?
 run "OBJECT CODE" ./build/run_object_code_tests
 OBJECT_CODE_EXIT=$?
+run "CLI" ./build/run_cli_tests
+CLI_EXIT=$?
 
 echo ""
-if [ $LEXER_EXIT -eq 0 ] && [ $PARSER_EXIT -eq 0 ] && [ $AST_EXIT -eq 0 ] && [ $SYMBOL_TABLE_EXIT -eq 0 ] && [ $SEMANTIC_EXIT -eq 0 ] && [ $TAC_EXIT -eq 0 ] && [ $LIVE_VAR_EXIT -eq 0 ] && [ $OBJECT_CODE_EXIT -eq 0 ]; then
+if [ $LEXER_EXIT -eq 0 ] && [ $PARSER_EXIT -eq 0 ] && [ $AST_EXIT -eq 0 ] && [ $SYMBOL_TABLE_EXIT -eq 0 ] && [ $SEMANTIC_EXIT -eq 0 ] && [ $TAC_EXIT -eq 0 ] && [ $LIVE_VAR_EXIT -eq 0 ] && [ $OBJECT_CODE_EXIT -eq 0 ] && [ $CLI_EXIT -eq 0 ]; then
     echo "✅ TODOS LOS TESTS PASARON"
 else
     echo "❌ ALGUNOS TESTS FALLARON"

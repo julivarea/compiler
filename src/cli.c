@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 static const char *INPUT_EXTENSION = ".ctds";
 
@@ -30,7 +31,7 @@ int parseArguments(int argc, char **argv, Options *options) {
 
         if (strcmp(argument, "-o") == 0) {
             bool hasMissingArgument = (++i >= argc);
-            if (hasMissingArgument) {
+            if (hasMissingArgument || argv[i][0] == '\0') {
                 fprintf(stderr, "Error: -o necesita el nombre del archivo de salida.\n");
                 printUsage(program);
                 return 1;
@@ -122,6 +123,21 @@ int parseArguments(int argc, char **argv, Options *options) {
     bool hasAllocationError = (options->output == NULL);
     if (hasAllocationError) {
         fprintf(stderr, "Error: no se pudo reservar memoria para el nombre de salida.\n");
+        return 1;
+    }
+
+    bool isSameFile = (strcmp(options->output, options->input) == 0);
+    if (!isSameFile) {
+        struct stat statInput, statOutput;
+        if (stat(options->input, &statInput) == 0 && stat(options->output, &statOutput) == 0) {
+            isSameFile = (statInput.st_dev == statOutput.st_dev && statInput.st_ino == statOutput.st_ino);
+        }
+    }
+    if (isSameFile) {
+        fprintf(stderr, "Error: el archivo de salida no puede ser igual al de entrada ('%s').\n",
+                options->input);
+        free(options->output);
+        options->output = NULL;
         return 1;
     }
 
