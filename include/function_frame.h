@@ -6,6 +6,8 @@
  * @brief Estructuras y operaciones del marco de activación (stack frame) y ranuras de pila.
  */
 
+#include <stdbool.h>
+
 #include "tac_operand.h"
 #include "types.h"
 
@@ -109,9 +111,10 @@ int addAnonymousSlot(FunctionFrame *frame);
  *
  * @param frame Puntero al marco de la función analizada.
  * @param name Nombre del operando buscado.
- * @return Desplazamiento relativo a %rbp (negativo), o 0 si no se encuentra.
+ * @param outOffset Puntero donde se almacenará el desplazamiento relativo a %rbp si se encuentra (acepta NULL).
+ * @return true si la ranura existe en el marco, false en caso contrario.
  */
-int getSlotOffset(const FunctionFrame *frame, const char *name);
+bool getSlotOffset(const FunctionFrame *frame, const char *name, int *outOffset);
 
 /**
  * @brief Asegura capacidad suficiente en los arreglos de argumentos pendientes del frame.

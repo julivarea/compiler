@@ -35,31 +35,61 @@ static int globalVariableCount = 0;
 static int globalVariableCapacity = 0;
 static int objectCodeErrors = 0;
 
-/* Optimizaciones activas en la corrida. Las que dependen de la máquina no se
- * pueden resolver sobre el TAC, así que se deciden acá, al emitir. */
+// Optimizaciones activas en la corrida emitidas en Assembly
 static OptimizationSet activeOptimizations = OPTIMIZATION_NONE;
 
 static FloatConstant *floatConstants = NULL;
 static int floatConstantCount = 0;
 static int floatConstantCapacity = 0;
 
-static void resetGlobalVariables(void);
-static void resetFloatConstants(void);
+// Prototipos de submetodos para aplicar Step-Down Rule
+static void buildFrameLayout(FunctionFrame *frame, const TACInstruction *functionStart);
+static void allocateLocalSlots(FunctionFrame *frame, const TACInstruction *functionStart);
+static void allocatePendingParamSlots(FunctionFrame *frame, const TACInstruction *functionStart);
+static const TACInstruction *emitFunction(FunctionFrame *frame, const TACInstruction *functionStart);
 
-static void emitFloatConstantPool(const TACList *tacList);
-static void emitGlobals(const TACList *tacList);
+static void emitParamDeclaration(const TACInstruction *instruction, FunctionFrame *frame);
+static void emitAssignment(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitAddition(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitSubtraction(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitMultiplication(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitDivision(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitModulo(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitUnaryMinus(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitNot(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitLessThan(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitGreaterThan(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitEquality(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitIntToFloat(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitLabel(const TACInstruction *instruction);
+static void emitGoto(const TACInstruction *instruction);
+static void emitIfFalse(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitIfTrue(const TACInstruction *instruction, const FunctionFrame *frame);
 static void emitParam(const TACInstruction *instruction, FunctionFrame *frame);
 static void emitCall(const TACInstruction *instruction, FunctionFrame *frame);
+static void emitReturn(const TACInstruction *instruction, const FunctionFrame *frame);
+
+static void classifyCallArguments(const FunctionFrame *frame, int base, int argumentCount,
+                                  int *registerIndex, int *goesToStack, int *outStackArguments);
+static void emitCallStackArguments(const FunctionFrame *frame, int base, int argumentCount,
+                                   const int *goesToStack);
+static void emitCallRegisterArguments(const FunctionFrame *frame, int base, int argumentCount,
+                                      const int *registerIndex, const int *goesToStack);
+static void emitCallResult(const TACInstruction *instruction, const FunctionFrame *frame);
+
 static void emitBinaryOp(const TACInstruction *instruction, AsmOpcode opcode, const FunctionFrame *frame);
 static bool emitStrengthReducedMultiplication(const TACInstruction *instruction, const FunctionFrame *frame);
+static int powerOfTwoExponent(int value);
 static void emitFloatBinaryOp(const TACInstruction *instruction, const char *mnemonic, const FunctionFrame *frame);
 static void emitDivisionOp(const TACInstruction *instruction, const FunctionFrame *frame, const char *resultRegisterName);
 static void emitRelationalOp(const TACInstruction *instruction, const char *conditionMnemonic, const FunctionFrame *frame);
 static void emitFloatRelationalOp(const TACInstruction *instruction, const char *conditionMnemonic, const FunctionFrame *frame);
+
 static void loadOperand(const TACOperand *operand, const char *registerName, const FunctionFrame *frame);
 static void storeOperand(const TACOperand *operand, const char *registerName, const FunctionFrame *frame);
 static void loadFloatOperand(const TACOperand *operand, const char *xmmRegister, const FunctionFrame *frame);
 static void storeFloatOperand(const TACOperand *operand, const char *xmmRegister, const FunctionFrame *frame);
+
 static OperandLocation resolveOperandLocation(const TACOperand *operand, const FunctionFrame *frame, int *offset);
 static bool isDeclaredGlobal(const TACOperand *operand);
 static void registerGlobalVariable(const TACOperand *operand);
@@ -67,6 +97,11 @@ static const char *getGlobalName(const TACOperand *operand);
 static bool isFloatOperand(const TACOperand *operand);
 static const char *internFloatConstant(float value);
 static unsigned int getFloatBits(float value);
+
+static void resetGlobalVariables(void);
+static void resetFloatConstants(void);
+static void emitFloatConstantPool(const TACList *tacList);
+static void emitGlobals(const TACList *tacList);
 
 void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
     bool isNullList = (tacList == NULL);
@@ -83,97 +118,23 @@ void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
     buildStringf(".text\n");
 
     const TACInstruction *instruction = tacList->head;
-
     while (instruction != NULL) {
         bool isFunctionStart = (instruction->operation == TAC_BEGIN_FUNC);
         if (isFunctionStart) {
             FunctionFrame *frame = createFrame(instruction->result.name);
             frame->returnType = instruction->result.type;
-            const TACInstruction *current = instruction->next;
 
-            while (current != NULL && current->operation != TAC_END_FUNC) {
-                switch (current->operation) {
-                    case TAC_PARAM_DECL:
-                    case TAC_LOCAL_DECL:
-                        addSlot(frame, &current->firstOperand);
-                        break;
+            buildFrameLayout(frame, instruction);
+            instruction = emitFunction(frame, instruction);
 
-                    case TAC_ASSIGN:
-                    case TAC_ADD:
-                    case TAC_SUB:
-                    case TAC_MUL:
-                    case TAC_DIV:
-                    case TAC_MOD:
-                    case TAC_UMINUS:
-                    case TAC_NOT:
-                    case TAC_INT_TO_FLOAT:
-                    case TAC_LT:
-                    case TAC_GT:
-                    case TAC_EQ:
-                    case TAC_CALL: {
-                        bool isTemporary = (current->result.kind == OPERAND_TEMP);
-                        if (isTemporary) {
-                            addSlot(frame, &current->result);
-                        }
-                        break;
-                    }
-
-                    default:
-                        break;
-                }
-
-                current = current->next;
-            }
-
-            int pendingCount = 0;
-            for (const TACInstruction *scan = instruction->next;
-                 scan != NULL && scan->operation != TAC_END_FUNC;
-                 scan = scan->next) {
-
-                if (scan->operation == TAC_PARAM) {
-                    pendingCount++;
-                    bool exceedsPeak = (pendingCount > frame->maxPendingParams);
-                    if (exceedsPeak) {
-                        frame->maxPendingParams = pendingCount;
-                    }
-                } else if (scan->operation == TAC_CALL) {
-                    int arity = (scan->secondOperand.kind == OPERAND_CONSTANT) ? scan->secondOperand.value.intValue : 0;
-                    pendingCount -= arity;
-                    if (pendingCount < 0) {
-                        pendingCount = 0;
-                    }
-                }
-            }
-
-            ensurePendingParamCapacity(frame, frame->maxPendingParams);
-            for (int i = 0; i < frame->maxPendingParams; i++) {
-                frame->pendingParamSlots[i] = addAnonymousSlot(frame);
-            }
-
-            frame->frameSize = ALIGN_UP(frame->nextOffset, 16);
-
-            emitPrologue(frame);
-
-            current = instruction->next;
-            while (current != NULL && current->operation != TAC_END_FUNC) {
-                generateInstruction(current, frame);
-                current = current->next;
-            }
-
-            emitEpilogue(frame);
             freeFrame(frame);
-
-            if (current != NULL) {
-                instruction = current;
-            } else {
-                break;
-            }
+            continue;
         }
 
         instruction = instruction->next;
     }
 
-    /* Sin esta sección el enlazador asume que el stack debe ser ejecutable. */
+    // Seccion note.GNU-stack para evitar stack ejecutable
     buildStringf("\n.section .note.GNU-stack,\"\",@progbits\n");
 
     resetGlobalVariables();
@@ -184,55 +145,87 @@ int getObjectCodeErrors(void) {
     return objectCodeErrors;
 }
 
-static void emitFloatConstantPool(const TACList *tacList) {
-    floatConstantCount = 0;
-
-    for (const TACInstruction *instruction = tacList->head; instruction != NULL; instruction = instruction->next) {
-        const TACOperand *operands[] = { &instruction->firstOperand, &instruction->secondOperand, &instruction->result };
-
-        for (int i = 0; i < 3; i++) {
-            bool isFloatConstant = (operands[i]->kind == OPERAND_CONSTANT && operands[i]->type == TYPE_FLOAT);
-            if (isFloatConstant) {
-                internFloatConstant(operands[i]->value.floatValue);
-            }
-        }
-    }
-
-    bool hasNoConstants = (floatConstantCount == 0);
-    if (hasNoConstants) return;
-
-    buildStringf(".section .rodata\n");
-    for (int i = 0; i < floatConstantCount; i++) {
-        buildStringf(".align 4\n");
-        buildStringf("%s:\n", floatConstants[i].label);
-        buildStringf("    .long %u\n", getFloatBits(floatConstants[i].value));
-    }
-    buildStringf("\n");
+static void buildFrameLayout(FunctionFrame *frame, const TACInstruction *functionStart) {
+    allocateLocalSlots(frame, functionStart);
+    allocatePendingParamSlots(frame, functionStart);
+    frame->frameSize = ALIGN_UP(frame->nextOffset, 16);
 }
 
-static void emitGlobals(const TACList *tacList) {
-    if (tacList == NULL) return;
+static void allocateLocalSlots(FunctionFrame *frame, const TACInstruction *functionStart) {
+    for (const TACInstruction *current = functionStart->next;
+         current != NULL && current->operation != TAC_END_FUNC;
+         current = current->next) {
 
-    bool hasGlobals = false;
-    for (const TACInstruction *instruction = tacList->head; instruction != NULL; instruction = instruction->next) {
-        if (instruction->operation == TAC_GLOBAL_DECL) {
-            if (!hasGlobals) {
-                buildStringf(".data\n");
-                hasGlobals = true;
+        switch (current->operation) {
+            case TAC_PARAM_DECL:
+            case TAC_LOCAL_DECL:
+                addSlot(frame, &current->firstOperand);
+                break;
+
+            case TAC_ASSIGN:
+            case TAC_ADD:
+            case TAC_SUB:
+            case TAC_MUL:
+            case TAC_DIV:
+            case TAC_MOD:
+            case TAC_UMINUS:
+            case TAC_NOT:
+            case TAC_INT_TO_FLOAT:
+            case TAC_LT:
+            case TAC_GT:
+            case TAC_EQ:
+            case TAC_CALL: {
+                bool isTemporary = (current->result.kind == OPERAND_TEMP);
+                if (isTemporary) {
+                    addSlot(frame, &current->result);
+                }
+                break;
             }
-            registerGlobalVariable(&instruction->firstOperand);
 
-            const char *name = getGlobalName(&instruction->firstOperand);
-            buildStringf(".globl %s\n", name);
-            buildStringf(".align 4\n");
-            buildStringf("%s:\n", name);
-            buildStringf("    .long 0\n");
+            default:
+                break;
+        }
+    }
+}
+
+static void allocatePendingParamSlots(FunctionFrame *frame, const TACInstruction *functionStart) {
+    int pendingCount = 0;
+    for (const TACInstruction *scan = functionStart->next;
+         scan != NULL && scan->operation != TAC_END_FUNC;
+         scan = scan->next) {
+
+        if (scan->operation == TAC_PARAM) {
+            pendingCount++;
+            bool exceedsPeak = (pendingCount > frame->maxPendingParams);
+            if (exceedsPeak) {
+                frame->maxPendingParams = pendingCount;
+            }
+        } else if (scan->operation == TAC_CALL) {
+            int arity = (scan->secondOperand.kind == OPERAND_CONSTANT) ? scan->secondOperand.value.intValue : 0;
+            pendingCount -= arity;
+            if (pendingCount < 0) {
+                pendingCount = 0;
+            }
         }
     }
 
-    if (hasGlobals) {
-        buildStringf("\n");
+    ensurePendingParamCapacity(frame, frame->maxPendingParams);
+    for (int i = 0; i < frame->maxPendingParams; i++) {
+        frame->pendingParamSlots[i] = addAnonymousSlot(frame);
     }
+}
+
+static const TACInstruction *emitFunction(FunctionFrame *frame, const TACInstruction *functionStart) {
+    emitPrologue(frame);
+
+    const TACInstruction *current = functionStart->next;
+    while (current != NULL && current->operation != TAC_END_FUNC) {
+        generateInstruction(current, frame);
+        current = current->next;
+    }
+
+    emitEpilogue(frame);
+    return current;
 }
 
 void emitPrologue(const FunctionFrame *frame) {
@@ -255,7 +248,7 @@ void emitEpilogue(const FunctionFrame *frame) {
         buildStringf(".L_%s_epilogue:\n", frame->functionName);
     }
 
-    /* El sistema operativo toma %eax como código de salida del proceso en void main(). */
+    // El sistema operativo toma %eax como codigo de salida del proceso en void main()
     bool isVoidMain = (frame != NULL && frame->returnType == TYPE_VOID
                        && strcmp(frame->functionName, "main") == 0);
     if (isVoidMain) {
@@ -272,180 +265,75 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
     if (isInvalidInstruction) return;
 
     switch (instruction->operation) {
-        case TAC_PARAM_DECL: {
-            int offset = getSlotOffset(frame, instruction->firstOperand.name);
-            bool isFloat = isFloatOperand(&instruction->firstOperand);
-
-            bool hasOffset = (offset != 0);
-            if (hasOffset) {
-                bool fitsInXmm = (isFloat && frame->floatParamCount < MAX_XMM_ARG_REGISTERS);
-                bool fitsInGeneralRegister = (!isFloat && frame->integerParamCount < MAX_ARG_REGISTERS);
-
-                if (fitsInXmm) {
-                    buildStringf("    movss %s, %d(%%rbp)\n",
-                                 XMM_ARG_REGISTERS[frame->floatParamCount], offset);
-                } else if (fitsInGeneralRegister) {
-                    buildStringf("    movl %s, %d(%%rbp)\n",
-                                 ARG_REGISTERS_32[frame->integerParamCount], offset);
-                } else {
-                    /* Se agotaron los registros: el llamador lo dejó en su stack. */
-                    int callerOffset = 16 + frame->stackParamCount * 8;
-                    buildStringf("    movl %d(%%rbp), %%eax\n", callerOffset);
-                    buildStringf("    movl %%eax, %d(%%rbp)\n", offset);
-                }
-            }
-
-            if (isFloat && frame->floatParamCount < MAX_XMM_ARG_REGISTERS) {
-                frame->floatParamCount++;
-            } else if (!isFloat && frame->integerParamCount < MAX_ARG_REGISTERS) {
-                frame->integerParamCount++;
-            } else {
-                frame->stackParamCount++;
-            }
+        case TAC_PARAM_DECL:
+            emitParamDeclaration(instruction, frame);
             break;
-        }
 
         case TAC_LOCAL_DECL:
             break;
 
-        case TAC_ASSIGN: {
-            bool isFloat = isFloatOperand(&instruction->result);
-            if (isFloat) {
-                loadFloatOperand(&instruction->firstOperand, "%xmm0", frame);
-                storeFloatOperand(&instruction->result, "%xmm0", frame);
-            } else {
-                loadOperand(&instruction->firstOperand, "%eax", frame);
-                storeOperand(&instruction->result, "%eax", frame);
-            }
+        case TAC_ASSIGN:
+            emitAssignment(instruction, frame);
             break;
-        }
 
-        case TAC_ADD: {
-            bool isFloat = isFloatOperand(&instruction->result);
-            if (isFloat) {
-                emitFloatBinaryOp(instruction, "addss", frame);
-            } else {
-                emitBinaryOp(instruction, ASM_ADD, frame);
-            }
+        case TAC_ADD:
+            emitAddition(instruction, frame);
             break;
-        }
 
-        case TAC_SUB: {
-            bool isFloat = isFloatOperand(&instruction->result);
-            if (isFloat) {
-                emitFloatBinaryOp(instruction, "subss", frame);
-            } else {
-                emitBinaryOp(instruction, ASM_SUB, frame);
-            }
+        case TAC_SUB:
+            emitSubtraction(instruction, frame);
             break;
-        }
 
-        case TAC_MUL: {
-            bool isFloat = isFloatOperand(&instruction->result);
-            if (isFloat) {
-                emitFloatBinaryOp(instruction, "mulss", frame);
-                break;
-            }
-
-            bool wasReduced = emitStrengthReducedMultiplication(instruction, frame);
-            if (!wasReduced) {
-                emitBinaryOp(instruction, ASM_IMUL, frame);
-            }
+        case TAC_MUL:
+            emitMultiplication(instruction, frame);
             break;
-        }
 
-        case TAC_DIV: {
-            bool isFloat = isFloatOperand(&instruction->result);
-            if (isFloat) {
-                emitFloatBinaryOp(instruction, "divss", frame);
-            } else {
-                emitDivisionOp(instruction, frame, "%eax");
-            }
+        case TAC_DIV:
+            emitDivision(instruction, frame);
             break;
-        }
 
         case TAC_MOD:
-            emitDivisionOp(instruction, frame, "%edx");
+            emitModulo(instruction, frame);
             break;
 
-        case TAC_UMINUS: {
-            bool isFloat = isFloatOperand(&instruction->result);
-            if (isFloat) {
-                buildStringf("    pxor %%xmm0, %%xmm0\n");
-                loadFloatOperand(&instruction->firstOperand, "%xmm1", frame);
-                buildStringf("    subss %%xmm1, %%xmm0\n");
-                storeFloatOperand(&instruction->result, "%xmm0", frame);
-                break;
-            }
-            loadOperand(&instruction->firstOperand, "%eax", frame);
-            AsmInstruction negate = asmOpUnary(ASM_NEG, ASM_RAX);
-            emitAsm(&negate);
-            storeOperand(&instruction->result, "%eax", frame);
+        case TAC_UMINUS:
+            emitUnaryMinus(instruction, frame);
             break;
-        }
 
-        case TAC_NOT: {
-            loadOperand(&instruction->firstOperand, "%eax", frame);
-            AsmInstruction instructionAsm = asmOpImm(ASM_XOR, ASM_RAX, 1);
-            emitAsm(&instructionAsm);
-            storeOperand(&instruction->result, "%eax", frame);
+        case TAC_NOT:
+            emitNot(instruction, frame);
             break;
-        }
 
-        case TAC_LT: {
-            bool isFloat = isFloatOperand(&instruction->firstOperand);
-            if (isFloat) {
-                emitFloatRelationalOp(instruction, "setb", frame);
-            } else {
-                emitRelationalOp(instruction, "setl", frame);
-            }
+        case TAC_LT:
+            emitLessThan(instruction, frame);
             break;
-        }
 
-        case TAC_GT: {
-            bool isFloat = isFloatOperand(&instruction->firstOperand);
-            if (isFloat) {
-                emitFloatRelationalOp(instruction, "seta", frame);
-            } else {
-                emitRelationalOp(instruction, "setg", frame);
-            }
+        case TAC_GT:
+            emitGreaterThan(instruction, frame);
             break;
-        }
 
-        case TAC_EQ: {
-            bool isFloat = isFloatOperand(&instruction->firstOperand);
-            if (isFloat) {
-                emitFloatRelationalOp(instruction, "sete", frame);
-            } else {
-                emitRelationalOp(instruction, "sete", frame);
-            }
+        case TAC_EQ:
+            emitEquality(instruction, frame);
             break;
-        }
 
         case TAC_INT_TO_FLOAT:
-            loadOperand(&instruction->firstOperand, "%eax", frame);
-            buildStringf("    cvtsi2ss %%eax, %%xmm0\n");
-            storeFloatOperand(&instruction->result, "%xmm0", frame);
+            emitIntToFloat(instruction, frame);
             break;
 
         case TAC_LABEL:
-            buildStringf(".%s:\n", instruction->result.name);
+            emitLabel(instruction);
             break;
 
         case TAC_GOTO:
-            buildStringf("    jmp .%s\n", instruction->firstOperand.name);
+            emitGoto(instruction);
             break;
 
         case TAC_IF_FALSE:
-            loadOperand(&instruction->firstOperand, "%eax", frame);
-            buildStringf("    cmpl $0, %%eax\n");
-            buildStringf("    je .%s\n", instruction->secondOperand.name);
+            emitIfFalse(instruction, frame);
             break;
 
         case TAC_IF_TRUE:
-            loadOperand(&instruction->firstOperand, "%eax", frame);
-            buildStringf("    cmpl $0, %%eax\n");
-            buildStringf("    jne .%s\n", instruction->secondOperand.name);
+            emitIfTrue(instruction, frame);
             break;
 
         case TAC_PARAM:
@@ -456,32 +344,184 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             emitCall(instruction, frame);
             break;
 
-        case TAC_RETURN: {
-            bool hasReturnOperand = (instruction->firstOperand.kind != OPERAND_NONE);
-            if (hasReturnOperand) {
-                bool isFloat = isFloatOperand(&instruction->firstOperand);
-                if (isFloat) {
-                    loadFloatOperand(&instruction->firstOperand, "%xmm0", frame);
-                } else {
-                    loadOperand(&instruction->firstOperand, "%eax", frame);
-                }
-            }
-            buildStringf("    jmp .L_%s_epilogue\n", frame->functionName);
+        case TAC_RETURN:
+            emitReturn(instruction, frame);
             break;
-        }
 
         default:
             break;
     }
 }
 
-/* Copia el argumento de la llamada en su slot correspondiente del frame. */
-static void emitParam(const TACInstruction *instruction, FunctionFrame *frame) {
-    ensurePendingParamCapacity(frame, frame->pendingParamCount + 1);
+// Submetodos de emision por cuadupla TAC
 
-    int slot = frame->pendingParamSlots[frame->pendingParamCount];
+static void emitParamDeclaration(const TACInstruction *instruction, FunctionFrame *frame) {
+    int offset = 0;
+    bool hasOffset = getSlotOffset(frame, instruction->firstOperand.name, &offset);
     bool isFloat = isFloatOperand(&instruction->firstOperand);
 
+    if (hasOffset) {
+        bool fitsInXmm = (isFloat && frame->floatParamCount < MAX_XMM_ARG_REGISTERS);
+        bool fitsInGeneralRegister = (!isFloat && frame->integerParamCount < MAX_ARG_REGISTERS);
+
+        if (fitsInXmm) {
+            buildStringf("    movss %s, %d(%%rbp)\n",
+                         XMM_ARG_REGISTERS[frame->floatParamCount], offset);
+        } else if (fitsInGeneralRegister) {
+            buildStringf("    movl %s, %d(%%rbp)\n",
+                         ARG_REGISTERS_32[frame->integerParamCount], offset);
+        } else {
+            // Se agotaron los registros: el llamador lo ubico en su stack
+            int callerOffset = 16 + frame->stackParamCount * 8;
+            buildStringf("    movl %d(%%rbp), %%eax\n", callerOffset);
+            buildStringf("    movl %%eax, %d(%%rbp)\n", offset);
+        }
+    }
+
+    if (isFloat && frame->floatParamCount < MAX_XMM_ARG_REGISTERS) {
+        frame->floatParamCount++;
+    } else if (!isFloat && frame->integerParamCount < MAX_ARG_REGISTERS) {
+        frame->integerParamCount++;
+    } else {
+        frame->stackParamCount++;
+    }
+}
+
+static void emitAssignment(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool isFloat = isFloatOperand(&instruction->result);
+    if (isFloat) {
+        loadFloatOperand(&instruction->firstOperand, "%xmm0", frame);
+        storeFloatOperand(&instruction->result, "%xmm0", frame);
+    } else {
+        loadOperand(&instruction->firstOperand, "%eax", frame);
+        storeOperand(&instruction->result, "%eax", frame);
+    }
+}
+
+static void emitAddition(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool isFloat = isFloatOperand(&instruction->result);
+    if (isFloat) {
+        emitFloatBinaryOp(instruction, "addss", frame);
+    } else {
+        emitBinaryOp(instruction, ASM_ADD, frame);
+    }
+}
+
+static void emitSubtraction(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool isFloat = isFloatOperand(&instruction->result);
+    if (isFloat) {
+        emitFloatBinaryOp(instruction, "subss", frame);
+    } else {
+        emitBinaryOp(instruction, ASM_SUB, frame);
+    }
+}
+
+static void emitMultiplication(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool isFloat = isFloatOperand(&instruction->result);
+    if (isFloat) {
+        emitFloatBinaryOp(instruction, "mulss", frame);
+        return;
+    }
+
+    bool wasReduced = emitStrengthReducedMultiplication(instruction, frame);
+    if (!wasReduced) {
+        emitBinaryOp(instruction, ASM_IMUL, frame);
+    }
+}
+
+static void emitDivision(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool isFloat = isFloatOperand(&instruction->result);
+    if (isFloat) {
+        emitFloatBinaryOp(instruction, "divss", frame);
+    } else {
+        emitDivisionOp(instruction, frame, "%eax");
+    }
+}
+
+static void emitModulo(const TACInstruction *instruction, const FunctionFrame *frame) {
+    emitDivisionOp(instruction, frame, "%edx");
+}
+
+static void emitUnaryMinus(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool isFloat = isFloatOperand(&instruction->result);
+    if (isFloat) {
+        buildStringf("    pxor %%xmm0, %%xmm0\n");
+        loadFloatOperand(&instruction->firstOperand, "%xmm1", frame);
+        buildStringf("    subss %%xmm1, %%xmm0\n");
+        storeFloatOperand(&instruction->result, "%xmm0", frame);
+        return;
+    }
+    loadOperand(&instruction->firstOperand, "%eax", frame);
+    AsmInstruction negate = asmOpUnary(ASM_NEG, ASM_RAX);
+    emitAsm(&negate);
+    storeOperand(&instruction->result, "%eax", frame);
+}
+
+static void emitNot(const TACInstruction *instruction, const FunctionFrame *frame) {
+    loadOperand(&instruction->firstOperand, "%eax", frame);
+    AsmInstruction instructionAsm = asmOpImm(ASM_XOR, ASM_RAX, 1);
+    emitAsm(&instructionAsm);
+    storeOperand(&instruction->result, "%eax", frame);
+}
+
+static void emitLessThan(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool isFloat = isFloatOperand(&instruction->firstOperand);
+    if (isFloat) {
+        emitFloatRelationalOp(instruction, "setb", frame);
+    } else {
+        emitRelationalOp(instruction, "setl", frame);
+    }
+}
+
+static void emitGreaterThan(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool isFloat = isFloatOperand(&instruction->firstOperand);
+    if (isFloat) {
+        emitFloatRelationalOp(instruction, "seta", frame);
+    } else {
+        emitRelationalOp(instruction, "setg", frame);
+    }
+}
+
+static void emitEquality(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool isFloat = isFloatOperand(&instruction->firstOperand);
+    if (isFloat) {
+        emitFloatRelationalOp(instruction, "sete", frame);
+    } else {
+        emitRelationalOp(instruction, "sete", frame);
+    }
+}
+
+static void emitIntToFloat(const TACInstruction *instruction, const FunctionFrame *frame) {
+    loadOperand(&instruction->firstOperand, "%eax", frame);
+    buildStringf("    cvtsi2ss %%eax, %%xmm0\n");
+    storeFloatOperand(&instruction->result, "%xmm0", frame);
+}
+
+static void emitLabel(const TACInstruction *instruction) {
+    buildStringf(".%s:\n", instruction->result.name);
+}
+
+static void emitGoto(const TACInstruction *instruction) {
+    buildStringf("    jmp .%s\n", instruction->firstOperand.name);
+}
+
+static void emitIfFalse(const TACInstruction *instruction, const FunctionFrame *frame) {
+    loadOperand(&instruction->firstOperand, "%eax", frame);
+    buildStringf("    cmpl $0, %%eax\n");
+    buildStringf("    je .%s\n", instruction->secondOperand.name);
+}
+
+static void emitIfTrue(const TACInstruction *instruction, const FunctionFrame *frame) {
+    loadOperand(&instruction->firstOperand, "%eax", frame);
+    buildStringf("    cmpl $0, %%eax\n");
+    buildStringf("    jne .%s\n", instruction->secondOperand.name);
+}
+
+static void emitParam(const TACInstruction *instruction, FunctionFrame *frame) {
+    ensurePendingParamCapacity(frame, frame->pendingParamCount + 1);
+    int slot = frame->pendingParamSlots[frame->pendingParamCount];
+
+    bool isFloat = isFloatOperand(&instruction->firstOperand);
     if (isFloat) {
         loadFloatOperand(&instruction->firstOperand, "%xmm0", frame);
         buildStringf("    movss %%xmm0, %d(%%rbp)\n", slot);
@@ -495,7 +535,19 @@ static void emitParam(const TACInstruction *instruction, FunctionFrame *frame) {
     frame->pendingParamCount++;
 }
 
-/* Consume los argumentos según System V AMD64 y emite la llamada. */
+static void emitReturn(const TACInstruction *instruction, const FunctionFrame *frame) {
+    bool hasReturnOperand = (instruction->firstOperand.kind != OPERAND_NONE);
+    if (hasReturnOperand) {
+        bool isFloat = isFloatOperand(&instruction->firstOperand);
+        if (isFloat) {
+            loadFloatOperand(&instruction->firstOperand, "%xmm0", frame);
+        } else {
+            loadOperand(&instruction->firstOperand, "%eax", frame);
+        }
+    }
+    buildStringf("    jmp .L_%s_epilogue\n", frame->functionName);
+}
+
 static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
     int argumentCount = (instruction->secondOperand.kind == OPERAND_CONSTANT) ? instruction->secondOperand.value.intValue : 0;
     bool exceedsPending = (argumentCount > frame->pendingParamCount);
@@ -504,13 +556,42 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
     }
 
     int base = frame->pendingParamCount - argumentCount;
-
     int *registerIndex = NULL;
     int *goesToStack = NULL;
+    int stackArguments = 0;
+
     if (argumentCount > 0) {
-        registerIndex = (int *)malloc(sizeof(int) * argumentCount);
-        goesToStack = (int *)malloc(sizeof(int) * argumentCount);
+        registerIndex = (int *)malloc(sizeof(int) * (size_t)argumentCount);
+        goesToStack = (int *)malloc(sizeof(int) * (size_t)argumentCount);
+        classifyCallArguments(frame, base, argumentCount, registerIndex, goesToStack, &stackArguments);
     }
+
+    bool needsAlignmentPadding = (stackArguments % 2 == 1);
+    int padding = needsAlignmentPadding ? 8 : 0;
+    if (needsAlignmentPadding) {
+        buildStringf("    subq $%d, %%rsp\n", padding);
+    }
+
+    emitCallStackArguments(frame, base, argumentCount, goesToStack);
+    emitCallRegisterArguments(frame, base, argumentCount, registerIndex, goesToStack);
+
+    buildStringf("    call %s\n", instruction->firstOperand.name);
+
+    bool needsStackCleanup = (stackArguments > 0 || padding > 0);
+    if (needsStackCleanup) {
+        buildStringf("    addq $%d, %%rsp\n", stackArguments * 8 + padding);
+    }
+
+    frame->pendingParamCount = base;
+
+    if (registerIndex != NULL) free(registerIndex);
+    if (goesToStack != NULL) free(goesToStack);
+
+    emitCallResult(instruction, frame);
+}
+
+static void classifyCallArguments(const FunctionFrame *frame, int base, int argumentCount,
+                                  int *registerIndex, int *goesToStack, int *outStackArguments) {
     int integerIndex = 0;
     int floatIndex = 0;
     int stackArguments = 0;
@@ -529,11 +610,14 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
         }
     }
 
-    bool needsAlignmentPadding = (stackArguments % 2 == 1);
-    int padding = needsAlignmentPadding ? 8 : 0;
-    if (needsAlignmentPadding) {
-        buildStringf("    subq $%d, %%rsp\n", padding);
+    if (outStackArguments != NULL) {
+        *outStackArguments = stackArguments;
     }
+}
+
+static void emitCallStackArguments(const FunctionFrame *frame, int base, int argumentCount,
+                                   const int *goesToStack) {
+    if (goesToStack == NULL) return;
 
     for (int i = argumentCount - 1; i >= 0; i--) {
         if (!goesToStack[i]) continue;
@@ -542,6 +626,11 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
         emitAsm(&load);
         buildStringf("    pushq %%rax\n");
     }
+}
+
+static void emitCallRegisterArguments(const FunctionFrame *frame, int base, int argumentCount,
+                                      const int *registerIndex, const int *goesToStack) {
+    if (registerIndex == NULL || goesToStack == NULL) return;
 
     for (int i = 0; i < argumentCount; i++) {
         if (goesToStack[i]) continue;
@@ -555,58 +644,28 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
             emitAsm(&load);
         }
     }
+}
 
-    buildStringf("    call %s\n", instruction->firstOperand.name);
-
-    bool needsStackCleanup = (stackArguments > 0 || padding > 0);
-    if (needsStackCleanup) {
-        buildStringf("    addq $%d, %%rsp\n", stackArguments * 8 + padding);
-    }
-
-    frame->pendingParamCount = base;
-
-    if (registerIndex != NULL) free(registerIndex);
-    if (goesToStack != NULL) free(goesToStack);
-
+static void emitCallResult(const TACInstruction *instruction, const FunctionFrame *frame) {
     bool hasResult = (instruction->result.kind != OPERAND_NONE);
-    if (hasResult) {
-        bool isFloat = isFloatOperand(&instruction->result);
-        if (isFloat) {
-            storeFloatOperand(&instruction->result, "%xmm0", frame);
-        } else {
-            storeOperand(&instruction->result, "%eax", frame);
-        }
+    if (!hasResult) return;
+
+    bool isFloat = isFloatOperand(&instruction->result);
+    if (isFloat) {
+        storeFloatOperand(&instruction->result, "%xmm0", frame);
+    } else {
+        storeOperand(&instruction->result, "%eax", frame);
     }
 }
 
-/* Exponente de una potencia de dos positiva, o -1 si el valor no lo es. */
-static int powerOfTwoExponent(int value) {
-    bool isPowerOfTwo = (value > 0 && (value & (value - 1)) == 0);
-    if (!isPowerOfTwo) return -1;
-
-    int exponent = 0;
-    while ((value >> exponent) > 1) {
-        exponent++;
-    }
-    return exponent;
+static void emitBinaryOp(const TACInstruction *instruction, AsmOpcode opcode, const FunctionFrame *frame) {
+    loadOperand(&instruction->firstOperand, "%eax", frame);
+    loadOperand(&instruction->secondOperand, "%edx", frame);
+    AsmInstruction asmInstruction = asmOpReg(opcode, ASM_RAX, ASM_RDX);
+    emitAsm(&asmInstruction);
+    storeOperand(&instruction->result, "%eax", frame);
 }
 
-/*
- * Reemplaza una multiplicación entera por constante por una instrucción más
- * barata que `imull`, cuando se puede.
- *
- * `x * 2` equivale a desplazar un bit a la izquierda, y en general multiplicar
- * por 2^n equivale a desplazar n bits. El desplazamiento es correcto para la
- * multiplicación con signo: desborda exactamente igual que `imull`, truncando
- * módulo 2^32.
- *
- * Solo se aplica a potencias de dos **positivas**. Con un multiplicador
- * negativo haría falta además negar el resultado, y con la **división** el
- * desplazamiento directamente no sirve: `sarl` redondea los negativos hacia
- * abajo y la división entera del lenguaje redondea hacia cero.
- *
- * @return true si emitió la versión reducida; false si hay que usar `imull`.
- */
 static bool emitStrengthReducedMultiplication(const TACInstruction *instruction, const FunctionFrame *frame) {
     bool isEnabled = isOptimizationEnabled(activeOptimizations, OPTIMIZATION_STRENGTH);
     if (!isEnabled) return false;
@@ -614,7 +673,6 @@ static bool emitStrengthReducedMultiplication(const TACInstruction *instruction,
     const TACOperand *first = &instruction->firstOperand;
     const TACOperand *second = &instruction->secondOperand;
 
-    /* La constante puede estar de cualquiera de los dos lados. */
     const TACOperand *constantOperand = NULL;
     const TACOperand *valueOperand = NULL;
 
@@ -631,7 +689,6 @@ static bool emitStrengthReducedMultiplication(const TACInstruction *instruction,
     int multiplier = constantOperand->value.intValue;
 
     if (multiplier == 0) {
-        /* El resultado es cero sin importar el otro operando. */
         AsmInstruction clear = asmOpReg(ASM_XOR, ASM_RAX, ASM_RAX);
         emitAsm(&clear);
         storeOperand(&instruction->result, "%eax", frame);
@@ -639,7 +696,6 @@ static bool emitStrengthReducedMultiplication(const TACInstruction *instruction,
     }
 
     if (multiplier == 1) {
-        /* El resultado es el otro operando tal cual. */
         loadOperand(valueOperand, "%eax", frame);
         storeOperand(&instruction->result, "%eax", frame);
         return true;
@@ -656,12 +712,15 @@ static bool emitStrengthReducedMultiplication(const TACInstruction *instruction,
     return true;
 }
 
-static void emitBinaryOp(const TACInstruction *instruction, AsmOpcode opcode, const FunctionFrame *frame) {
-    loadOperand(&instruction->firstOperand, "%eax", frame);
-    loadOperand(&instruction->secondOperand, "%edx", frame);
-    AsmInstruction asmInstruction = asmOpReg(opcode, ASM_RAX, ASM_RDX);
-    emitAsm(&asmInstruction);
-    storeOperand(&instruction->result, "%eax", frame);
+static int powerOfTwoExponent(int value) {
+    bool isPowerOfTwo = (value > 0 && (value & (value - 1)) == 0);
+    if (!isPowerOfTwo) return -1;
+
+    int exponent = 0;
+    while ((value >> exponent) > 1) {
+        exponent++;
+    }
+    return exponent;
 }
 
 static void emitFloatBinaryOp(const TACInstruction *instruction, const char *mnemonic, const FunctionFrame *frame) {
@@ -671,7 +730,6 @@ static void emitFloatBinaryOp(const TACInstruction *instruction, const char *mne
     storeFloatOperand(&instruction->result, "%xmm0", frame);
 }
 
-/* idivl divide %edx:%eax; cociente en %eax y resto en %edx. Usa %ecx para no pisar %edx. */
 static void emitDivisionOp(const TACInstruction *instruction, const FunctionFrame *frame, const char *resultRegisterName) {
     loadOperand(&instruction->firstOperand, "%eax", frame);
     loadOperand(&instruction->secondOperand, "%ecx", frame);
@@ -701,7 +759,7 @@ static void emitFloatRelationalOp(const TACInstruction *instruction, const char 
     buildStringf("    comiss %%xmm1, %%xmm0\n");
     buildStringf("    %s %%al\n", conditionMnemonic);
 
-    // En IEEE-754 las comparaciones con NaN son falsas; setnp filtra el flag de paridad.
+    // En IEEE-754 las comparaciones con NaN son falsas; setnp filtra el flag de paridad
     bool requiresUnorderedCheck = (strcmp(conditionMnemonic, "sete") == 0 || strcmp(conditionMnemonic, "setb") == 0);
     if (requiresUnorderedCheck) {
         buildStringf("    setnp %%dl\n");
@@ -722,7 +780,7 @@ static void loadOperand(const TACOperand *operand, const char *registerName, con
         return;
     }
 
-    int offset;
+    int offset = 0;
     OperandLocation location = resolveOperandLocation(operand, frame, &offset);
     if (location == LOCATION_UNRESOLVED) return;
 
@@ -735,7 +793,7 @@ static void loadOperand(const TACOperand *operand, const char *registerName, con
 static void storeOperand(const TACOperand *operand, const char *registerName, const FunctionFrame *frame) {
     if (operand == NULL) return;
 
-    int offset;
+    int offset = 0;
     OperandLocation location = resolveOperandLocation(operand, frame, &offset);
     if (location == LOCATION_UNRESOLVED) return;
 
@@ -754,7 +812,7 @@ static void loadFloatOperand(const TACOperand *operand, const char *xmmRegister,
         return;
     }
 
-    int offset;
+    int offset = 0;
     OperandLocation location = resolveOperandLocation(operand, frame, &offset);
     if (location == LOCATION_UNRESOLVED) return;
 
@@ -768,7 +826,7 @@ static void loadFloatOperand(const TACOperand *operand, const char *xmmRegister,
 static void storeFloatOperand(const TACOperand *operand, const char *xmmRegister, const FunctionFrame *frame) {
     if (operand == NULL) return;
 
-    int offset;
+    int offset = 0;
     OperandLocation location = resolveOperandLocation(operand, frame, &offset);
     if (location == LOCATION_UNRESOLVED) return;
 
@@ -780,8 +838,7 @@ static void storeFloatOperand(const TACOperand *operand, const char *xmmRegister
 }
 
 static OperandLocation resolveOperandLocation(const TACOperand *operand, const FunctionFrame *frame, int *offset) {
-    *offset = getSlotOffset(frame, operand->name);
-    bool isInStack = (*offset != 0);
+    bool isInStack = getSlotOffset(frame, operand->name, offset);
     if (isInStack) {
         return LOCATION_STACK;
     }
@@ -841,7 +898,7 @@ static void registerGlobalVariable(const TACOperand *operand) {
 
     if (globalVariableCount >= globalVariableCapacity) {
         int newCapacity = (globalVariableCapacity == 0) ? 64 : globalVariableCapacity * 2;
-        char **newNames = (char **)realloc(globalVariableNames, sizeof(char *) * newCapacity);
+        char **newNames = (char **)realloc(globalVariableNames, sizeof(char *) * (size_t)newCapacity);
         if (newNames == NULL) return;
         globalVariableNames = newNames;
         globalVariableCapacity = newCapacity;
@@ -877,7 +934,7 @@ static const char *internFloatConstant(float value) {
 
     if (floatConstantCount >= floatConstantCapacity) {
         int newCapacity = (floatConstantCapacity == 0) ? 64 : floatConstantCapacity * 2;
-        FloatConstant *newArray = (FloatConstant *)realloc(floatConstants, sizeof(FloatConstant) * newCapacity);
+        FloatConstant *newArray = (FloatConstant *)realloc(floatConstants, sizeof(FloatConstant) * (size_t)newCapacity);
         if (newArray == NULL) {
             return (floatConstantCount > 0) ? floatConstants[0].label : "";
         }
@@ -897,4 +954,55 @@ static unsigned int getFloatBits(float value) {
     union { float asFloat; unsigned int asBits; } conversion;
     conversion.asFloat = value;
     return conversion.asBits;
+}
+
+static void emitFloatConstantPool(const TACList *tacList) {
+    floatConstantCount = 0;
+
+    for (const TACInstruction *instruction = tacList->head; instruction != NULL; instruction = instruction->next) {
+        const TACOperand *operands[] = { &instruction->firstOperand, &instruction->secondOperand, &instruction->result };
+
+        for (int i = 0; i < 3; i++) {
+            bool isFloatConstant = (operands[i]->kind == OPERAND_CONSTANT && operands[i]->type == TYPE_FLOAT);
+            if (isFloatConstant) {
+                internFloatConstant(operands[i]->value.floatValue);
+            }
+        }
+    }
+
+    bool hasNoConstants = (floatConstantCount == 0);
+    if (hasNoConstants) return;
+
+    buildStringf(".section .rodata\n");
+    for (int i = 0; i < floatConstantCount; i++) {
+        buildStringf(".align 4\n");
+        buildStringf("%s:\n", floatConstants[i].label);
+        buildStringf("    .long %u\n", getFloatBits(floatConstants[i].value));
+    }
+    buildStringf("\n");
+}
+
+static void emitGlobals(const TACList *tacList) {
+    if (tacList == NULL) return;
+
+    bool hasGlobals = false;
+    for (const TACInstruction *instruction = tacList->head; instruction != NULL; instruction = instruction->next) {
+        if (instruction->operation == TAC_GLOBAL_DECL) {
+            if (!hasGlobals) {
+                buildStringf(".data\n");
+                hasGlobals = true;
+            }
+            registerGlobalVariable(&instruction->firstOperand);
+
+            const char *name = getGlobalName(&instruction->firstOperand);
+            buildStringf(".globl %s\n", name);
+            buildStringf(".align 4\n");
+            buildStringf("%s:\n", name);
+            buildStringf("    .long 0\n");
+        }
+    }
+
+    if (hasGlobals) {
+        buildStringf("\n");
+    }
 }

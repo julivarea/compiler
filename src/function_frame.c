@@ -97,18 +97,21 @@ int addAnonymousSlot(FunctionFrame *frame) {
     return -frame->nextOffset;
 }
 
-int getSlotOffset(const FunctionFrame *frame, const char *name) {
+bool getSlotOffset(const FunctionFrame *frame, const char *name, int *outOffset) {
     bool isInvalidQuery = (frame == NULL || name == NULL);
-    if (isInvalidQuery) return 0;
+    if (isInvalidQuery) return false;
 
     for (int i = 0; i < frame->slotCount; i++) {
         bool matchesSlot = (strcmp(frame->slots[i].name, name) == 0);
         if (matchesSlot) {
-            return frame->slots[i].offset;
+            if (outOffset != NULL) {
+                *outOffset = frame->slots[i].offset;
+            }
+            return true;
         }
     }
-    
-    return 0;
+
+    return false;
 }
 
 void ensurePendingParamCapacity(FunctionFrame *frame, int neededCapacity) {
