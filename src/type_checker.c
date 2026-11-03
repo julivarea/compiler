@@ -77,7 +77,7 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, bool isExpression) {
     }
 
     NodeAST *parametersNode = method->parameters;
-    int expectedArgumentCount = parametersNode ? parametersNode->childCount : 0;
+    int expectedArgumentCount = parametersNode->childCount;
 
     if (node->childCount != expectedArgumentCount) {
         semanticError(node->line, "Cantidad de argumentos incorrecta. Se esperaban %d pero se pasaron %d.", expectedArgumentCount, node->childCount);

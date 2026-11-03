@@ -108,19 +108,13 @@ static void analyzeMethodNode(NodeAST *node, Scope *currentScope) {
     }
 
     NodeAST *parameters = GET_LEFT(node);
-    bool hasParameters = (parameters != NULL);
-    if (hasParameters) {
-        for (int i = 0; i < parameters->childCount; i++) {
-            analyzeNodeSemantics(parameters->children[i], methodScope);
-        }
+    for (int i = 0; i < parameters->childCount; i++) {
+        analyzeNodeSemantics(parameters->children[i], methodScope);
     }
 
     NodeAST *body = GET_RIGHT(node);
-    bool hasBody = (body != NULL);
-    if (hasBody) {
-        for (int i = 0; i < body->childCount; i++) {
-            analyzeNodeSemantics(body->children[i], methodScope);
-        }
+    for (int i = 0; i < body->childCount; i++) {
+        analyzeNodeSemantics(body->children[i], methodScope);
     }
 
     bool requiresReturn = (node->type != TYPE_VOID);

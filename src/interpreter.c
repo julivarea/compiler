@@ -66,10 +66,6 @@ Scope *interpreteSemantics(NodeAST *root, bool debug) {
 static void registerGlobalDeclarations(NodeAST *root, Scope *globalScope) {
     for (int i = 0; i < root->childCount; i++) {
         NodeAST *child = root->children[i];
-        if (child == NULL) {
-            continue;
-        }
-
         bool isVariableDeclaration = (child->nodeType == VARIABLE_DECLARATION_NODE);
         bool isMethodDeclaration = (child->nodeType == METHOD_DECLARATION_NODE);
 
@@ -171,10 +167,6 @@ static void assignSymbolValue(Symbol *target, Symbol source) {
 }
 
 static void bindParameters(Scope *functionScope, NodeAST *parametersNode, Symbol *argumentValues) {
-    if (parametersNode == NULL) {
-        return;
-    }
-
     for (int i = 0; i < parametersNode->childCount; i++) {
         NodeAST *parameterNode = parametersNode->children[i];
         Symbol *parameterSymbol = newSymbol(strdup(parameterNode->symbol->id), VARIABLE_SYMBOL, parameterNode->type, NULL);

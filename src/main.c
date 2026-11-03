@@ -18,6 +18,8 @@ int main(int argc, char **argv) {
     }
 
     yyin = fopen(options.input, "r");
+
+    // se maneja la falla del sistema, e.g : no such file or directory
     if (yyin == NULL) {
         perror(options.input);
         freeOptions(&options);
@@ -25,9 +27,6 @@ int main(int argc, char **argv) {
     }
 
     int exitCode = compile(&options);
-
-    debugPrintf(options.debug && exitCode == 0, "\n[DRIVER] Salida escrita en %s\n", options.output);
-
     fclose(yyin);
     freeOptions(&options);
     return exitCode;

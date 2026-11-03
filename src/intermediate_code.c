@@ -50,8 +50,6 @@ const TACList *generateIntermediateCode(NodeAST *root) {
 
     for (int i = 0; i < root->childCount; i++) {
         NodeAST *declaration = root->children[i];
-        if (declaration == NULL) continue;
-
         bool isGlobalVariable = (declaration->nodeType == VARIABLE_DECLARATION_NODE);
         if (isGlobalVariable) {
             generateGlobalDeclarationCode(declaration);
@@ -110,7 +108,7 @@ static void generateStatementCode(NodeAST *node) {
 
 static void generateMethodDeclarationCode(NodeAST *node) {
     NodeAST *parameters = GET_LEFT(node);
-    int parameterCount = (parameters != NULL) ? parameters->childCount : 0;
+    int parameterCount = parameters->childCount;
     TACOperand method = tacMethod(node->symbol->id, node->type);
 
     DataType previousMethodType = currentMethodType;
@@ -270,10 +268,6 @@ static TACOperand generateShortCircuitCode(NodeAST *node) {
 
 static TACOperand generateCallExpressionCode(NodeAST *node) {
     generateCallArguments(node);
-    bool isValidMethod = (node->symbol != NULL && node->symbol->id != NULL);
-    if (!isValidMethod) {
-        return tacNone();
-    }
 
     TACOperand result = newTemporary(node->type);
     emit(TAC_CALL, result, tacMethod(node->symbol->id, node->type), tacConstantInt(node->childCount));
@@ -281,11 +275,6 @@ static TACOperand generateCallExpressionCode(NodeAST *node) {
 }
 
 static TACOperand generateConstantOperand(NodeAST *node) {
-    bool hasSymbol = (node->symbol != NULL);
-    if (!hasSymbol) {
-        return tacNone();
-    }
-
     switch (node->symbol->type) {
         case TYPE_INT:
             return tacConstantInt(node->symbol->value.intValue);
@@ -299,12 +288,11 @@ static TACOperand generateConstantOperand(NodeAST *node) {
 }
 
 static void generateCallArguments(NodeAST *node) {
-    NodeAST *formals = (node->symbol != NULL) ? node->symbol->parameters : NULL;
+    NodeAST *formals = node->symbol->parameters;
 
     for (int i = 0; i < node->childCount; i++) {
         TACOperand argument = generateExpressionCode(node->children[i]);
-        bool hasFormal = (formals != NULL && i < formals->childCount);
-        bool needsFloatCoercion = hasFormal && (formals->children[i]->type == TYPE_FLOAT);
+        bool needsFloatCoercion = (formals->children[i]->type == TYPE_FLOAT);
 
         if (needsFloatCoercion) {
             argument = coerceToFloat(argument);
