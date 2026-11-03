@@ -312,6 +312,37 @@ void test_opt_const_fold_reduces_arithmetic_quads(void) {
     assertSemanticEquivalence(source, OPTIMIZATION_CONST_FOLD | OPTIMIZATION_CONST_PROP, 30);
 }
 
+// Division y modulo con desbordamiento (INT32_MIN / -1 e INT32_MIN % -1) no se pliegan y no abortan el compilador
+void test_opt_const_fold_signed_overflow_does_not_crash(void) {
+    const char *sourceDiv =
+        "int main() {\n"
+        "    int minVal;\n"
+        "    int res;\n"
+        "    minVal = -2147483647 - 1;\n"
+        "    res = minVal / -1;\n"
+        "    return res;\n"
+        "}\n";
+
+    TACList *tacDiv = compileToOptimizedTAC(sourceDiv, OPTIMIZATION_CONST_FOLD | OPTIMIZATION_CONST_PROP);
+    TEST_ASSERT_NOT_NULL(tacDiv);
+    // La division no debe plegarse debido al desbordamiento
+    TEST_ASSERT_EQUAL_INT(1, countOperations(tacDiv, TAC_DIV));
+
+    const char *sourceMod =
+        "int main() {\n"
+        "    int minVal;\n"
+        "    int res;\n"
+        "    minVal = -2147483647 - 1;\n"
+        "    res = minVal % -1;\n"
+        "    return res;\n"
+        "}\n";
+
+    TACList *tacMod = compileToOptimizedTAC(sourceMod, OPTIMIZATION_CONST_FOLD | OPTIMIZATION_CONST_PROP);
+    TEST_ASSERT_NOT_NULL(tacMod);
+    // El modulo no debe plegarse debido al desbordamiento
+    TEST_ASSERT_EQUAL_INT(1, countOperations(tacMod, TAC_MOD));
+}
+
 // ------------------------------------------------------------------------
 // Grupo 2: Constant Propagation (Propagacion de Constantes)
 // ------------------------------------------------------------------------
@@ -961,6 +992,7 @@ int main(void) {
     RUN_TEST(test_opt_const_fold_boolean_and_relational);
     RUN_TEST(test_opt_const_fold_unary_operators);
     RUN_TEST(test_opt_const_fold_reduces_arithmetic_quads);
+    RUN_TEST(test_opt_const_fold_signed_overflow_does_not_crash);
 
     // Grupo 2: Constant Propagation
     RUN_TEST(test_opt_const_prop_linear_sequence);

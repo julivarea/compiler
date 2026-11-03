@@ -1,5 +1,6 @@
 #include "optimizer.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -551,22 +552,26 @@ static bool evaluateBinary(TACOperation operation, const TACOperand *firstOperan
                 }
                 *folded = tacConstantFloat(asFloat(firstOperand) / rightValue);
             } else {
+                int leftValue = asInt(firstOperand);
                 int rightValue = asInt(secondOperand);
                 bool isZeroDivisor = (rightValue == 0);
-                if (isZeroDivisor) {
+                bool isSignedOverflow = (leftValue == INT_MIN && rightValue == -1);
+                if (isZeroDivisor || isSignedOverflow) {
                     return false;
                 }
-                *folded = tacConstantInt(asInt(firstOperand) / rightValue);
+                *folded = tacConstantInt(leftValue / rightValue);
             }
             return true;
 
         case TAC_MOD: {
+            int leftValue = asInt(firstOperand);
             int rightValue = asInt(secondOperand);
             bool isZeroDivisor = (rightValue == 0);
-            if (isZeroDivisor) {
+            bool isSignedOverflow = (leftValue == INT_MIN && rightValue == -1);
+            if (isZeroDivisor || isSignedOverflow) {
                 return false;
             }
-            *folded = tacConstantInt(asInt(firstOperand) % rightValue);
+            *folded = tacConstantInt(leftValue % rightValue);
             return true;
         }
 
