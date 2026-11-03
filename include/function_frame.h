@@ -15,11 +15,10 @@
 #define ALIGN_UP(value, alignment) (((value) + (alignment) - 1) & ~((alignment) - 1))
 
 /**
- * @brief Cantidad máxima de argumentos acumulados sin su llamada asociada.
- *
- * Acota el anidamiento de llamadas dentro de los argumentos de otra llamada.
+ * @brief Capacidad inicial de la pila dinámica de argumentos pendientes.
  */
-#define MAX_PENDING_PARAMS 64
+#define INITIAL_PENDING_PARAMS_CAPACITY 64
+#define MAX_PENDING_PARAMS INITIAL_PENDING_PARAMS_CAPACITY
 
 /**
  * @brief Representa una posición en el stack frame para una variable o temporal.
@@ -43,15 +42,16 @@ typedef struct FunctionFrame {
     int paramCount;   /**< Contador de parámetros procesados en el prólogo. */
 
     /**
-     * Pila de argumentos pendientes de la llamada en curso.
+     * Pila dinámica de argumentos pendientes de la llamada en curso.
      *
      * Cada param del TAC copia su valor a un slot propio del frame y apila
      * aquí el desplazamiento de ese slot; el call consume los últimos N.
      */
-    int pendingParamSlots[MAX_PENDING_PARAMS];
-    DataType pendingParamTypes[MAX_PENDING_PARAMS]; /**< Clase de cada argumento: entera o real. */
-    int pendingParamCount; /**< Argumentos apilados sin su llamada correspondiente. */
-    int maxPendingParams;  /**< Pico de la pila, calculado antes de emitir. */
+    int *pendingParamSlots;
+    DataType *pendingParamTypes; /**< Clase de cada argumento: entera o real. */
+    int pendingParamCount;       /**< Argumentos apilados sin su llamada correspondiente. */
+    int pendingParamCapacity;    /**< Capacidad actual de los arreglos dinámicos. */
+    int maxPendingParams;        /**< Pico de la pila, calculado antes de emitir. */
 
     int integerParamCount; /**< Parámetros formales enteros ya ubicados en el prólogo. */
     int floatParamCount;   /**< Parámetros formales reales ya ubicados en el prólogo. */
@@ -113,5 +113,13 @@ int addAnonymousSlot(FunctionFrame *frame);
  * @return Desplazamiento relativo a %rbp (negativo), o 0 si no se encuentra.
  */
 int getSlotOffset(const FunctionFrame *frame, const char *name);
+
+/**
+ * @brief Asegura capacidad suficiente en los arreglos de argumentos pendientes del frame.
+ *
+ * @param frame Marco de función a expandir.
+ * @param neededCapacity Cantidad mínima de ranuras requeridas.
+ */
+void ensurePendingParamCapacity(FunctionFrame *frame, int neededCapacity);
 
 #endif // FUNCTION_FRAME_H
