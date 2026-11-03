@@ -240,6 +240,13 @@ void test_compiled_program_unused_variable_detected_and_removed(void) {
     TEST_ASSERT_TRUE(isDeadDefinition(analysis, instUnused));
     TEST_ASSERT_FALSE(isDeadDefinition(analysis, instUsed));
 
+    BasicBlock *blockUnused = findInstructionBlock(analysis, instUnused);
+    BasicBlock *blockUsed = findInstructionBlock(analysis, instUsed);
+    TEST_ASSERT_NOT_NULL(blockUnused);
+    TEST_ASSERT_NOT_NULL(blockUsed);
+    TEST_ASSERT_TRUE(isDeadDefinitionInBlock(analysis, blockUnused, instUnused));
+    TEST_ASSERT_FALSE(isDeadDefinitionInBlock(analysis, blockUsed, instUsed));
+
     int countBefore = list->count;
     unlinkInstruction(list, prevUnused, instUnused);
     TEST_ASSERT_EQUAL_INT(countBefore - 1, list->count);
