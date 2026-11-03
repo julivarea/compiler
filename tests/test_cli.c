@@ -336,6 +336,40 @@ void test_cli_opt_unknown_fails(void) {
     TEST_ASSERT_EQUAL_INT(1, rc);
 }
 
+// -opt con lista separada por comas y flags multiples acumula correctamente
+void test_cli_opt_comma_list_and_multiple_flags(void) {
+    // 1. Lista separada por comas
+    const char *args1[] = { "mi_compilador", "-opt", "const-fold,const-prop", "ejemplo.ctds" };
+    int rc1 = parseArgv(4, args1, &testOptions);
+    TEST_ASSERT_EQUAL_INT(0, rc1);
+    TEST_ASSERT_EQUAL_INT(OPTIMIZATION_CONST_FOLD | OPTIMIZATION_CONST_PROP, testOptions.optimizations);
+    freeOptions(&testOptions);
+
+    // 2. Flags multiples consecutivos
+    const char *args2[] = { "mi_compilador", "-opt", "const-fold", "-opt", "dead-code", "ejemplo.ctds" };
+    int rc2 = parseArgv(6, args2, &testOptions);
+    TEST_ASSERT_EQUAL_INT(0, rc2);
+    TEST_ASSERT_EQUAL_INT(OPTIMIZATION_CONST_FOLD | OPTIMIZATION_DEAD_CODE, testOptions.optimizations);
+    freeOptions(&testOptions);
+
+    // 3. Lista de tres elementos sin espacios
+    const char *args3[] = { "mi_compilador", "-opt", "const-fold,dead-code,self-assign", "ejemplo.ctds" };
+    int rc3 = parseArgv(4, args3, &testOptions);
+    TEST_ASSERT_EQUAL_INT(0, rc3);
+    TEST_ASSERT_EQUAL_INT(OPTIMIZATION_CONST_FOLD | OPTIMIZATION_DEAD_CODE | OPTIMIZATION_SELF_ASSIGN, testOptions.optimizations);
+    freeOptions(&testOptions);
+
+    // 4. Nombre invalido dentro de lista separada por comas falla
+    const char *args4[] = { "mi_compilador", "-opt", "const-fold,invalido", "ejemplo.ctds" };
+    int rc4 = parseArgv(4, args4, &testOptions);
+    TEST_ASSERT_EQUAL_INT(1, rc4);
+
+    // 5. Espacios luego de la coma no son tolerados (convencion Unix estricta)
+    const char *args5[] = { "mi_compilador", "-opt", "const-fold, dead-code", "ejemplo.ctds" };
+    int rc5 = parseArgv(4, args5, &testOptions);
+    TEST_ASSERT_EQUAL_INT(1, rc5);
+}
+
 // Con -opt y -target explicito la extension por defecto es .opt
 void test_cli_opt_with_explicit_target_extension(void) {
     const char *args[] = { "mi_compilador", "-opt", "-target", "codinter", "ejemplo.ctds" };
@@ -689,6 +723,7 @@ int main(void) {
     RUN_TEST(test_cli_opt_all_and_default);
     RUN_TEST(test_cli_opt_specific_passes);
     RUN_TEST(test_cli_opt_unknown_fails);
+    RUN_TEST(test_cli_opt_comma_list_and_multiple_flags);
     RUN_TEST(test_cli_opt_with_explicit_target_extension);
     RUN_TEST(test_cli_free_options_null_safe);
     RUN_TEST(test_cli_get_target_name);

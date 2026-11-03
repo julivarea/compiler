@@ -16,6 +16,7 @@ static bool validateOutputNotInput(const Options *options);
 
 static bool parseTarget(const char *value, Target *target);
 static bool parseOptimization(const char *value, OptimizationSet *optimizations);
+static bool parseSingleOptimization(const char *name, OptimizationSet *outFlag);
 static bool hasInputExtension(const char *name);
 static char *buildOutputName(const char *input, const char *extension);
 static const char *getTargetExtension(const Options *options);
@@ -222,22 +223,64 @@ static bool parseTarget(const char *value, Target *target) {
     return true;
 }
 
+static bool parseSingleOptimization(const char *name, OptimizationSet *outFlag) {
+    if (name == NULL || *name == '\0') {
+        return false;
+    }
+
+    if (strcmp(name, "all") == 0)                   *outFlag = OPTIMIZATION_ALL;
+    else if (strcmp(name, "const-fold") == 0)       *outFlag = OPTIMIZATION_CONST_FOLD;
+    else if (strcmp(name, "const-prop") == 0)       *outFlag = OPTIMIZATION_CONST_PROP;
+    else if (strcmp(name, "dead-code") == 0)        *outFlag = OPTIMIZATION_DEAD_CODE;
+    else if (strcmp(name, "const-branch") == 0)     *outFlag = OPTIMIZATION_CONST_BRANCH;
+    else if (strcmp(name, "self-assign") == 0)      *outFlag = OPTIMIZATION_SELF_ASSIGN;
+    else if (strcmp(name, "peephole") == 0)         *outFlag = OPTIMIZATION_PEEPHOLE;
+    else if (strcmp(name, "strength-reduce") == 0)  *outFlag = OPTIMIZATION_STRENGTH;
+    else return false;
+
+    return true;
+}
+
 static bool parseOptimization(const char *value, OptimizationSet *optimizations) {
     if (value == NULL) {
-        *optimizations = OPTIMIZATION_NONE;
         return true;
     }
 
-    if (strcmp(value, "all") == 0)             *optimizations = OPTIMIZATION_ALL;
-    else if (strcmp(value, "const-fold") == 0) *optimizations = OPTIMIZATION_CONST_FOLD;
-    else if (strcmp(value, "const-prop") == 0) *optimizations = OPTIMIZATION_CONST_PROP;
-    else if (strcmp(value, "dead-code") == 0)  *optimizations = OPTIMIZATION_DEAD_CODE;
-    else if (strcmp(value, "const-branch") == 0) *optimizations = OPTIMIZATION_CONST_BRANCH;
-    else if (strcmp(value, "self-assign") == 0)  *optimizations = OPTIMIZATION_SELF_ASSIGN;
-    else if (strcmp(value, "peephole") == 0)     *optimizations = OPTIMIZATION_PEEPHOLE;
-    else if (strcmp(value, "strength-reduce") == 0) *optimizations = OPTIMIZATION_STRENGTH;
-    else return false;
+    bool hasComma = (strchr(value, ',') != NULL);
+    if (!hasComma) {
+        OptimizationSet flag = 0;
+        bool isValid = parseSingleOptimization(value, &flag);
+        if (!isValid) {
+            return false;
+        }
+        *optimizations |= flag;
+        return true;
+    }
 
+    char *copy = malloc(strlen(value) + 1);
+    if (copy == NULL) {
+        return false;
+    }
+    strcpy(copy, value);
+
+    OptimizationSet accumulated = 0;
+    char *savePointer = NULL;
+    char *token = strtok_r(copy, ",", &savePointer);
+
+    while (token != NULL) {
+        OptimizationSet flag = 0;
+        bool isValid = parseSingleOptimization(token, &flag);
+        if (!isValid) {
+            free(copy);
+            return false;
+        }
+
+        accumulated |= flag;
+        token = strtok_r(NULL, ",", &savePointer);
+    }
+
+    free(copy);
+    *optimizations |= accumulated;
     return true;
 }
 
