@@ -705,6 +705,14 @@ static void emitFloatRelationalOp(const TACInstruction *instruction, const char 
     loadFloatOperand(&instruction->secondOperand, "%xmm1", frame);
     buildStringf("    comiss %%xmm1, %%xmm0\n");
     buildStringf("    %s %%al\n", conditionMnemonic);
+
+    // En IEEE-754 las comparaciones con NaN son falsas; setnp filtra el flag de paridad.
+    bool requiresUnorderedCheck = (strcmp(conditionMnemonic, "sete") == 0 || strcmp(conditionMnemonic, "setb") == 0);
+    if (requiresUnorderedCheck) {
+        buildStringf("    setnp %%dl\n");
+        buildStringf("    andb %%dl, %%al\n");
+    }
+
     buildStringf("    movzbl %%al, %%eax\n");
     storeOperand(&instruction->result, "%eax", frame);
 }
