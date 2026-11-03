@@ -811,73 +811,9 @@ static bool isDeadStoreCandidate(const TACList *tacList, const TACInstruction *i
 static void printSingleInstruction(FILE *output, const TACInstruction *instruction) {
     if (instruction == NULL) return;
 
-    const char *result = getOperandName(&instruction->result);
-    const char *first = getOperandName(&instruction->firstOperand);
-    const char *second = getOperandName(&instruction->secondOperand);
-
-    switch (instruction->operation) {
-        case TAC_BEGIN_FUNC:
-            fprintf(output, "begin_func %s, %s\n", result, first);
-            break;
-        case TAC_END_FUNC:
-            fprintf(output, "end_func %s\n", result);
-            break;
-        case TAC_PARAM_DECL:
-            fprintf(output, "param_decl %s\n", first);
-            break;
-        case TAC_GLOBAL_DECL:
-        case TAC_LOCAL_DECL:
-            fprintf(output, "%s %s, %s\n",
-                    instruction->operation == TAC_GLOBAL_DECL ? "global" : "local",
-                    first, getDataTypeName(instruction->firstOperand.type));
-            break;
-        case TAC_LABEL:
-            fprintf(output, "%s:\n", result);
-            break;
-        case TAC_GOTO:
-            fprintf(output, "goto %s\n", first);
-            break;
-        case TAC_IF_FALSE:
-            fprintf(output, "if %s false goto %s\n", first, second);
-            break;
-        case TAC_IF_TRUE:
-            fprintf(output, "if %s true goto %s\n", first, second);
-            break;
-        case TAC_PARAM:
-            fprintf(output, "param %s\n", first);
-            break;
-        case TAC_CALL:
-            if (instruction->result.kind != OPERAND_NONE) {
-                fprintf(output, "%s = call %s, %s\n", result, first, second);
-            } else {
-                fprintf(output, "call %s, %s\n", first, second);
-            }
-            break;
-        case TAC_RETURN:
-            if (instruction->firstOperand.kind != OPERAND_NONE) {
-                fprintf(output, "ret %s\n", first);
-            } else {
-                fprintf(output, "ret\n");
-            }
-            break;
-        case TAC_ASSIGN:
-            fprintf(output, "%s = %s\n", result, first);
-            break;
-        case TAC_ADD: fprintf(output, "%s = %s + %s\n", result, first, second); break;
-        case TAC_SUB: fprintf(output, "%s = %s - %s\n", result, first, second); break;
-        case TAC_MUL: fprintf(output, "%s = %s * %s\n", result, first, second); break;
-        case TAC_DIV: fprintf(output, "%s = %s / %s\n", result, first, second); break;
-        case TAC_MOD: fprintf(output, "%s = %s %% %s\n", result, first, second); break;
-        case TAC_LT:  fprintf(output, "%s = %s < %s\n", result, first, second); break;
-        case TAC_GT:  fprintf(output, "%s = %s > %s\n", result, first, second); break;
-        case TAC_EQ:  fprintf(output, "%s = %s == %s\n", result, first, second); break;
-        case TAC_UMINUS: fprintf(output, "%s = -%s\n", result, first); break;
-        case TAC_NOT: fprintf(output, "%s = !%s\n", result, first); break;
-        case TAC_INT_TO_FLOAT: fprintf(output, "%s = int_to_float %s\n", result, first); break;
-        default:
-            fprintf(output, "instruccion tac %d\n", instruction->operation);
-            break;
-    }
+    char line[TAC_INSTRUCTION_TEXT_LENGTH];
+    formatTACInstruction(line, sizeof(line), instruction);
+    fprintf(output, "%s", line);
 }
 
 static void printTACWithDeletedInRed(const TACList *tacList,

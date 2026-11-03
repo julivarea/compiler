@@ -2,12 +2,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "string_builder.h"
 
-static void formatDeclarationInstruction(const TACInstruction *instruction, const char *result, const char *firstOperand);
-static void formatControlFlowInstruction(const TACInstruction *instruction, const char *result, const char *firstOperand, const char *secondOperand);
-static void formatCallOrReturnInstruction(const TACInstruction *instruction, const char *result, const char *firstOperand, const char *secondOperand);
-static void formatExpressionInstruction(const TACInstruction *instruction, const char *result, const char *firstOperand, const char *secondOperand);
+void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instruction);
 static const char *getOperatorSymbol(TACOperation operation);
 
 TACInstruction *createTACInstruction(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
@@ -30,133 +28,104 @@ void freeTACInstruction(TACInstruction *instruction) {
 }
 
 void printTACInstruction(const TACInstruction *instruction) {
+    char line[TAC_INSTRUCTION_TEXT_LENGTH];
+    formatTACInstruction(line, sizeof(line), instruction);
+    buildString(line);
+}
+
+void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instruction) {
+    buffer[0] = '\0';
     if (instruction == NULL) return;
 
-    const char *result         = getOperandName(&instruction->result);
-    const char *firstOperand   = getOperandName(&instruction->firstOperand);
-    const char *secondOperand  = getOperandName(&instruction->secondOperand);
-
+    /* getOperandName apunta al nombre interno del operando, estable mientras dura el llamado */
     switch (instruction->operation) {
         case TAC_BEGIN_FUNC:
-        case TAC_END_FUNC:
-        case TAC_PARAM_DECL:
-        case TAC_GLOBAL_DECL:
-        case TAC_LOCAL_DECL:
-            formatDeclarationInstruction(instruction, result, firstOperand);
-            break;
-
-        case TAC_LABEL:
-        case TAC_GOTO:
-        case TAC_IF_FALSE:
-        case TAC_IF_TRUE:
-            formatControlFlowInstruction(instruction, result, firstOperand, secondOperand);
-            break;
-
-        case TAC_PARAM:
-        case TAC_CALL:
-        case TAC_RETURN:
-            formatCallOrReturnInstruction(instruction, result, firstOperand, secondOperand);
-            break;
-
-        default:
-            formatExpressionInstruction(instruction, result, firstOperand, secondOperand);
-            break;
-    }
-}
-
-static void formatDeclarationInstruction(const TACInstruction *instruction, const char *result, const char *firstOperand) {
-    switch (instruction->operation) {
-        case TAC_BEGIN_FUNC:
-            buildStringf("begin_func %s, %s\n", result, firstOperand);
+            snprintf(buffer, size, "begin_func %s, %s\n",
+                     getOperandName(&instruction->result), getOperandName(&instruction->firstOperand));
             break;
 
         case TAC_END_FUNC:
-            buildStringf("end_func %s\n", result);
+            snprintf(buffer, size, "end_func %s\n", getOperandName(&instruction->result));
             break;
 
         case TAC_PARAM_DECL:
-            buildStringf("param_decl %s\n", firstOperand);
+            snprintf(buffer, size, "param_decl %s\n", getOperandName(&instruction->firstOperand));
             break;
 
         case TAC_GLOBAL_DECL:
         case TAC_LOCAL_DECL:
-            buildStringf("%s %s, %s\n",
-                         instruction->operation == TAC_GLOBAL_DECL ? "global" : "local",
-                         firstOperand, getDataTypeName(instruction->firstOperand.type));
+            snprintf(buffer, size, "%s %s, %s\n",
+                     instruction->operation == TAC_GLOBAL_DECL ? "global" : "local",
+                     getOperandName(&instruction->firstOperand),
+                     getDataTypeName(instruction->firstOperand.type));
             break;
 
-        default:
-            break;
-    }
-}
-
-static void formatControlFlowInstruction(const TACInstruction *instruction, const char *result, const char *firstOperand, const char *secondOperand) {
-    switch (instruction->operation) {
         case TAC_LABEL:
-            buildStringf("%s:\n", result);
+            snprintf(buffer, size, "%s:\n", getOperandName(&instruction->result));
             break;
 
         case TAC_GOTO:
-            buildStringf("goto %s\n", firstOperand);
+            snprintf(buffer, size, "goto %s\n", getOperandName(&instruction->firstOperand));
             break;
 
         case TAC_IF_FALSE:
         case TAC_IF_TRUE:
-            buildStringf("if %s %s %s\n",
-                         firstOperand,
-                         instruction->operation == TAC_IF_FALSE ? "false goto" : "true goto",
-                         secondOperand);
+            snprintf(buffer, size, "if %s %s %s\n",
+                     getOperandName(&instruction->firstOperand),
+                     instruction->operation == TAC_IF_FALSE ? "false goto" : "true goto",
+                     getOperandName(&instruction->secondOperand));
             break;
 
-        default:
-            break;
-    }
-}
-
-static void formatCallOrReturnInstruction(const TACInstruction *instruction, const char *result, const char *firstOperand, const char *secondOperand) {
-    switch (instruction->operation) {
         case TAC_PARAM:
-            buildStringf("param %s\n", firstOperand);
+            snprintf(buffer, size, "param %s\n", getOperandName(&instruction->firstOperand));
             break;
 
         case TAC_CALL:
             if (instruction->result.kind != OPERAND_NONE) {
-                buildStringf("%s = call %s, %s\n", result, firstOperand, secondOperand);
+                snprintf(buffer, size, "%s = call %s, %s\n",
+                         getOperandName(&instruction->result),
+                         getOperandName(&instruction->firstOperand),
+                         getOperandName(&instruction->secondOperand));
             } else {
-                buildStringf("call %s, %s\n", firstOperand, secondOperand);
+                snprintf(buffer, size, "call %s, %s\n",
+                         getOperandName(&instruction->firstOperand),
+                         getOperandName(&instruction->secondOperand));
             }
             break;
 
         case TAC_RETURN:
             if (instruction->firstOperand.kind != OPERAND_NONE) {
-                buildStringf("ret %s\n", firstOperand);
+                snprintf(buffer, size, "ret %s\n", getOperandName(&instruction->firstOperand));
             } else {
-                buildStringf("ret\n");
+                snprintf(buffer, size, "ret\n");
             }
             break;
 
-        default:
-            break;
-    }
-}
-
-static void formatExpressionInstruction(const TACInstruction *instruction, const char *result, const char *firstOperand, const char *secondOperand) {
-    switch (instruction->operation) {
         case TAC_ASSIGN:
-            buildStringf("%s = %s\n", result, firstOperand);
+            snprintf(buffer, size, "%s = %s\n",
+                     getOperandName(&instruction->result), getOperandName(&instruction->firstOperand));
             break;
 
         case TAC_UMINUS:
         case TAC_NOT:
-            buildStringf("%s = %s%s\n", result, getOperatorSymbol(instruction->operation), firstOperand);
+            snprintf(buffer, size, "%s = %s%s\n",
+                     getOperandName(&instruction->result),
+                     getOperatorSymbol(instruction->operation),
+                     getOperandName(&instruction->firstOperand));
             break;
 
         case TAC_INT_TO_FLOAT:
-            buildStringf("%s = int_to_float %s\n", result, firstOperand);
+            snprintf(buffer, size, "%s = int_to_float %s\n",
+                     getOperandName(&instruction->result),
+                     getOperandName(&instruction->firstOperand));
             break;
 
-        default:
-            buildStringf("%s = %s %s %s\n", result, firstOperand, getOperatorSymbol(instruction->operation), secondOperand);
+        default: /* operador binario: result = A sym B */
+            snprintf(buffer, size, "%s = %s %s %s\n",
+                     getOperandName(&instruction->result),
+                     getOperandName(&instruction->firstOperand),
+                     getOperatorSymbol(instruction->operation),
+                     getOperandName(&instruction->secondOperand));
             break;
     }
 }

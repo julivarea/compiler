@@ -1,3 +1,6 @@
+#ifndef _POSIX_C_SOURCE /* strdup, strtok_r */
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "cli.h"
 
 #include <stdbool.h>
@@ -6,8 +9,39 @@
 #include <string.h>
 #include <sys/stat.h>
 
+static const struct {
+    const char *name;
+    OptimizationSet flag;
+} OPT_NAMES[] = {
+    {"all", OPTIMIZATION_ALL},
+    {"const-fold", OPTIMIZATION_CONST_FOLD},
+    {"const-prop", OPTIMIZATION_CONST_PROP},
+    {"dead-code", OPTIMIZATION_DEAD_CODE},
+    {"const-branch", OPTIMIZATION_CONST_BRANCH},
+    {"self-assign", OPTIMIZATION_SELF_ASSIGN},
+    {"peephole", OPTIMIZATION_PEEPHOLE},
+    {"strength-reduce", OPTIMIZATION_STRENGTH},
+};
+
 static const char *INPUT_EXTENSION = ".ctds";
 
+static const struct {
+    const char *name;
+    Target target;
+    const char *extension;
+} STAGES[] = {
+    {"scan", TARGET_SCAN, ".lex"},
+    {"parse", TARGET_PARSE, ".sint"},
+    {"sem", TARGET_SEM, ".sem"},
+    {"codinter", TARGET_CODINTER, ".ci"},
+    {"assembly", TARGET_ASSEMBLY, ".ass"},
+    {"interp", TARGET_INTERP, ".interp"},
+    {"interpret", TARGET_INTERP, ".interp"}, 
+};
+
+static void initDefaultOptions(Options *options);
+static bool parsePositionalArgument(const char *argument, Options *options, const char *program);
+static bool validateInputFile(const Options *options, const char *program);
 static bool parseOutputOption(int *index, int argc, char **argv, const char **requestedOutput, const char *program);
 static bool parseTargetOption(int *index, int argc, char **argv, Options *options, const char *program);
 static bool parseOptimizationOption(int *index, int argc, char **argv, Options *options, const char *program);
@@ -26,69 +60,41 @@ int parseArguments(int argc, char **argv, Options *options) {
     const char *program = (argc > 0) ? argv[0] : "c-tds";
     const char *requestedOutput = NULL;
 
-    options->input = NULL;
-    options->output = NULL;
-    options->target = CURRENT_TARGET;
-    options->explicitTarget = 0;
-    options->debug = 0;
-    options->optimizations = OPTIMIZATION_NONE;
+    initDefaultOptions(options);
 
     for (int i = 1; i < argc; i++) {
         char *argument = argv[i];
 
         if (strcmp(argument, "-o") == 0) {
             if (!parseOutputOption(&i, argc, argv, &requestedOutput, program)) {
-                return 1;
+                return CLI_ERROR;
             }
         } else if (strcmp(argument, "-target") == 0) {
             if (!parseTargetOption(&i, argc, argv, options, program)) {
-                return 1;
+                return CLI_ERROR;
             }
         } else if (strcmp(argument, "-opt") == 0) {
             if (!parseOptimizationOption(&i, argc, argv, options, program)) {
-                return 1;
+                return CLI_ERROR;
             }
         } else if (strcmp(argument, "-debug") == 0) {
             options->debug = 1;
         } else {
-            bool isUnknownOption = (argument[0] == '-');
-            if (isUnknownOption) {
-                fprintf(stderr, "Error: opcion desconocida '%s'.\n", argument);
-                printUsage(program);
-                return 1;
+            if (!parsePositionalArgument(argument, options, program)) {
+                return CLI_ERROR;
             }
-
-            bool hasMultipleInputs = (options->input != NULL);
-            if (hasMultipleInputs) {
-                fprintf(stderr, "Error: se recibio mas de un archivo de entrada ('%s' y '%s').\n",
-                        options->input, argument);
-                printUsage(program);
-                return 1;
-            }
-
-            options->input = argument;
         }
     }
 
-    bool hasMissingInput = (options->input == NULL);
-    if (hasMissingInput) {
-        fprintf(stderr, "Error: falta el archivo de entrada.\n");
-        printUsage(program);
-        return 1;
-    }
-
-    bool hasValidExtension = hasInputExtension(options->input);
-    if (!hasValidExtension) {
-        fprintf(stderr, "Error: el archivo de entrada debe tener extension %s ('%s').\n",
-                INPUT_EXTENSION, options->input);
-        return 1;
+    if (!validateInputFile(options, program)) {
+        return CLI_ERROR;
     }
 
     if (!resolveOutputPath(options, requestedOutput)) {
-        return 1;
+        return CLI_ERROR;
     }
 
-    return 0;
+    return CLI_SUCCESS;
 }
 
 void freeOptions(Options *options) {
@@ -99,16 +105,57 @@ void freeOptions(Options *options) {
 }
 
 const char *getTargetName(Target target) {
-    switch (target) {
-        case TARGET_SCAN:     return "scan";
-        case TARGET_PARSE:    return "parse";
-        case TARGET_SEM:      return "sem";
-        case TARGET_CODINTER: return "codinter";
-        case TARGET_ASSEMBLY: return "assembly";
-        case TARGET_INTERP:   return "interp";
+    for (size_t i = 0; i < sizeof(STAGES) / sizeof(STAGES[0]); i++) {
+        if (STAGES[i].target == target) return STAGES[i].name;
+    }
+    return "?";
+}
+
+static void initDefaultOptions(Options *options) {
+    options->input = NULL;
+    options->output = NULL;
+    options->target = CURRENT_TARGET;
+    options->explicitTarget = 0;
+    options->debug = 0;
+    options->optimizations = OPTIMIZATION_NONE;
+}
+
+static bool parsePositionalArgument(const char *argument, Options *options, const char *program) {
+    bool isUnknownOption = (argument[0] == '-');
+    if (isUnknownOption) {
+        fprintf(stderr, "Error: opcion desconocida '%s'.\n", argument);
+        printUsage(program);
+        return false;
     }
 
-    return "?";
+    bool hasMultipleInputs = (options->input != NULL);
+    if (hasMultipleInputs) {
+        fprintf(stderr, "Error: se recibio mas de un archivo de entrada ('%s' y '%s').\n",
+                options->input, argument);
+        printUsage(program);
+        return false;
+    }
+
+    options->input = argument;
+    return true;
+}
+
+static bool validateInputFile(const Options *options, const char *program) {
+    bool hasMissingInput = (options->input == NULL);
+    if (hasMissingInput) {
+        fprintf(stderr, "Error: falta el archivo de entrada.\n");
+        printUsage(program);
+        return false;
+    }
+
+    bool hasValidExtension = hasInputExtension(options->input);
+    if (!hasValidExtension) {
+        fprintf(stderr, "Error: el archivo de entrada debe tener extension %s ('%s').\n",
+                INPUT_EXTENSION, options->input);
+        return false;
+    }
+
+    return true;
 }
 
 static bool parseOutputOption(int *index, int argc, char **argv, const char **requestedOutput, const char *program) {
@@ -151,10 +198,11 @@ static bool parseOptimizationOption(int *index, int argc, char **argv, Options *
     }
 
     if (!parseOptimization(optName, &options->optimizations)) {
-        fprintf(stderr, "Error: optimizacion desconocida '%s'. Soportadas: all, const-fold,"
-                        " const-prop, dead-code, const-branch, self-assign, peephole,"
-                        " strength-reduce.\n",
-                optName);
+        fprintf(stderr, "Error: optimizacion desconocida '%s'. Soportadas:", optName);
+        for (size_t i = 0; i < sizeof(OPT_NAMES) / sizeof(OPT_NAMES[0]); i++) {
+            fprintf(stderr, "%s%s", i > 0 ? ", " : "", OPT_NAMES[i].name);
+        }
+        fprintf(stderr, ".\n");
         printUsage(program);
         return false;
     }
@@ -164,10 +212,7 @@ static bool parseOptimizationOption(int *index, int argc, char **argv, Options *
 static bool resolveOutputPath(Options *options, const char *requestedOutput) {
     bool hasCustomOutput = (requestedOutput != NULL);
     if (hasCustomOutput) {
-        options->output = malloc(strlen(requestedOutput) + 1);
-        if (options->output != NULL) {
-            strcpy(options->output, requestedOutput);
-        }
+        options->output = strdup(requestedOutput);
     } else {
         options->output = buildOutputName(options->input, getTargetExtension(options));
     }
@@ -204,41 +249,23 @@ static bool validateOutputNotInput(const Options *options) {
 }
 
 static bool parseTarget(const char *value, Target *target) {
-    if (strcmp(value, "scan") == 0) {
-        *target = TARGET_SCAN;
-    } else if (strcmp(value, "parse") == 0) {
-        *target = TARGET_PARSE;
-    } else if (strcmp(value, "sem") == 0) {
-        *target = TARGET_SEM;
-    } else if (strcmp(value, "codinter") == 0) {
-        *target = TARGET_CODINTER;
-    } else if (strcmp(value, "assembly") == 0) {
-        *target = TARGET_ASSEMBLY;
-    } else if (strcmp(value, "interp") == 0 || strcmp(value, "interpret") == 0) {
-        *target = TARGET_INTERP;
-    } else {
-        return false;
+    for (size_t i = 0; i < sizeof(STAGES) / sizeof(STAGES[0]); i++) {
+        if (strcmp(value, STAGES[i].name) == 0) {
+            *target = STAGES[i].target;
+            return true;
+        }
     }
-
-    return true;
+    return false;
 }
 
 static bool parseSingleOptimization(const char *name, OptimizationSet *outFlag) {
-    if (name == NULL || *name == '\0') {
-        return false;
+    for (size_t i = 0; i < sizeof(OPT_NAMES) / sizeof(OPT_NAMES[0]); i++) {
+        if (strcmp(name, OPT_NAMES[i].name) == 0) {
+            *outFlag = OPT_NAMES[i].flag;
+            return true;
+        }
     }
-
-    if (strcmp(name, "all") == 0)                   *outFlag = OPTIMIZATION_ALL;
-    else if (strcmp(name, "const-fold") == 0)       *outFlag = OPTIMIZATION_CONST_FOLD;
-    else if (strcmp(name, "const-prop") == 0)       *outFlag = OPTIMIZATION_CONST_PROP;
-    else if (strcmp(name, "dead-code") == 0)        *outFlag = OPTIMIZATION_DEAD_CODE;
-    else if (strcmp(name, "const-branch") == 0)     *outFlag = OPTIMIZATION_CONST_BRANCH;
-    else if (strcmp(name, "self-assign") == 0)      *outFlag = OPTIMIZATION_SELF_ASSIGN;
-    else if (strcmp(name, "peephole") == 0)         *outFlag = OPTIMIZATION_PEEPHOLE;
-    else if (strcmp(name, "strength-reduce") == 0)  *outFlag = OPTIMIZATION_STRENGTH;
-    else return false;
-
-    return true;
+    return false;
 }
 
 static bool parseOptimization(const char *value, OptimizationSet *optimizations) {
@@ -257,11 +284,10 @@ static bool parseOptimization(const char *value, OptimizationSet *optimizations)
         return true;
     }
 
-    char *copy = malloc(strlen(value) + 1);
+    char *copy = strdup(value);
     if (copy == NULL) {
         return false;
     }
-    strcpy(copy, value);
 
     OptimizationSet accumulated = 0;
     char *savePointer = NULL;
@@ -315,26 +341,26 @@ static const char *getTargetExtension(const Options *options) {
     bool hasOptimization = (options->optimizations != OPTIMIZATION_NONE);
     if (hasOptimization) return ".opt";
 
-    switch (options->target) {
-        case TARGET_SCAN:     return ".lex";
-        case TARGET_PARSE:    return ".sint";
-        case TARGET_SEM:      return ".sem";
-        case TARGET_CODINTER: return ".ci";
-        case TARGET_ASSEMBLY: return ".ass";
-        case TARGET_INTERP:   return ".interp";
+    for (size_t i = 0; i < sizeof(STAGES) / sizeof(STAGES[0]); i++) {
+        if (STAGES[i].target == options->target) return STAGES[i].extension;
     }
 
     return ".out";
 }
 
 static void printUsage(const char *program) {
-    fprintf(stderr,
-        "Uso: %s [opciones] archivo%s\n"
-        "\n"
-        "  -o <salida>      Nombre del archivo de salida\n"
-        "  -target <etapa>  Compila hasta esa etapa: scan | parse | interpret | sem | codinter | assembly\n"
-        "                   (por defecto: %s, la etapa mas avanzada implementada)\n"
-        "  -opt [nombre]    Aplica optimizaciones; 'all' son todas. Por defecto ninguna\n"
-        "  -debug           Imprime informacion de debugging por stdout\n",
-        program, INPUT_EXTENSION, getTargetName(CURRENT_TARGET));
+    fprintf(stderr, "Uso: %s [opciones] archivo%s\n", program, INPUT_EXTENSION);
+    fprintf(stderr, "  -o <salida>      Nombre del archivo de salida\n");
+    fprintf(stderr, "  -target <etapa>  Compila hasta esa etapa: ");
+    bool first = true;
+    for (size_t i = 0; i < sizeof(STAGES) / sizeof(STAGES[0]); i++) {
+        /* imprime cada etapa una sola vez (omite alias como interpret) */
+        if (i > 0 && STAGES[i].target == STAGES[i - 1].target) continue;
+        fprintf(stderr, "%s%s", first ? "" : " | ", STAGES[i].name);
+        first = false;
+    }
+    fprintf(stderr, "\n                   (por defecto: %s, la etapa mas avanzada implementada)\n",
+            getTargetName(CURRENT_TARGET));
+    fprintf(stderr, "  -opt [nombre]    Aplica optimizaciones; 'all' son todas. Por defecto ninguna\n");
+    fprintf(stderr, "  -debug           Imprime informacion de debugging por stdout\n");
 }

@@ -13,6 +13,14 @@
 #include "optimizer.h"
 
 /**
+ * @brief Códigos de retorno del parseo de argumentos de la CLI.
+ */
+typedef enum CliStatus {
+    CLI_SUCCESS = 0, /**< Argumentos válidos y procesados correctamente. */
+    CLI_ERROR = 1    /**< Error en los argumentos suministrados o sintaxis inválida. */
+} CliStatus;
+
+/**
  * @brief Etapas del pipeline de compilación hasta las que se puede procesar el código.
  *
  * El orden de los enumeradores respeta estrictamente el pipeline del compilador,
@@ -70,7 +78,7 @@ typedef struct Options {
  * @param argc Cantidad de argumentos pasados al programa.
  * @param argv Vector de cadenas con los argumentos de la línea de comandos.
  * @param options Puntero a la estructura de opciones que será completada.
- * @return 0 si los argumentos son válidos, 1 en caso de error.
+ * @return CLI_SUCCESS (0) si los argumentos son válidos, CLI_ERROR (1) en caso de error.
  */
 int parseArguments(int argc, char **argv, Options *options);
 

@@ -9,6 +9,8 @@
 #include "tac_operand.h"
 #include "tac_operation.h"
 
+#include <stddef.h>
+
 /**
  * @brief Estructura de datos que agrupa el operador y los operandos de una instrucción de tres direcciones.
  */
@@ -56,5 +58,25 @@ void freeTACInstruction(TACInstruction *instruction);
  * @param instruction Puntero a la instrucción TAC a imprimir (si es NULL no realiza acción).
  */
 void printTACInstruction(const TACInstruction *instruction);
+
+/**
+ * @brief Longitud máxima segura para la línea de texto de una instrucción TAC.
+ *
+ * Considera hasta tres operandos de nombre TAC_NAME_LENGTH más el texto fijo del formato.
+ */
+#define TAC_INSTRUCTION_TEXT_LENGTH 1024
+
+/**
+ * @brief Renderiza una instrucción TAC como línea de texto sin imprimir.
+ *
+ * Única fuente de verdad del formato textual: la usan el dump por stdout, el debug
+ * del optimizador y el análisis de variables vivas. Escribe en el buffer del llamador
+ * truncando si no alcanza.
+ *
+ * @param buffer Buffer de salida escrito como cadena terminada en nulo.
+ * @param size Tamaño del buffer de salida.
+ * @param instruction Puntero a la instrucción TAC (si es NULL escribe cadena vacía).
+ */
+void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instruction);
 
 #endif // TAC_INSTRUCTION_H
