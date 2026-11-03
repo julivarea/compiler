@@ -1,8 +1,6 @@
 #ifndef CLI_H
 #define CLI_H
 
-#include "optimizer.h"
-
 /**
  * @file cli.h
  * @brief Parseo y configuración de la línea de comandos del compilador.
@@ -11,6 +9,8 @@
  * valida extensiones y banderas, y completa la estructura Options con la configuración resultante.
  * Esta unidad solo interpreta argumentos: no abre archivos ni ejecuta etapas.
  */
+
+#include "optimizer.h"
 
 /**
  * @brief Etapas del pipeline de compilación hasta las que se puede procesar el código.

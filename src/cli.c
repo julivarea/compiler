@@ -8,12 +8,18 @@
 
 static const char *INPUT_EXTENSION = ".ctds";
 
-static void printUsage(const char *program);
+static bool parseOutputOption(int *index, int argc, char **argv, const char **requestedOutput, const char *program);
+static bool parseTargetOption(int *index, int argc, char **argv, Options *options, const char *program);
+static bool parseOptimizationOption(int *index, int argc, char **argv, Options *options, const char *program);
+static bool resolveOutputPath(Options *options, const char *requestedOutput);
+static bool validateOutputNotInput(const Options *options);
+
 static bool parseTarget(const char *value, Target *target);
 static bool parseOptimization(const char *value, OptimizationSet *optimizations);
 static bool hasInputExtension(const char *name);
 static char *buildOutputName(const char *input, const char *extension);
 static const char *getTargetExtension(const Options *options);
+static void printUsage(const char *program);
 
 int parseArguments(int argc, char **argv, Options *options) {
     const char *program = (argc > 0) ? argv[0] : "c-tds";
@@ -30,52 +36,19 @@ int parseArguments(int argc, char **argv, Options *options) {
         char *argument = argv[i];
 
         if (strcmp(argument, "-o") == 0) {
-            bool hasMissingArgument = (++i >= argc);
-            if (hasMissingArgument || argv[i][0] == '\0') {
-                fprintf(stderr, "Error: -o necesita el nombre del archivo de salida.\n");
-                printUsage(program);
+            if (!parseOutputOption(&i, argc, argv, &requestedOutput, program)) {
                 return 1;
             }
-            requestedOutput = argv[i];
-
         } else if (strcmp(argument, "-target") == 0) {
-            bool hasMissingArgument = (++i >= argc);
-            if (hasMissingArgument) {
-                fprintf(stderr, "Error: -target necesita una etapa.\n");
-                printUsage(program);
+            if (!parseTargetOption(&i, argc, argv, options, program)) {
                 return 1;
             }
-            options->explicitTarget = 1;
-            bool isTargetValid = parseTarget(argv[i], &options->target);
-            if (!isTargetValid) {
-                fprintf(stderr, "Error: etapa desconocida '%s'.\n", argv[i]);
-                printUsage(program);
-                return 1;
-            }
-
         } else if (strcmp(argument, "-opt") == 0) {
-            bool hasNextArgument = (i + 1 < argc);
-            bool nextIsOption = (hasNextArgument && argv[i + 1][0] == '-');
-            bool nextIsInputFile = (hasNextArgument && hasInputExtension(argv[i + 1]));
-            bool hasOptimizationName = (hasNextArgument && !nextIsOption && !nextIsInputFile);
-
-            const char *optName = "all";
-            if (hasOptimizationName) {
-                optName = argv[++i];
-            }
-
-            if (!parseOptimization(optName, &options->optimizations)) {
-                fprintf(stderr, "Error: optimizacion desconocida '%s'. Soportadas: all, const-fold,"
-                                " const-prop, dead-code, const-branch, self-assign, peephole,"
-                                " strength-reduce.\n",
-                        optName);
-                printUsage(program);
+            if (!parseOptimizationOption(&i, argc, argv, options, program)) {
                 return 1;
             }
-
         } else if (strcmp(argument, "-debug") == 0) {
             options->debug = 1;
-
         } else {
             bool isUnknownOption = (argument[0] == '-');
             if (isUnknownOption) {
@@ -110,34 +83,7 @@ int parseArguments(int argc, char **argv, Options *options) {
         return 1;
     }
 
-    bool hasCustomOutput = (requestedOutput != NULL);
-    if (hasCustomOutput) {
-        options->output = malloc(strlen(requestedOutput) + 1);
-        if (options->output != NULL) {
-            strcpy(options->output, requestedOutput);
-        }
-    } else {
-        options->output = buildOutputName(options->input, getTargetExtension(options));
-    }
-
-    bool hasAllocationError = (options->output == NULL);
-    if (hasAllocationError) {
-        fprintf(stderr, "Error: no se pudo reservar memoria para el nombre de salida.\n");
-        return 1;
-    }
-
-    bool isSameFile = (strcmp(options->output, options->input) == 0);
-    if (!isSameFile) {
-        struct stat statInput, statOutput;
-        if (stat(options->input, &statInput) == 0 && stat(options->output, &statOutput) == 0) {
-            isSameFile = (statInput.st_dev == statOutput.st_dev && statInput.st_ino == statOutput.st_ino);
-        }
-    }
-    if (isSameFile) {
-        fprintf(stderr, "Error: el archivo de salida no puede ser igual al de entrada ('%s').\n",
-                options->input);
-        free(options->output);
-        options->output = NULL;
+    if (!resolveOutputPath(options, requestedOutput)) {
         return 1;
     }
 
@@ -151,16 +97,109 @@ void freeOptions(Options *options) {
     options->output = NULL;
 }
 
-static void printUsage(const char *program) {
-    fprintf(stderr,
-        "Uso: %s [opciones] archivo%s\n"
-        "\n"
-        "  -o <salida>      Nombre del archivo de salida\n"
-        "  -target <etapa>  Compila hasta esa etapa: scan | parse | interpret | sem | codinter | assembly\n"
-        "                   (por defecto: %s, la etapa mas avanzada implementada)\n"
-        "  -opt [nombre]    Aplica optimizaciones; 'all' son todas. Por defecto ninguna\n"
-        "  -debug           Imprime informacion de debugging por stdout\n",
-        program, INPUT_EXTENSION, getTargetName(CURRENT_TARGET));
+const char *getTargetName(Target target) {
+    switch (target) {
+        case TARGET_SCAN:     return "scan";
+        case TARGET_PARSE:    return "parse";
+        case TARGET_SEM:      return "sem";
+        case TARGET_CODINTER: return "codinter";
+        case TARGET_ASSEMBLY: return "assembly";
+        case TARGET_INTERP:   return "interp";
+    }
+
+    return "?";
+}
+
+static bool parseOutputOption(int *index, int argc, char **argv, const char **requestedOutput, const char *program) {
+    bool hasMissingArgument = (++(*index) >= argc);
+    if (hasMissingArgument || argv[*index][0] == '\0') {
+        fprintf(stderr, "Error: -o necesita el nombre del archivo de salida.\n");
+        printUsage(program);
+        return false;
+    }
+    *requestedOutput = argv[*index];
+    return true;
+}
+
+static bool parseTargetOption(int *index, int argc, char **argv, Options *options, const char *program) {
+    bool hasMissingArgument = (++(*index) >= argc);
+    if (hasMissingArgument) {
+        fprintf(stderr, "Error: -target necesita una etapa.\n");
+        printUsage(program);
+        return false;
+    }
+    options->explicitTarget = 1;
+    bool isTargetValid = parseTarget(argv[*index], &options->target);
+    if (!isTargetValid) {
+        fprintf(stderr, "Error: etapa desconocida '%s'.\n", argv[*index]);
+        printUsage(program);
+        return false;
+    }
+    return true;
+}
+
+static bool parseOptimizationOption(int *index, int argc, char **argv, Options *options, const char *program) {
+    bool hasNextArgument = (*index + 1 < argc);
+    bool nextIsOption = (hasNextArgument && argv[*index + 1][0] == '-');
+    bool nextIsInputFile = (hasNextArgument && hasInputExtension(argv[*index + 1]));
+    bool hasOptimizationName = (hasNextArgument && !nextIsOption && !nextIsInputFile);
+
+    const char *optName = "all";
+    if (hasOptimizationName) {
+        optName = argv[++(*index)];
+    }
+
+    if (!parseOptimization(optName, &options->optimizations)) {
+        fprintf(stderr, "Error: optimizacion desconocida '%s'. Soportadas: all, const-fold,"
+                        " const-prop, dead-code, const-branch, self-assign, peephole,"
+                        " strength-reduce.\n",
+                optName);
+        printUsage(program);
+        return false;
+    }
+    return true;
+}
+
+static bool resolveOutputPath(Options *options, const char *requestedOutput) {
+    bool hasCustomOutput = (requestedOutput != NULL);
+    if (hasCustomOutput) {
+        options->output = malloc(strlen(requestedOutput) + 1);
+        if (options->output != NULL) {
+            strcpy(options->output, requestedOutput);
+        }
+    } else {
+        options->output = buildOutputName(options->input, getTargetExtension(options));
+    }
+
+    bool hasAllocationError = (options->output == NULL);
+    if (hasAllocationError) {
+        fprintf(stderr, "Error: no se pudo reservar memoria para el nombre de salida.\n");
+        return false;
+    }
+
+    if (!validateOutputNotInput(options)) {
+        free(options->output);
+        options->output = NULL;
+        return false;
+    }
+
+    return true;
+}
+
+static bool validateOutputNotInput(const Options *options) {
+    bool isSameFile = (strcmp(options->output, options->input) == 0);
+    if (!isSameFile) {
+        struct stat statInput, statOutput;
+        if (stat(options->input, &statInput) == 0 && stat(options->output, &statOutput) == 0) {
+            isSameFile = (statInput.st_dev == statOutput.st_dev && statInput.st_ino == statOutput.st_ino);
+        }
+    }
+    if (isSameFile) {
+        fprintf(stderr, "Error: el archivo de salida no puede ser igual al de entrada ('%s').\n",
+                options->input);
+        return false;
+    }
+    return true;
 }
 
 static bool parseTarget(const char *value, Target *target) {
@@ -245,15 +284,14 @@ static const char *getTargetExtension(const Options *options) {
     return ".out";
 }
 
-const char *getTargetName(Target target) {
-    switch (target) {
-        case TARGET_SCAN:     return "scan";
-        case TARGET_PARSE:    return "parse";
-        case TARGET_SEM:      return "sem";
-        case TARGET_CODINTER: return "codinter";
-        case TARGET_ASSEMBLY: return "assembly";
-        case TARGET_INTERP:   return "interp";
-    }
-
-    return "?";
+static void printUsage(const char *program) {
+    fprintf(stderr,
+        "Uso: %s [opciones] archivo%s\n"
+        "\n"
+        "  -o <salida>      Nombre del archivo de salida\n"
+        "  -target <etapa>  Compila hasta esa etapa: scan | parse | interpret | sem | codinter | assembly\n"
+        "                   (por defecto: %s, la etapa mas avanzada implementada)\n"
+        "  -opt [nombre]    Aplica optimizaciones; 'all' son todas. Por defecto ninguna\n"
+        "  -debug           Imprime informacion de debugging por stdout\n",
+        program, INPUT_EXTENSION, getTargetName(CURRENT_TARGET));
 }
