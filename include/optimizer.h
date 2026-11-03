@@ -50,6 +50,13 @@ typedef unsigned int OptimizationSet;
 int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled);
 
 /**
+ * @brief Habilita o deshabilita los mensajes informativos de depuración del optimizador.
+ *
+ * @param enabled true para imprimir cada instrucción transformada/removida por stdout.
+ */
+void setOptimizerDebug(bool enabled);
+
+/**
  * @brief Indica si una optimización específica está activa en el conjunto.
  *
  * @param enabled Conjunto de optimizaciones activas.

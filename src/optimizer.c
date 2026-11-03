@@ -22,6 +22,8 @@ typedef struct {
     int count;
 } KnownConstantTable;
 
+static bool isOptimizerDebugEnabled = false;
+
 static int propagateConstants(TACList *tacList);
 static int foldConstants(TACList *tacList);
 static int simplifyConstantBranches(TACList *tacList);
@@ -50,6 +52,8 @@ static bool isStructural(TACOperation operation);
 static int removeUnreferencedLabels(TACList *tacList);
 static bool isDeadStoreCandidate(const TACList *tacList, const TACInstruction *instruction);
 static bool isGlobalVariable(const TACList *tacList, const char *variableName);
+static void printSingleInstruction(FILE *output, const TACInstruction *instruction);
+static void printTACWithDeletedInRed(const TACList *tacList, TACInstruction **deletedList, size_t deletedCount, const char *reason);
 
 int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled) {
     if (tacList == NULL || enabled == OPTIMIZATION_NONE) {
@@ -90,6 +94,10 @@ int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled) {
     }
 
     return totalChanges;
+}
+
+void setOptimizerDebug(bool enabled) {
+    isOptimizerDebugEnabled = enabled;
 }
 
 static int propagateConstants(TACList *tacList) {
@@ -224,13 +232,14 @@ static int removeUnreachableCode(TACList *tacList) {
     int changes = removeUnreferencedLabels(tacList);
     bool isReachable = true;
 
-    TACInstruction *previous = NULL;
-    TACInstruction *current = tacList->head;
+    TACInstruction **unreachableList = malloc(sizeof(TACInstruction *) * (size_t)tacList->count);
+    if (unreachableList == NULL) {
+        return changes;
+    }
+    size_t unreachableCount = 0;
 
-    while (current != NULL) {
-        TACInstruction *next = current->next;
+    for (TACInstruction *current = tacList->head; current != NULL; current = current->next) {
         bool mustKeep = (isReachable || isStructural(current->operation));
-
         if (mustKeep) {
             bool resumesControlFlow = (current->operation == TAC_LABEL ||
                                        current->operation == TAC_BEGIN_FUNC);
@@ -239,16 +248,37 @@ static int removeUnreachableCode(TACList *tacList) {
             } else if (endsControlFlow(current->operation)) {
                 isReachable = false;
             }
-
-            previous = current;
         } else {
-            unlinkInstruction(tacList, previous, current);
-            changes++;
+            unreachableList[unreachableCount++] = current;
         }
-
-        current = next;
     }
 
+    if (unreachableCount == 0) {
+        free(unreachableList);
+        return changes;
+    }
+
+    if (isOptimizerDebugEnabled) {
+        printTACWithDeletedInRed(tacList, unreachableList, unreachableCount, "Codigo Inalcanzable (tras ret / goto)");
+    }
+
+    size_t unreachIndex = 0;
+    TACInstruction *previous = NULL;
+    TACInstruction *current = tacList->head;
+
+    while (current != NULL && unreachIndex < unreachableCount) {
+        bool isTarget = (current == unreachableList[unreachIndex]);
+        if (isTarget) {
+            current = unlinkInstruction(tacList, previous, current);
+            unreachIndex++;
+            changes++;
+        } else {
+            previous = current;
+            current = current->next;
+        }
+    }
+
+    free(unreachableList);
     return changes;
 }
 
@@ -287,6 +317,10 @@ static int removeDeadStores(TACList *tacList) {
         return 0;
     }
 
+    if (isOptimizerDebugEnabled) {
+        printTACWithDeletedInRed(tacList, deadInstructions, deadCount, "Variables y Asignaciones Muertas (Live Variables)");
+    }
+
     // Remueve de la lista TAC las instrucciones identificadas como código muerto.
     int changes = 0;
     size_t deadIndex = 0;
@@ -310,20 +344,43 @@ static int removeDeadStores(TACList *tacList) {
 }
 
 static int removeSelfAssignments(TACList *tacList) {
+    TACInstruction **selfList = malloc(sizeof(TACInstruction *) * (size_t)tacList->count);
+    if (selfList == NULL) {
+        return 0;
+    }
+    size_t selfCount = 0;
+
+    for (TACInstruction *curr = tacList->head; curr != NULL; curr = curr->next) {
+        bool isAssignment = (curr->operation == TAC_ASSIGN);
+        bool isVariableOrTemp = (curr->result.kind == OPERAND_VARIABLE ||
+                                 curr->result.kind == OPERAND_TEMP);
+        bool hasSameKind = (curr->firstOperand.kind == curr->result.kind);
+        bool hasSameName = (strcmp(curr->result.name, curr->firstOperand.name) == 0);
+        bool isSelfAssignment = (isAssignment && isVariableOrTemp && hasSameKind && hasSameName);
+        if (isSelfAssignment) {
+            selfList[selfCount++] = curr;
+        }
+    }
+
+    if (selfCount == 0) {
+        free(selfList);
+        return 0;
+    }
+
+    if (isOptimizerDebugEnabled) {
+        printTACWithDeletedInRed(tacList, selfList, selfCount, "Autoasignaciones Redundantes (x = x)");
+    }
+
     int changes = 0;
+    size_t selfIndex = 0;
     TACInstruction *previous = NULL;
     TACInstruction *current = tacList->head;
 
-    while (current != NULL) {
-        bool isAssignment = (current->operation == TAC_ASSIGN);
-        bool isVariableOrTemp = (current->result.kind == OPERAND_VARIABLE ||
-                                 current->result.kind == OPERAND_TEMP);
-        bool hasSameKind = (current->firstOperand.kind == current->result.kind);
-        bool hasSameName = (strcmp(current->result.name, current->firstOperand.name) == 0);
-        bool isSelfAssignment = (isAssignment && isVariableOrTemp && hasSameKind && hasSameName);
-
-        if (isSelfAssignment) {
+    while (current != NULL && selfIndex < selfCount) {
+        bool isTarget = (current == selfList[selfIndex]);
+        if (isTarget) {
             current = unlinkInstruction(tacList, previous, current);
+            selfIndex++;
             changes++;
         } else {
             previous = current;
@@ -331,27 +388,52 @@ static int removeSelfAssignments(TACList *tacList) {
         }
     }
 
+    free(selfList);
     return changes;
 }
 
 static int removeRedundantJumps(TACList *tacList) {
-    int changes = 0;
-    TACInstruction *previous = NULL;
-    TACInstruction *current = tacList->head;
+    TACInstruction **jumpList = malloc(sizeof(TACInstruction *) * (size_t)tacList->count);
+    if (jumpList == NULL) {
+        return 0;
+    }
+    size_t jumpCount = 0;
 
-    while (current != NULL) {
-        bool isJump = (current->operation == TAC_GOTO);
+    for (TACInstruction *curr = tacList->head; curr != NULL; curr = curr->next) {
+        bool isJump = (curr->operation == TAC_GOTO);
         bool jumpsToNextInstruction = false;
 
-        if (isJump && current->next != NULL) {
-            const TACInstruction *next = current->next;
+        if (isJump && curr->next != NULL) {
+            const TACInstruction *next = curr->next;
             bool targetMatchesNextLabel = (next->operation == TAC_LABEL &&
-                                           strcmp(next->result.name, current->firstOperand.name) == 0);
+                                           strcmp(next->result.name, curr->firstOperand.name) == 0);
             jumpsToNextInstruction = targetMatchesNextLabel;
         }
 
         if (jumpsToNextInstruction) {
+            jumpList[jumpCount++] = curr;
+        }
+    }
+
+    if (jumpCount == 0) {
+        free(jumpList);
+        return 0;
+    }
+
+    if (isOptimizerDebugEnabled) {
+        printTACWithDeletedInRed(tacList, jumpList, jumpCount, "Saltos Redundantes a la Siguiente Etiqueta");
+    }
+
+    int changes = 0;
+    size_t jumpIndex = 0;
+    TACInstruction *previous = NULL;
+    TACInstruction *current = tacList->head;
+
+    while (current != NULL && jumpIndex < jumpCount) {
+        bool isTarget = (current == jumpList[jumpIndex]);
+        if (isTarget) {
             current = unlinkInstruction(tacList, previous, current);
+            jumpIndex++;
             changes++;
         } else {
             previous = current;
@@ -359,6 +441,7 @@ static int removeRedundantJumps(TACList *tacList) {
         }
     }
 
+    free(jumpList);
     return changes;
 }
 
@@ -587,23 +670,44 @@ static int removeUnreferencedLabels(TACList *tacList) {
         }
     }
 
-    int changes = 0;
-    TACInstruction *previous = NULL;
-    TACInstruction *current = tacList->head;
+    TACInstruction **deadLabelList = malloc(sizeof(TACInstruction *) * (size_t)tacList->count);
+    if (deadLabelList == NULL) {
+        return 0;
+    }
+    size_t deadLabelCount = 0;
 
-    while (current != NULL) {
-        bool isLabel = (current->operation == TAC_LABEL);
+    for (TACInstruction *curr = tacList->head; curr != NULL; curr = curr->next) {
+        bool isLabel = (curr->operation == TAC_LABEL);
         bool isReferenced = false;
-
         for (int i = 0; isLabel && i < referencedCount; i++) {
-            if (strcmp(referencedLabels[i], current->result.name) == 0) {
+            if (strcmp(referencedLabels[i], curr->result.name) == 0) {
                 isReferenced = true;
             }
         }
+        if (isLabel && !isReferenced) {
+            deadLabelList[deadLabelCount++] = curr;
+        }
+    }
 
-        bool shouldRemoveLabel = (isLabel && !isReferenced);
-        if (shouldRemoveLabel) {
+    if (deadLabelCount == 0) {
+        free(deadLabelList);
+        return 0;
+    }
+
+    if (isOptimizerDebugEnabled) {
+        printTACWithDeletedInRed(tacList, deadLabelList, deadLabelCount, "Etiquetas sin Referencias");
+    }
+
+    int changes = 0;
+    size_t labelIndex = 0;
+    TACInstruction *previous = NULL;
+    TACInstruction *current = tacList->head;
+
+    while (current != NULL && labelIndex < deadLabelCount) {
+        bool isTarget = (current == deadLabelList[labelIndex]);
+        if (isTarget) {
             current = unlinkInstruction(tacList, previous, current);
+            labelIndex++;
             changes++;
         } else {
             previous = current;
@@ -611,6 +715,7 @@ static int removeUnreferencedLabels(TACList *tacList) {
         }
     }
 
+    free(deadLabelList);
     return changes;
 }
 
@@ -654,4 +759,108 @@ static bool isDeadStoreCandidate(const TACList *tacList, const TACInstruction *i
     }
 
     return true;
+}
+
+static void printSingleInstruction(FILE *output, const TACInstruction *instruction) {
+    if (instruction == NULL) return;
+
+    const char *result = getOperandName(&instruction->result);
+    const char *first = getOperandName(&instruction->firstOperand);
+    const char *second = getOperandName(&instruction->secondOperand);
+
+    switch (instruction->operation) {
+        case TAC_BEGIN_FUNC:
+            fprintf(output, "begin_func %s, %s\n", result, first);
+            break;
+        case TAC_END_FUNC:
+            fprintf(output, "end_func %s\n", result);
+            break;
+        case TAC_PARAM_DECL:
+            fprintf(output, "param_decl %s\n", first);
+            break;
+        case TAC_GLOBAL_DECL:
+        case TAC_LOCAL_DECL:
+            fprintf(output, "%s %s, %s\n",
+                    instruction->operation == TAC_GLOBAL_DECL ? "global" : "local",
+                    first, getDataTypeName(instruction->firstOperand.type));
+            break;
+        case TAC_LABEL:
+            fprintf(output, "%s:\n", result);
+            break;
+        case TAC_GOTO:
+            fprintf(output, "goto %s\n", first);
+            break;
+        case TAC_IF_FALSE:
+            fprintf(output, "if %s false goto %s\n", first, second);
+            break;
+        case TAC_IF_TRUE:
+            fprintf(output, "if %s true goto %s\n", first, second);
+            break;
+        case TAC_PARAM:
+            fprintf(output, "param %s\n", first);
+            break;
+        case TAC_CALL:
+            if (instruction->result.kind != OPERAND_NONE) {
+                fprintf(output, "%s = call %s, %s\n", result, first, second);
+            } else {
+                fprintf(output, "call %s, %s\n", first, second);
+            }
+            break;
+        case TAC_RETURN:
+            if (instruction->firstOperand.kind != OPERAND_NONE) {
+                fprintf(output, "ret %s\n", first);
+            } else {
+                fprintf(output, "ret\n");
+            }
+            break;
+        case TAC_ASSIGN:
+            fprintf(output, "%s = %s\n", result, first);
+            break;
+        case TAC_ADD: fprintf(output, "%s = %s + %s\n", result, first, second); break;
+        case TAC_SUB: fprintf(output, "%s = %s - %s\n", result, first, second); break;
+        case TAC_MUL: fprintf(output, "%s = %s * %s\n", result, first, second); break;
+        case TAC_DIV: fprintf(output, "%s = %s / %s\n", result, first, second); break;
+        case TAC_MOD: fprintf(output, "%s = %s %% %s\n", result, first, second); break;
+        case TAC_LT:  fprintf(output, "%s = %s < %s\n", result, first, second); break;
+        case TAC_GT:  fprintf(output, "%s = %s > %s\n", result, first, second); break;
+        case TAC_EQ:  fprintf(output, "%s = %s == %s\n", result, first, second); break;
+        case TAC_UMINUS: fprintf(output, "%s = -%s\n", result, first); break;
+        case TAC_NOT: fprintf(output, "%s = !%s\n", result, first); break;
+        case TAC_INT_TO_FLOAT: fprintf(output, "%s = int_to_float %s\n", result, first); break;
+        default:
+            fprintf(output, "instruccion tac %d\n", instruction->operation);
+            break;
+    }
+}
+
+static void printTACWithDeletedInRed(const TACList *tacList,
+                                    TACInstruction **deletedList,
+                                    size_t deletedCount,
+                                    const char *reason) {
+    if (!isOptimizerDebugEnabled || tacList == NULL || deletedCount == 0) {
+        return;
+    }
+
+    printf("\n\033[1;36m=== Codigo Intermedio TAC: %s (%zu eliminada%s) ===\033[0m\n",
+           reason, deletedCount, deletedCount > 1 ? "s" : "");
+
+    for (const TACInstruction *current = tacList->head; current != NULL; current = current->next) {
+        bool isDeleted = false;
+        for (size_t i = 0; i < deletedCount; i++) {
+            if (current == deletedList[i]) {
+                isDeleted = true;
+                break;
+            }
+        }
+
+        if (isDeleted) {
+            printf("\033[1;31m  [ELIMINADA] ");
+            printSingleInstruction(stdout, current);
+            printf("\033[0m");
+        } else {
+            printf("              ");
+            printSingleInstruction(stdout, current);
+        }
+    }
+    printf("\033[1;36m======================================================================\033[0m\n\n");
 }

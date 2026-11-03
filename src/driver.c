@@ -62,6 +62,7 @@ static const TACList *buildIntermediateCode(const Options *options) {
     }
 
     if (hasOptimizations) {
+        setOptimizerDebug(options->debug);
         int changes = optimizeIntermediateCode((TACList *)tacList, enabled);
         if (options->debug) {
             printf("Optimizaciones: %d instrucciones transformadas\n\n", changes);
