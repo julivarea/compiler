@@ -428,6 +428,26 @@ void test_opt_const_prop_function_call_invalidates_globals(void) {
     assertSemanticEquivalence(source, OPTIMIZATION_CONST_PROP, 42);
 }
 
+// Llamadas a metodos no invalidan variables locales del llamador
+void test_opt_const_prop_function_call_preserves_local_variables(void) {
+    const char *source =
+        "int dummy() {\n"
+        "    return 99;\n"
+        "}\n"
+        "int main() {\n"
+        "    int localVal;\n"
+        "    int discard;\n"
+        "    localVal = 10;\n"
+        "    discard = dummy();\n"
+        "    return localVal + 5;\n"
+        "}\n";
+    TACList *tac = compileToOptimizedTAC(source, OPTIMIZATION_CONST_PROP | OPTIMIZATION_CONST_FOLD);
+    TEST_ASSERT_NOT_NULL(tac);
+    // localVal + 5 se pliega a 15 porque localVal se preservo a traves del call dummy()
+    TEST_ASSERT_EQUAL_INT(0, countOperations(tac, TAC_ADD));
+    assertSemanticEquivalence(source, OPTIMIZATION_CONST_PROP | OPTIMIZATION_CONST_FOLD, 15);
+}
+
 // ------------------------------------------------------------------------
 // Grupo 3: Dead Code Elimination (Codigo Inalcanzable y Dead Stores)
 // ------------------------------------------------------------------------
@@ -999,6 +1019,7 @@ int main(void) {
     RUN_TEST(test_opt_const_prop_reassignment_preserves_latest);
     RUN_TEST(test_opt_const_prop_while_loop_boundary);
     RUN_TEST(test_opt_const_prop_function_call_invalidates_globals);
+    RUN_TEST(test_opt_const_prop_function_call_preserves_local_variables);
 
     // Grupo 3: Dead Code Elimination
     RUN_TEST(test_opt_dead_code_after_return);

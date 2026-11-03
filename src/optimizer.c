@@ -44,7 +44,7 @@ static bool evaluateUnary(TACOperation operation, const TACOperand *operand,
 static const TACOperand *lookupKnownConstant(const KnownConstantTable *table, const TACOperand *operand);
 static void forgetConstant(KnownConstantTable *table, const TACOperand *operand);
 static void rememberConstant(KnownConstantTable *table, const TACOperand *destination, const TACOperand *value);
-static void forgetVariables(KnownConstantTable *table);
+static void forgetGlobalVariables(KnownConstantTable *table, const TACList *tacList);
 static bool replaceWithKnownConstant(const KnownConstantTable *table, TACOperand *operand);
 
 static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previous, TACInstruction *current);
@@ -125,7 +125,7 @@ static int propagateConstants(TACList *tacList) {
             }
 
             case TAC_CALL:
-                forgetVariables(&table);
+                forgetGlobalVariables(&table, tacList);
                 forgetConstant(&table, &instruction->result);
                 continue;
 
@@ -485,11 +485,12 @@ static void rememberConstant(KnownConstantTable *table, const TACOperand *destin
     table->count++;
 }
 
-static void forgetVariables(KnownConstantTable *table) {
+static void forgetGlobalVariables(KnownConstantTable *table, const TACList *tacList) {
     int keptEntriesCount = 0;
     for (int i = 0; i < table->count; i++) {
-        bool isTemporary = (table->entries[i].destinationKind == OPERAND_TEMP);
-        if (isTemporary) {
+        bool isGlobal = (table->entries[i].destinationKind == OPERAND_VARIABLE &&
+                         isGlobalVariable(tacList, table->entries[i].name));
+        if (!isGlobal) {
             table->entries[keptEntriesCount++] = table->entries[i];
         }
     }
