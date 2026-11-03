@@ -39,6 +39,11 @@ int getLastErrorLine(void) {
     return lastErrorLine;
 }
 
+void compileAborted(const char *stage, int errorCount) {
+    fprintf(stderr, "\n\033[1;31mCompilacion abortada: se encontraron %d errores %s.\033[0m\n",
+            errorCount, stage);
+}
+
 const char *getLastErrorMessage(void) {
     return lastErrorMessage;
 }

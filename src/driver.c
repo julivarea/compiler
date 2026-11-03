@@ -20,8 +20,6 @@
 #include "semantic_analyzer.h"
 #include "string_builder.h"
 
-#define ANSI_BOLD_RED "\033[1;31m"
-#define ANSI_RESET    "\033[0m"
 #define MAX_PATH_LENGTH 4096
 
 extern NodeAST *astRoot;
@@ -147,7 +145,7 @@ static int runParse(void) {
     if (hasError) { return 1; }
 
     if (lexical_errors > 0) {
-        fprintf(stderr, "\n" ANSI_BOLD_RED "Compilacion abortada: se encontraron %d errores lexicos." ANSI_RESET "\n", lexical_errors);
+        compileAborted("lexicos", lexical_errors);
         return 1;
     }
 
@@ -158,7 +156,7 @@ static int runSemantic(void) {
     analyzeSemantics(astRoot, NULL);
 
     if (semantic_errors > 0) {
-        fprintf(stderr, "\n" ANSI_BOLD_RED "Compilacion abortada: se encontraron %d errores semanticos." ANSI_RESET "\n", semantic_errors);
+        compileAborted("semanticos", semantic_errors);
         return 1;
     }
 
@@ -179,8 +177,7 @@ static int runAssembly(const Options *options, const TACList *tacList) {
     generateAssembly(tacList, options->optimizations);
 
     if (getObjectCodeErrors() > 0) {
-        fprintf(stderr, "\n" ANSI_BOLD_RED "Compilacion abortada: %d errores internos en la generacion de codigo objeto." ANSI_RESET "\n",
-                getObjectCodeErrors());
+        compileAborted("internos en la generacion de codigo objeto", getObjectCodeErrors());
         return 1;
     }
 

@@ -24,6 +24,14 @@ void syntaxError(int line, const char *format, ...);
 void semanticError(int line, const char *format, ...);
 
 /**
+ * @brief Reporta el resumen de compilación abortada por acumulación de errores de una etapa.
+ *
+ * @param stage Descripción de la etapa o causa, en plural (ej. "lexicos").
+ * @param errorCount Cantidad de errores que causaron el aborto.
+ */
+void compileAborted(const char *stage, int errorCount);
+
+/**
  * @brief Devuelve la línea del último error informado.
  *
  * @return Número de línea, o 0 si no hubo ningún error.
