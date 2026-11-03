@@ -282,11 +282,17 @@ static int removeDeadStores(TACList *tacList) {
 
     // Marca como muerta toda asignación cuyo destino no esté en LIVE_OUT ni se lea después en el bloque.
     size_t deadCount = 0;
-    for (TACInstruction *current = tacList->head; current != NULL; current = current->next) {
-        bool canBeDeadStore = isDeadStoreCandidate(tacList, current);
-        bool isDead = (canBeDeadStore && isDeadDefinition(analysis, current));
-        if (isDead) {
-            deadInstructions[deadCount++] = current;
+    for (size_t blockIndex = 0; blockIndex < analysis->blockCount; blockIndex++) {
+        const BasicBlock *block = analysis->blocks[blockIndex];
+        for (TACInstruction *current = block->firstInstruction; current != NULL; current = current->next) {
+            bool canBeDeadStore = isDeadStoreCandidate(tacList, current);
+            bool isDead = (canBeDeadStore && isDeadDefinitionInBlock(analysis, block, current));
+            if (isDead) {
+                deadInstructions[deadCount++] = current;
+            }
+            if (current == block->lastInstruction) {
+                break;
+            }
         }
     }
 

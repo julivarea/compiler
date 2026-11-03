@@ -80,6 +80,19 @@ bool isVariableLiveIn(const LiveVariableAnalysis *analysis, const BasicBlock *bl
 bool isVariableLiveOut(const LiveVariableAnalysis *analysis, const BasicBlock *block, const char *variableName);
 
 /**
+ * @brief Determina si la definición en una instrucción es código muerto dentro de su bloque básico.
+ *
+ * Versión optimizada O(1) de isDeadDefinition para recorridos donde el bloque básico
+ * ya es conocido, evitando la búsqueda global en el CFG.
+ *
+ * @param analysis Estructura del análisis de variables vivas.
+ * @param block Bloque básico al que pertenece la instrucción.
+ * @param instruction Puntero a la instrucción a evaluar.
+ * @return true si la definición es código muerto, false en caso contrario.
+ */
+bool isDeadDefinitionInBlock(const LiveVariableAnalysis *analysis, const BasicBlock *block, const TACInstruction *instruction);
+
+/**
  * @brief Determina si la definición en una instrucción es código muerto considerando el flujo global.
  *
  * Una asignación es muerta si su operando destino no se lee en el resto del bloque

@@ -85,11 +85,8 @@ bool isVariableLiveOut(const LiveVariableAnalysis *analysis, const BasicBlock *b
     return (index >= 0) && ((block->liveOut & (1ULL << index)) != 0);
 }
 
-bool isDeadDefinition(const LiveVariableAnalysis *analysis, const TACInstruction *instruction) {
-    if (analysis == NULL || instruction == NULL || !isCandidate(&instruction->result)) return false;
-
-    BasicBlock *block = findInstructionBlock(analysis, instruction);
-    if (block == NULL) return false;
+bool isDeadDefinitionInBlock(const LiveVariableAnalysis *analysis, const BasicBlock *block, const TACInstruction *instruction) {
+    if (analysis == NULL || block == NULL || instruction == NULL || !isCandidate(&instruction->result)) return false;
 
     int varIndex = getVariableIndex(analysis, instruction->result.name);
     if (varIndex < 0) return false;
@@ -110,6 +107,15 @@ bool isDeadDefinition(const LiveVariableAnalysis *analysis, const TACInstruction
 
     // criterio de código muerto: no se lee en B y no pertenece a LIVE_OUT(B).
     return (block->liveOut & (1ULL << varIndex)) == 0;
+}
+
+bool isDeadDefinition(const LiveVariableAnalysis *analysis, const TACInstruction *instruction) {
+    if (analysis == NULL || instruction == NULL) return false;
+
+    BasicBlock *block = findInstructionBlock(analysis, instruction);
+    if (block == NULL) return false;
+
+    return isDeadDefinitionInBlock(analysis, block, instruction);
 }
 
 static void collectVariables(LiveVariableAnalysis *analysis) {
