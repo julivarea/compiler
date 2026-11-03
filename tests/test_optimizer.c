@@ -492,6 +492,24 @@ void test_opt_dead_code_reduces_instruction_count(void) {
     assertSemanticEquivalence(source, OPTIMIZATION_DEAD_CODE, 1);
 }
 
+// Muchas referencias a etiquetas (superando 256) preservan las etiquetas activas sin pérdidas
+void test_opt_dead_code_many_labels_beyond_static_buffer(void) {
+    char *source = malloc(65536);
+    TEST_ASSERT_NOT_NULL(source);
+
+    int offset = snprintf(source, 65536, "int main() {\n    int x;\n    x = 0;\n");
+    for (int i = 0; i < 300; i++) {
+        offset += snprintf(source + offset, 65536 - (size_t)offset,
+                           "    if (x == %d) { x = %d; }\n", i, i + 1);
+    }
+    snprintf(source + offset, 65536 - (size_t)offset,
+             "    if (x == 300) { return 42; }\n    return 0;\n}\n");
+
+    assertSemanticEquivalence(source, OPTIMIZATION_DEAD_CODE, 42);
+
+    free(source);
+}
+
 // ------------------------------------------------------------------------
 // Grupo 4: Constant Branch Folding (Condiciones Constantes en Control de Flujo)
 // ------------------------------------------------------------------------
@@ -955,6 +973,7 @@ int main(void) {
     RUN_TEST(test_opt_dead_code_both_branches_of_if_else);
     RUN_TEST(test_opt_dead_code_dead_store_elimination);
     RUN_TEST(test_opt_dead_code_reduces_instruction_count);
+    RUN_TEST(test_opt_dead_code_many_labels_beyond_static_buffer);
 
     // Grupo 4: Constant Branch
     RUN_TEST(test_opt_const_branch_if_true);
