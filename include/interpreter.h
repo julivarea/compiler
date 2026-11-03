@@ -18,6 +18,6 @@
  * @param root Raíz del AST del programa.
  * @return Puntero al ámbito generado con los símbolos y valores finales.
  */
-Scope *interpreteSemantics(NodeAST *root);
+Scope *interpreteSemantics(NodeAST *root, bool debug);
 
 #endif // INTERPRETER_H

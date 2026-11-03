@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "ast.h"
+#include "debug.h"
 #include "error_handler.h"
 #include "symbol_table.h"
 #include "types.h"
@@ -18,7 +19,7 @@ typedef struct ExecResult {
 static void registerGlobalDeclarations(NodeAST *root, Scope *globalScope);
 static void registerMethodDeclaration(NodeAST *node, Scope *globalScope);
 static void registerVariableDeclaration(NodeAST *node, Scope *currentScope);
-static void executeMainMethod(Scope *globalScope);
+static void executeMainMethod(Scope *globalScope, bool debug);
 
 static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argumentsNode, Scope *callerScope, Scope *globalScope);
 static Symbol *evaluateArguments(NodeAST *argumentsNode, Scope *callerScope);
@@ -45,7 +46,7 @@ static Scope *getGlobalScope(Scope *scope);
 static float getFloatValue(Symbol symbol);
 static bool isTruthy(Symbol symbol);
 
-Scope *interpreteSemantics(NodeAST *root) {
+Scope *interpreteSemantics(NodeAST *root, bool debug) {
     if (root == NULL) {
         return NULL;
     }
@@ -57,7 +58,7 @@ Scope *interpreteSemantics(NodeAST *root) {
     }
 
     registerGlobalDeclarations(root, globalScope);
-    executeMainMethod(globalScope);
+    executeMainMethod(globalScope, debug);
 
     return globalScope;
 }
@@ -97,19 +98,19 @@ static void registerMethodDeclaration(NodeAST *node, Scope *globalScope) {
     appendSymbol(globalScope, symbol);
 }
 
-static void executeMainMethod(Scope *globalScope) {
+static void executeMainMethod(Scope *globalScope, bool debug) {
     Symbol *mainSymbol = lookupSymbol(globalScope, "main");
     NodeAST *mainDeclaration = mainSymbol->value.function;
 
     Symbol result = executeFunctionBody(mainDeclaration, NULL, globalScope, globalScope);
     if (result.type == TYPE_INT) {
-        printf("[INTERPRETE] 'main' retorno el valor entero: %d\n", result.value.intValue);
+        debugPrintf(debug, "[INTERPRETE] 'main' retorno el valor entero: %d\n", result.value.intValue);
     } else if (result.type == TYPE_FLOAT) {
-        printf("[INTERPRETE] 'main' retorno el valor float: %f\n", result.value.floatValue);
+        debugPrintf(debug, "[INTERPRETE] 'main' retorno el valor float: %f\n", result.value.floatValue);
     } else if (result.type == TYPE_BOOL) {
-        printf("[INTERPRETE] 'main' retorno el valor booleano: %s\n", result.value.intValue ? "true" : "false");
+        debugPrintf(debug, "[INTERPRETE] 'main' retorno el valor booleano: %s\n", result.value.intValue ? "true" : "false");
     } else {
-        printf("[INTERPRETE] 'main' finalizo correctamente (void)\n");
+        debugPrintf(debug, "[INTERPRETE] 'main' finalizo correctamente (void)\n");
     }
 }
 

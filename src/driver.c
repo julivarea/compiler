@@ -10,6 +10,7 @@
 #include "ast.h"
 #include "bison.tab.h"
 #include "cli.h"
+#include "debug.h"
 #include "error_handler.h"
 #include "intermediate_code.h"
 #include "interpreter.h"
@@ -64,9 +65,7 @@ static const TACList *buildIntermediateCode(const Options *options) {
     if (hasOptimizations) {
         setOptimizerDebug(options->debug);
         int changes = optimizeIntermediateCode((TACList *)tacList, enabled);
-        if (options->debug) {
-            printf("Optimizaciones: %d instrucciones transformadas\n\n", changes);
-        }
+        debugPrintf(options->debug, "[OPT] Optimizaciones: %d instrucciones transformadas\n\n", changes);
     }
 
     return tacList;
@@ -105,7 +104,7 @@ int compile(const Options *options) {
         case TARGET_INTERP: {
             if (runParse() != 0) { return 1; }
             if (runSemantic() != 0) { return 1; }
-            Scope *globalScope = interpreteSemantics(astRoot);
+            Scope *globalScope = interpreteSemantics(astRoot, options->debug);
             freeScope(globalScope);
             return 0;
         }
@@ -132,9 +131,7 @@ static int runScan(const Options *options) {
             tokenName = singleCharacter;
         }
         fprintf(outputFile, "[Linea %d] %-12s %s\n", yylineno, tokenName, yytext);
-        if (options->debug) {
-            printf("[Linea %d] %-12s %s\n", yylineno, tokenName, yytext);
-        }
+        debugPrintf(options->debug, "[SCAN] [Linea %d] %-12s %s\n", yylineno, tokenName, yytext);
     }
     fclose(outputFile);
 
@@ -172,9 +169,7 @@ static int runIntermediateCode(const Options *options, const TACList *tacList) {
     resetBuildString();
     formatTACList(tacList);
 
-    if (options->debug) {
-        printf("%s", getBuiltString());
-    }
+    debugPrintf(options->debug, "%s", getBuiltString());
 
     return writeBuiltStringTo(options->output);
 }
@@ -189,9 +184,7 @@ static int runAssembly(const Options *options, const TACList *tacList) {
         return 1;
     }
 
-    if (options->debug) {
-        printf("%s", getBuiltString());
-    }
+    debugPrintf(options->debug, "%s", getBuiltString());
 
     if (!BUILDS_EXECUTABLE(options)) {
         return writeBuiltStringTo(options->output);
@@ -214,7 +207,7 @@ static int runAssembly(const Options *options, const TACList *tacList) {
     if (!options->debug) {
         remove(assemblyPath);
     } else {
-        printf("Assembly intermedio conservado en %s\n", assemblyPath);
+        debugPrintf(options->debug, "[ASM] Assembly intermedio conservado en %s\n", assemblyPath);
     }
 
     return result;
@@ -261,10 +254,8 @@ static int assembleAndLink(const Options *options, const char *assemblyPath) {
         (char *)assemblyPath, "-o", (char *)options->output, NULL
     };
 
-    if (options->debug) {
-        printf("Ensamblando: gcc -no-pie -x assembler %s -o %s\n",
-               assemblyPath, options->output);
-    }
+    debugPrintf(options->debug, "[ASM] Ensamblando: gcc -no-pie -x assembler %s -o %s\n",
+                assemblyPath, options->output);
 
     pid_t processId = fork();
     if (processId < 0) {

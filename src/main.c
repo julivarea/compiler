@@ -4,6 +4,7 @@
 #include "bison.tab.h"
 #include "ast.h"
 #include "cli.h"
+#include "debug.h"
 #include "error_handler.h"
 #include "driver.h"
 
@@ -25,9 +26,7 @@ int main(int argc, char **argv) {
 
     int exitCode = compile(&options);
 
-    if (options.debug && exitCode == 0) {
-        printf("\nSalida escrita en %s\n", options.output);
-    }
+    debugPrintf(options.debug && exitCode == 0, "\n[DRIVER] Salida escrita en %s\n", options.output);
 
     fclose(yyin);
     freeOptions(&options);

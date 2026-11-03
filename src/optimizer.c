@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "debug.h"
 #include "live_variable_analysis.h"
 #include "tac_instruction.h"
 #include "tac_operand.h"
@@ -744,8 +745,8 @@ static void printTACWithDeletedInRed(const TACList *tacList,
         return;
     }
 
-    printf("\n\033[1;36m=== Codigo Intermedio TAC: %s (%zu eliminada%s) ===\033[0m\n",
-           reason, deletedCount, deletedCount > 1 ? "s" : "");
+    debugPrintf(isOptimizerDebugEnabled, "\n[OPT] === Codigo Intermedio TAC: %s (%zu eliminada%s) ===\n",
+                reason, deletedCount, deletedCount > 1 ? "s" : "");
 
     for (const TACInstruction *current = tacList->head; current != NULL; current = current->next) {
         bool isDeleted = false;
@@ -757,13 +758,12 @@ static void printTACWithDeletedInRed(const TACList *tacList,
         }
 
         if (isDeleted) {
-            printf("\033[1;31m  [ELIMINADA] ");
+            printf("  [ELIMINADA] ");
             printSingleInstruction(stdout, current);
-            printf("\033[0m");
         } else {
             printf("              ");
             printSingleInstruction(stdout, current);
         }
     }
-    printf("\033[1;36m======================================================================\033[0m\n\n");
+    printf("======================================================================\n\n");
 }
