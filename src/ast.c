@@ -22,8 +22,8 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
     node->type = TYPE_VOID;
     node->line = yylineno;
 
-    bool hasConditionLine = ((nodeType == WHILE_NODE || nodeType == IF_ELSE_NODE) && left != NULL);
-    if (hasConditionLine) {
+    // if/while se reducen tras su bloque: usar la línea de la condición, no la del '}'.
+    if ((nodeType == IF_ELSE_NODE || nodeType == WHILE_NODE) && left != NULL) {
         node->line = left->line;
     }
 
@@ -35,10 +35,12 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
 
     if (count > 0) {
         node->children = malloc(count * sizeof(NodeAST *));
+        // si no hay memoria para alguno de los hijos, se libera el nodo, y se devuelve null
         if (node->children == NULL) {
             free(node);
             return NULL;
         }
+
         for (int i = 0; i < count; i++) {
             node->children[i] = temp[i];
         }
