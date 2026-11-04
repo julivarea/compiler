@@ -8,12 +8,13 @@
 
 1. [Primeros Pasos](00.5-getting-started.md)
 2. [Visión General y Arquitectura](01-overview.md)
-3. [Análisis Léxico y Sintáctico](02-lexical-syntax-analysis.md)
-4. [Árbol de Sintaxis Abstracta (AST)](03-ast.md)
-5. [Análisis Semántico y Tabla de Símbolos](04-semantic-analysis.md)
-6. [Generación de Código Intermedio (TAC)](05-intermediate-code.md)
-7. [Generación de Código Objeto y Gestión del Stack](06-object-code.md)
-8. [Live Variable Analysis](../live_variable_analysis.md)
+3. [Análisis Léxico](02-lexical-analysis.md) — `lexer.l`
+4. [Análisis Sintáctico](02-lexical-syntax-analysis.md) — `bison.y`, `parser_helpers.c`
+5. [Árbol de Sintaxis Abstracta (AST)](03-ast.md)
+6. [Análisis Semántico y Tabla de Símbolos](04-semantic-analysis.md)
+7. [Generación de Código Intermedio (TAC)](05-intermediate-code.md)
+8. [Generación de Código Objeto y Gestión del Stack](06-object-code.md)
+9. [Live Variable Analysis](../live_variable_analysis.md)
 
 ---
 

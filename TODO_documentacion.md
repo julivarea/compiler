@@ -103,9 +103,15 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
 
 ### Bloque 1 — Análisis léxico y sintáctico
 
-- [ ] **F05 — Analizador léxico** · `lexer.l` · 78 líneas
+- [x] **F05 — Analizador léxico** · `lexer.l` · 78 líneas
   - Las expresiones regulares de cada token, el tratamiento de comentarios y el
     conteo de líneas. Teoría: autómatas finitos, de ER a AFD.
+  - **Hecha:** `documentacion/wiki/02-lexical-analysis.md`. Incluye el inventario
+    completo de reglas, el desempate de Flex (match más largo antes que orden)
+    con los casos verificados, el autómata de los comentarios, la cadena de
+    propiedad de la memoria de los identificadores y cuatro extensiones.
+  - De paso se corrigió un error de la página anterior: decía que un
+    identificador podía empezar con `_`, y `_foo` es error léxico.
 - [ ] **F06 — Gramática y parser** · `bison.y` · 171 líneas
   - La gramática de C-TDS, precedencia y asociatividad de operadores, y el
     conflicto LALR(1) que hubo que resolver. Teoría: análisis ascendente,

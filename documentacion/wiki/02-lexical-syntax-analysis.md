@@ -1,23 +1,19 @@
-# Análisis Léxico y Sintáctico
+# Análisis Sintáctico
 
-La etapa de entrada del compilador transforma la secuencia de caracteres crudos del código fuente en una representación arbórea estructurada (AST).
+Toma la secuencia de tokens que produce el [análisis léxico](02-lexical-analysis.md)
+y la transforma en una representación arbórea estructurada (AST).
 
----
+!!! note "Estado de esta página"
+    Resumen de las fichas **F06** (gramática y parser, `src/bison.y`) y **F07**
+    (acciones del parser, `src/parser_helpers.c`), todavía sin desarrollar al
+    nivel de detalle de las demás. El plan está en `TODO_documentacion.md`.
 
-## 1. Análisis Léxico
-
-El analizador léxico escanea el código fuente reconociendo la familia de tokens del lenguaje C-TDS:
-
-- **Palabras reservadas:** Tipos primitivos (`int`, `boolean`, `float`, `void`), estructuras de control (`if`, `else`, `while`, `return`) y valores booleanos (`true`, `false`). Son sensibles a mayúsculas y minúsculas.
-- **Identificadores:** Secuencias alfanuméricas que comienzan con letra o guión bajo, utilizadas para variables y métodos.
-- **Constantes numéricas:** Literales enteros (`int`) y de punto flotante (`float`).
-- **Operadores y delimitadores:** Operaciones aritméticas (`+`, `-`, `*`, `/`, `%`), lógicas (`&&`, `||`, `!`), de comparación (`==`, `<`, `>`), asignación (`=`) y símbolos de puntuación (`;`, `,`, paréntesis y llaves).
-- **Comentarios:** Soporta comentarios de una línea (`//...`) y multilínea (`/* ... */`), descartándolos automáticamente.
-- **Rastreo de líneas:** Registra la línea de origen de cada token para que cualquier mensaje de error posterior indique con exactitud la ubicación en el código fuente.
+    El análisis léxico, que antes se resumía acá, ahora tiene su propia página
+    completa: [Análisis Léxico](02-lexical-analysis.md).
 
 ---
 
-## 2. Análisis Sintáctico y Resolución de Conflictos
+## 1. Análisis Sintáctico y Resolución de Conflictos
 
 El analizador sintáctico procesa la secuencia de tokens mediante un algoritmo LALR(1) verificando la conformidad con la gramática de C-TDS:
 
@@ -27,7 +23,7 @@ El analizador sintáctico procesa la secuencia de tokens mediante un algoritmo L
 
 ---
 
-## 3. Construcción del AST en el Parseo
+## 2. Construcción del AST en el Parseo
 
 A medida que las reglas gramaticales se reducen:
 - Se instancian los nodos correspondientes a sentencias, expresiones y declaraciones.
