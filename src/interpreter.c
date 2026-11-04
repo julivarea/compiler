@@ -1,5 +1,6 @@
 #include "interpreter.h"
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -486,6 +487,14 @@ static Symbol evaluateBinaryOperator(OperationType operation, Symbol left, Symbo
                     semanticError(0, "Division por cero.");
                     return makeIntSymbol(0);
                 }
+                // INT_MIN / -1 desborda: el cociente no es representable en int.
+                // Es el mismo caso que el optimizador se niega a plegar, y en x86
+                // 'idivl' trapea, asi que el intérprete tampoco puede dar un valor.
+                bool isSignedOverflow = (left.value.intValue == INT_MIN && right.value.intValue == -1);
+                if (isSignedOverflow) {
+                    semanticError(0, "Desborde en la division de enteros: INT_MIN / -1 no es representable.");
+                    return makeIntSymbol(0);
+                }
                 return makeIntSymbol(left.value.intValue / right.value.intValue);
             }
 
@@ -494,6 +503,13 @@ static Symbol evaluateBinaryOperator(OperationType operation, Symbol left, Symbo
                 bool isModuloByZero = (right.value.intValue == 0);
                 if (isModuloByZero) {
                     semanticError(0, "Division por cero en operacion modulo.");
+                    return makeIntSymbol(0);
+                }
+                // INT_MIN % -1 vale 0 matematicamente, pero en C es indefinido y en
+                // x86 trapea igual que la division, porque usa la misma 'idivl'.
+                bool isSignedOverflow = (left.value.intValue == INT_MIN && right.value.intValue == -1);
+                if (isSignedOverflow) {
+                    semanticError(0, "Desborde en el modulo de enteros: INT_MIN %% -1 no es representable.");
                     return makeIntSymbol(0);
                 }
                 return makeIntSymbol(left.value.intValue % right.value.intValue);
