@@ -32,8 +32,9 @@ El proyecto se aborda de forma incremental: cada entrega agrega una fase al comp
   traduce el TAC a assembly de GNU Assembler y lo ensambla con `gcc` para producir el
   ejecutable. Enteros, booleanos y reales de precisión simple (SSE)
 
-En la [Wiki de Onboarding](wiki/00-index.md) hay
-una versión navegable estructurada paso a paso.
+En la [Wiki de Onboarding](documentacion/wiki/00-index.md) hay
+una versión navegable estructurada paso a paso. Se lee mucho mejor servida como
+sitio que como archivos sueltos: ver [Documentación](#documentación).
 
 ## Estructura del repositorio
 
@@ -74,6 +75,11 @@ una versión navegable estructurada paso a paso.
 │   └── error_handler.c
 ├── tests/                                           # tests unitarios de lexer y parser
 ├── build/                                           # archivos de compilacion
+├── documentacion/                                   # páginas del sitio de documentación (ver "Documentación")
+│   ├── wiki/                                        # wiki de onboarding, una página por fase
+│   └── spec/                                        # enunciado y especificación del lenguaje (PDF)
+├── mkdocs.yml                                       # configuración del sitio: docs_dir, nav y tema
+├── pyproject.toml / uv.lock                         # dependencias de la documentación (MkDocs)
 ├── build.sh                                         # compilar proyecto
 ├── test_suite.sh                                    # correr tests
 ```
@@ -226,6 +232,74 @@ y los mensajes de error que imprime el compilador en los casos inválidos:
 ```bash
 VERBOSE=1 bash test_suite.sh
 ```
+
+## Documentación
+
+La documentación del proyecto es un sitio navegable hecho con
+[MkDocs](https://www.mkdocs.org/) y el tema
+[Material](https://squidfunk.github.io/mkdocs-material/). Las páginas son los
+`.md` de `documentacion/` y la configuración está en `mkdocs.yml`.
+
+### Prerrequisitos
+
+Las dependencias de Python se manejan con [`uv`](https://docs.astral.sh/uv/),
+que es lo que fija `pyproject.toml` y `uv.lock`. Si no lo tenés instalado:
+
+```bash
+pipx install uv
+```
+
+No hace falta crear ni activar un entorno virtual a mano: `uv` arma el `.venv`
+solo la primera vez, leyendo las versiones exactas de `uv.lock`. Por eso todos
+vemos el sitio igual.
+
+### Levantar el sitio
+
+```bash
+uv run mkdocs serve
+```
+
+Imprime la dirección donde quedó escuchando (por defecto
+`http://127.0.0.1:8000/`) y se corta con `Ctrl+C`. Mientras está corriendo
+recarga sola: guardás un `.md` y el navegador se actualiza sin reiniciar nada.
+Es la forma recomendada de escribir documentación, porque las tablas, los
+bloques de código y los diagramas Mermaid se ven renderizados al instante y no
+como texto plano.
+
+Si preferís no instalar `uv`, también alcanza con
+`pipx install mkdocs-material` y después `mkdocs serve`. El único plugin que usa
+`mkdocs.yml` es `search`, que viene incorporado al tema, así que no falta nada
+más; lo que se pierde es la garantía de usar las mismas versiones que el resto
+del grupo.
+
+Para generar el sitio estático en vez de servirlo:
+
+```bash
+uv run mkdocs build
+```
+
+Deja el HTML en `site/`, que es un artefacto generado y está en `.gitignore`.
+
+### Por dónde empezar a leer
+
+El recorrido pensado para alguien que llega al proyecto es la **Wiki de
+Onboarding**, que va de la visión general del compilador hasta cada fase en el
+orden en que se ejecutan: léxico y sintáctico, AST, análisis semántico, código
+intermedio, código objeto y análisis de variables vivas. La sección
+**Documentación Técnica** es material de consulta puntual (decisiones de diseño
+del AST, alcance del análisis semántico, el conflicto de Bison), no se lee de
+corrido.
+
+### Agregar una página nueva
+
+Dos pasos, y el segundo es el que se olvida:
+
+1. Crear el `.md` **dentro de `documentacion/`**. Es el `docs_dir` del sitio, así
+   que todo lo que esté en la raíz del repo (`optimizaciones.md`, los
+   `TODO_*.md`, este mismo README) queda afuera y no aparece.
+2. Agregarlo al `nav:` de `mkdocs.yml`. Una página que no está en el `nav` igual
+   se compila, pero no figura en el menú y solo se llega a ella por el buscador
+   o por un link directo, así que en la práctica es invisible.
 
 ## Flujo de trabajo
 
