@@ -2,9 +2,11 @@
 
 Compilador desarrollado como proyecto de la materia Taller de Diseño de Software (Cod. 3306)
 
-El proyecto se aborda de forma incremental: cada entrega agrega una fase al compilador.
- Hoy estan funcionales las siguientes fases: Análisis léxico y sintáctico, construcción del AST, tabla de símbolos con scopes anidados y validación semántica, y la generación de código intermedio.
- La próxima etapa es la emisión de código assembly x86-64.
+El proyecto se abordó de forma incremental: cada entrega agregaba una fase al
+compilador. **El pipeline está completo**, desde el texto fuente hasta un
+ejecutable x86-64: análisis léxico y sintáctico, construcción del AST, tabla de
+símbolos con scopes anidados, validación semántica, generación de código
+intermedio, optimización sobre el código intermedio y emisión de código objeto.
 
 ## Autores
 
@@ -27,10 +29,32 @@ El proyecto se aborda de forma incremental: cada entrega agrega una fase al comp
   recorrido sobre el AST que valida identificadores no declarados o duplicados en el mismo ámbito, 
   condiciones booleanas en `if`/`while`, consistencia en retornos (`return;` vs `return expr;`), firmas de métodos y la presencia del método `main()`.
 - **Código intermedio (TAC)**:
-  transforma el AST validado en instrucciones lineales de tres direcciones
+  transforma el AST validado en instrucciones lineales de tres direcciones,
+  representadas como cuádruplas con operandos tipados. Incluye evaluación de
+  corto circuito para `&&` y `||`.
+- **Optimizador**:
+  siete optimizaciones sobre el TAC, cada una activable por separado o todas
+  juntas con `-opt all`. La eliminación de asignaciones muertas se apoya en un
+  análisis de variables vivas sobre el grafo de flujo de control.
 - **Código objeto x86-64**:
-  traduce el TAC a assembly de GNU Assembler y lo ensambla con `gcc` para producir el
-  ejecutable. Enteros, booleanos y reales de precisión simple (SSE)
+  traduce el TAC a assembly de GNU Assembler (sintaxis AT&T) y lo ensambla con
+  `gcc` para producir el ejecutable. Respeta la convención de llamada
+  System V AMD64.
+- **Intérprete**:
+  ejecuta el programa recorriendo el AST, sin pasar por el backend. Es una
+  extensión nuestra, ver [Extensiones sobre el enunciado](#extensiones-sobre-el-enunciado).
+
+Las optimizaciones disponibles son:
+
+| Flag | Qué hace |
+| --- | --- |
+| `const-fold` | Plegado de constantes: evalúa en compilación las operaciones entre literales |
+| `const-prop` | Propagación de constantes: reemplaza variables de valor conocido por su valor |
+| `dead-code` | Elimina código inalcanzable y asignaciones cuyo resultado no se usa |
+| `const-branch` | Simplifica `if`/`while` cuya condición es constante |
+| `self-assign` | Elimina asignaciones de una variable a sí misma |
+| `peephole` | Mirilla sobre instrucciones contiguas: saltos redundantes a la etiqueta siguiente |
+| `strength-reduce` | Reducción de fuerza: multiplicaciones por potencias de 2 pasan a desplazamientos |
 
 En la [Wiki de Onboarding](documentacion/wiki/00-index.md) hay
 una versión navegable estructurada paso a paso. Se lee mucho mejor servida como
@@ -42,25 +66,35 @@ sitio que como archivos sueltos: ver [Documentación](#documentación).
 .
 ├── include/                                         # archivos de cabecera (.h)
 │   ├── cli.h                                        # parseo de la línea de comandos
+│   ├── driver.h                                     # orquestación de las etapas según -target
+│   ├── debug.h                                      # convención de salida de debug (-debug)
 │   ├── ast.h                                        # interfaz del AST
 │   ├── types.h                                      # enumerados y tipos de datos
+│   ├── parser_helpers.h                             # utilidades de las acciones de Bison
 │   ├── symbol_table.h                               # gestión de scopes y símbolos
 │   ├── type_checker.h                               # inferencia y chequeo de tipos
 │   ├── semantic_analyzer.h                          # análisis semántico
+│   ├── tac_operation.h                              # enumerado de opcodes TAC
 │   ├── tac_operand.h                                # representación y constructores de operandos TAC
 │   ├── tac_instruction.h                            # cuádruplas e instrucciones TAC
 │   ├── tac_list.h                                   # lista enlazada de instrucciones TAC
 │   ├── intermediate_code.h                          # generación de código intermedio
+│   ├── optimizer.h                                  # flags y pasadas de optimización sobre el TAC
+│   ├── live_variable_analysis.h                     # CFG y análisis de variables vivas
 │   ├── asm_instruction.h                            # instrucciones de ensamblador x86-64
 │   ├── function_frame.h                             # gestión del marco de pila (stack frame)
 │   ├── object_code.h                                # generación de código objeto
+│   ├── interpreter.h                                # intérprete sobre el AST
 │   ├── string_builder.h                             # buffer dinámico de cadenas
 │   └── error_handler.h                              # reporte de errores
 ├── src/                                             # implementaciones (.c, .l, .y)
+│   ├── main.c                                       # punto de entrada
 │   ├── cli.c
+│   ├── driver.c
 │   ├── lexer.l
 │   ├── bison.y
 │   ├── ast.c
+│   ├── parser_helpers.c
 │   ├── symbol_table.c
 │   ├── type_checker.c
 │   ├── semantic_analyzer.c
@@ -68,12 +102,16 @@ sitio que como archivos sueltos: ver [Documentación](#documentación).
 │   ├── tac_instruction.c
 │   ├── tac_list.c
 │   ├── intermediate_code.c
+│   ├── optimizer.c
+│   ├── live_variable_analysis.c
 │   ├── asm_instruction.c
 │   ├── function_frame.c
 │   ├── object_code.c
+│   ├── interpreter.c
 │   ├── string_builder.c
 │   └── error_handler.c
-├── tests/                                           # tests unitarios de lexer y parser
+├── tests/                                           # diez suites de tests unitarios con Unity
+├── examples/                                        # programas .ctds de ejemplo, válidos e inválidos
 ├── build/                                           # archivos de compilacion
 ├── documentacion/                                   # páginas del sitio de documentación (ver "Documentación")
 │   ├── wiki/                                        # wiki de onboarding, una página por fase
@@ -111,19 +149,23 @@ El script `build.sh` ejecuta las siguientes operaciones en orden:
 2. **Genera el parser sintáctico:** Corre `bison -d src/bison.y -o build/bison.tab.c`, generando el analizador sintáctico y el archivo de cabecera con los tokens (`build/bison.tab.h`).
 3. **Genera el scanner léxico:** Corre `flex -o build/lex.yy.c src/lexer.l`, generando el analizador léxico a partir de las expresiones regulares de tokens.
 4. **Compila y enlaza:** Invoca `gcc` con las rutas de inclusión `-Iinclude -Isrc -Ibuild`, compilando los dos archivos generados junto con todos los módulos de `src/`:
-   - `src/ast.c` (Árbol de Sintaxis Abstracta)
+   - `src/main.c` (Punto de entrada) y `src/cli.c` (Parseo de los argumentos de la línea de comandos)
+   - `src/driver.c` (Orquestación de las etapas según `-target`)
+   - `src/ast.c` (Árbol de Sintaxis Abstracta) y `src/parser_helpers.c` (Utilidades de las acciones de Bison)
    - `src/symbol_table.c` (Gestión de ámbitos y tabla de símbolos)
    - `src/type_checker.c` (Inferencia, reglas de tipos y coerción)
    - `src/semantic_analyzer.c` (Recorrido y validaciones semánticas)
    - `src/error_handler.c` (Formateo y reporte de errores)
-   - `src/string_builder.c` (Buffer dinámico para código intermedio)
+   - `src/string_builder.c` (Buffer dinámico para la salida de cada etapa)
    - `src/tac_operand.c` (Estructura y constructores de operandos TAC)
    - `src/tac_instruction.c` (Estructura de instrucciones TAC)
    - `src/tac_list.c` (Lista enlazada de cuádruplas TAC)
    - `src/intermediate_code.c` (Recorrido del AST que construye el TAC)
-   - `src/asm_instruction.c` (Instrucciones x86-64)
+   - `src/optimizer.c` (Pasadas de optimización sobre el TAC)
+   - `src/live_variable_analysis.c` (CFG y análisis de variables vivas)
+   - `src/asm_instruction.c` (Instrucciones x86-64) y `src/function_frame.c` (Marco de pila)
    - `src/object_code.c` (Generador de código objeto)
-   - `src/cli.c` (Parseo de los argumentos de la línea de comandos)
+   - `src/interpreter.c` (Intérprete sobre el AST)
 5. **Genera el binario final:** Produce el ejecutable `./mi_compilador` en la raíz del repositorio.
 
 ### Consideraciones y mantenimiento
@@ -143,7 +185,7 @@ El script `build.sh` ejecuta las siguientes operaciones en orden:
 | Opción | Acción |
 | --- | --- |
 | `-o <salida>` | Nombre del archivo de salida, en vez del que se deduce de la etapa |
-| `-target <etapa>` | Compila hasta esa etapa: `scan`, `parse`, `sem`, `codinter`, `assembly` |
+| `-target <etapa>` | Compila hasta esa etapa: `scan`, `parse`, `sem`, `codinter`, `assembly`, `interp` |
 | `-opt [nombre]` | Aplica optimizaciones; `all` son todas. Por defecto ninguna |
 | `-debug` | Imprime información de debugging por `stdout` |
 
@@ -164,9 +206,22 @@ el que se haya pasado con `-o`:
 | `parse` | `.sint` | El AST tal como lo construye el parser, sin anotar |
 | `sem` | `.sem` | El AST anotado: tipo y `uid` de cada identificador |
 | `codinter` | `.ci` | El código de tres direcciones |
-| `assembly` | `.ass` | Assembly x86-64 (GNU Assembler) |
+| `assembly` | `.ass` | Assembly x86-64 (GNU Assembler, sintaxis AT&T) |
 
-Con `-opt` la extensión pasa a ser `.opt`.
+Con `-opt` la extensión pasa a ser `.opt`. El valor `interp` no escribe archivo:
+interpreta el programa y, con `-debug`, informa el valor que devolvió `main`.
+
+Las optimizaciones se piden por nombre, separadas por coma o repitiendo el flag;
+las tres formas que siguen son equivalentes:
+
+```bash
+./mi_compilador -opt all examples/factorial.ctds
+./mi_compilador -opt const-fold,dead-code examples/factorial.ctds
+./mi_compilador -opt const-fold -opt dead-code examples/factorial.ctds
+```
+
+Un nombre de optimización desconocido es un error: el compilador lista las
+soportadas y termina con código 1.
 
 **Sin `-target` el compilador produce el ejecutable** `nombreArchivo.out`: genera el assembly
 como paso intermedio y lo ensambla y enlaza con `gcc`. Ese intermedio se borra al terminar,
@@ -187,18 +242,20 @@ donde indique `-target`:
 3. **Construcción del AST:** Genera la representación intermedia en memoria durante las reducciones sintácticas.
 4. **Análisis Semántico:** Recorre el AST para verificar declaraciones, resolución de ámbitos, compatibilidad de tipos en operaciones y asignaciones, condiciones de control, retornos y la presencia del método `main`. A diferencia de la etapa sintáctica, reporta todos los errores semánticos encontrados antes de abortar.
 5. **Generación de Código Intermedio (TAC):** Si el programa no tiene errores léxicos, sintácticos ni semánticos, emite las instrucciones de Código de Tres Direcciones linealizadas.
+6. **Optimización:** Solo si se pasó `-opt`. Aplica las pasadas pedidas sobre el TAC, repitiéndolas hasta que ninguna introduzca cambios nuevos.
+7. **Generación de Código Objeto:** Traduce el TAC a assembly x86-64 y, si no se pidió `-target assembly`, lo ensambla y enlaza con `gcc` para producir el ejecutable.
 
 El compilador finaliza con código de salida `0` si el programa es válido, o `1` si se detecta cualquier error.
 
 **Decisión de diseño sobre el comportamiento por defecto:** el enunciado dice que
 sin `-target` se compila "hasta la etapa corriente" generando un archivo con la
 extensión de esa etapa, y también que sin `-target` se produce el ejecutable
-`nombreArchivo.out`. Mientras el compilador esté incompleto las dos cosas no
-pueden valer a la vez, así que el default es la etapa corriente (hoy
-`codinter`, salida `.ci`). La constante `CURRENT_TARGET` en `src/cli.h` es lo
-único que hay que mover al terminar cada etapa. El valor `sem` de `-target` es
-una extensión nuestra: el enunciado no lo enumera, pero sí lista la extensión
-`.sem`, con lo cual la etapa semántica no era alcanzable de otro modo.
+`nombreArchivo.out`. Mientras el compilador estuvo incompleto las dos cosas no
+podían valer a la vez, así que se usó una constante `CURRENT_TARGET`
+(en `include/cli.h`) que se iba moviendo al terminar cada etapa. Ahora que el
+pipeline está completo vale `TARGET_ASSEMBLY`, con lo cual las dos lecturas
+coinciden: sin `-target` se recorre todo y queda el ejecutable
+`nombreArchivo.out`.
 
 
 
@@ -208,17 +265,23 @@ una extensión nuestra: el enunciado no lo enumera, pero sí lista la extensión
 bash test_suite.sh
 ```
 
-- `tests/test_lexer.c`: tokens que devuelve `yylex()` (palabras reservadas,
-  identificadores, literales, operadores, comentarios, errores léxicos y
-  números de línea).
-- `tests/test_parser.c`: programas que `yyparse()` debe aceptar o rechazar
-  según la gramática de C-TDS.
+Compila y corre **diez suites** con Unity, una por módulo, **322 tests** en total:
 
-Todavía no hay tests del AST ni del análisis semántico: esas dos fases solo se
-prueban a mano con `examples/`.
+| Suite | Qué cubre |
+| --- | --- |
+| `tests/test_lexer.c` | Tokens que devuelve `yylex()`: palabras reservadas, identificadores, literales, operadores, comentarios, errores léxicos y números de línea |
+| `tests/test_parser.c` | Programas que `yyparse()` debe aceptar o rechazar según la gramática |
+| `tests/test_ast.c` | Forma del árbol que construyen las acciones de Bison |
+| `tests/test_symbol_table.c` | Scopes anidados, shadowing y asignación de `uid` |
+| `tests/test_semantic.c` | Las reglas semánticas del lenguaje, caso válido e inválido por regla |
+| `tests/test_tac.c` | Cuádruplas generadas por cada construcción, incluido el corto circuito |
+| `tests/test_live_variable_analysis.c` | Construcción del CFG y convergencia de `LIVE_IN`/`LIVE_OUT` |
+| `tests/test_object_code.c` | Assembly emitido por cada instrucción TAC |
+| `tests/test_optimizer.c` | Que cada optimización transforme lo que debe y no toque el resto |
+| `tests/test_cli.c` | Parseo de argumentos, extensiones de salida y códigos de retorno |
 
-La salida muestra una línea `[PASS]`/`[FAIL]` por test. Si un test falla,
-se indica la línea del caso que falló y su programa:
+La salida muestra una línea `[PASS]`/`[FAIL]` por test, agrupada por suite. Si un
+test falla, se indica la línea del caso que falló y su programa:
 
 ```
   [FAIL] test_error_if_while_mal_formados
@@ -303,7 +366,7 @@ Dos pasos, y el segundo es el que se olvida:
 
 ## Flujo de trabajo
 
-Después de cada cambio en `src/`, estos tres pasos en orden:
+Después de cada cambio en `src/` o `include/`, estos dos pasos en orden:
 
 ```bash
 ./build.sh && ./test_suite.sh
@@ -315,36 +378,108 @@ compila su propia copia y **no** valida el ejecutable que dejó `build.sh`. Por
 eso al final conviene probar el compilador de verdad sobre un ejemplo:
 
 ```bash
-./mi_compilador -debug examples/programa.ctds
+./mi_compilador examples/programa.ctds
 ```
 
 `programa.ctds` usa todas las construcciones de la gramática, así que sirve de
-prueba de humo de todas las fases de una sola pasada, y con `-debug` se ve el
-TAC generado. Para chequear que los errores se siguen detectando,
-`./mi_compilador examples/programa_con_error.ctds` tiene que reportar un error
-semántico y salir con código 1 sin dejar archivo de salida.
+prueba de humo de todas las fases de una sola pasada. Para chequear que los
+errores se siguen detectando, `./mi_compilador examples/programa_con_error.ctds`
+tiene que reportar un error semántico y salir con código 1 sin dejar archivo de
+salida.
+
+Con `-debug` se ve, además, el grafo de flujo de control con los conjuntos de
+variables vivas y —si se pasó `-opt`— qué instrucciones eliminó cada
+optimización.
 
 ### Prueba completa por etapas
 
-Para validar las cuatro etapas implementadas sobre un mismo programa:
+Para validar todas las etapas sobre un mismo programa:
 
 ```bash
-for etapa in scan parse sem codinter; do ./mi_compilador -target $etapa examples/programa.ctds || echo "FALLO en $etapa"; done
+for etapa in scan parse sem codinter assembly; do ./mi_compilador -target $etapa examples/programa.ctds || echo "FALLO en $etapa"; done
 ```
 
-Debe generar `programa.lex`, `programa.sint`, `programa.sem` y `programa.ci` en
-`examples/`, sin imprimir nada. Son artefactos generados: están en `.gitignore`
-y se borran con `rm -f examples/*.lex examples/*.sint examples/*.sem examples/*.ci`.
+Debe generar `programa.lex`, `programa.sint`, `programa.sem`, `programa.ci` y
+`programa.ass` en `examples/`, sin imprimir nada. Son artefactos generados:
+están en `.gitignore` y se borran con
+`rm -f examples/*.lex examples/*.sint examples/*.sem examples/*.ci examples/*.ass`.
+
+### Verificar que una optimización no cambió la semántica
+
+El chequeo que importa no es que el TAC quede más corto, sino que el programa
+siga haciendo lo mismo. Para eso se compila dos veces y se comparan los
+resultados de la ejecución:
+
+```bash
+./mi_compilador -o /tmp/sin_opt examples/dead_code.ctds && /tmp/sin_opt; echo "sin opt -> $?"
+./mi_compilador -opt all -o /tmp/con_opt examples/dead_code.ctds && /tmp/con_opt; echo "con opt -> $?"
+```
+
+Los dos códigos de salida tienen que coincidir entre sí y con el valor esperado.
+Como C-TDS no tiene salida por pantalla, el código de salida de `main` es la
+única forma de observar lo que hizo un programa, y solo sirve con los `main` que
+devuelven `int`.
+
+## Extensiones sobre el enunciado
+
+Tres cosas del compilador no las pedía el enunciado y se implementaron igual. Se
+dejan documentadas acá porque cambian el alcance respecto de lo exigido.
+
+### Soporte de `float` y coerción `int`/`float`
+
+La especificación del lenguaje incluye `float` como tipo y su regla 14 permite
+las conversiones entre `int` y `float`. Sin embargo, el alcance de las etapas de
+código intermedio y código objeto estaba acotado a **tipos enteros y lógicos**,
+y la descripción de las asignaciones menciona solo `int` y `boolean`. Es decir
+que generar código para `float` no era necesario.
+
+Se implementó de punta a punta igual: inferencia y coerción en el chequeo de
+tipos, operandos `float` en el TAC, y el camino SSE completo en el generador de
+código objeto (registros `%xmm`, instrucciones `movss`/`addss`/`comiss`,
+constantes en `.rodata`, y la clase de registros separada que impone la
+convención de llamada para argumentos reales). La decisión fue mantener el
+lenguaje coherente con su propia especificación, en vez de aceptar `float` en el
+front-end y abandonarlo en el back-end.
+
+Los `float` son de **precisión simple** (4 bytes, IEEE-754). No hay doble
+precisión.
+
+### Intérprete
+
+La tabla de calificación del enunciado incluye un ítem *Intérprete*, pero no
+figura en el cronograma de entregas, y al consultarlo se confirmó que **no hacía
+falta implementarlo**.
+
+Se implementó igual, en `src/interpreter.c`, accesible con `-target interp`.
+Ejecuta el programa recorriendo el AST directamente, sin pasar por el TAC ni por
+el backend. Más allá del ítem de la tabla, resultó útil por una razón concreta
+de testing: es una **segunda implementación independiente** del mismo lenguaje,
+así que sirve de oráculo para el generador de código. Si el intérprete y el
+ejecutable compilado difieren sobre el mismo programa, uno de los dos tiene un
+bug, y eso se detecta sin tener que calcular a mano el resultado esperado.
+
+### El valor `sem` de `-target`
+
+El enunciado enumera `scan`, `parse`, `codinter` y `assembly`, pero también
+lista la extensión `.sem` entre las salidas posibles. Se agregó `-target sem`
+porque, de otro modo, la etapa de análisis semántico no era alcanzable y esa
+extensión no se podía producir.
 
 ## Problemas conocidos
 
-- **`-opt` se acepta y se ignora con un aviso**, porque todavía no hay ninguna optimización.
-- **Los `float` son de precisión simple** (4 bytes, IEEE-754, instrucciones `movss`/`addss`).
-  No hay doble precisión.
 - **Un método solo ve a los declarados antes que él.** No hay declaración
   adelantada en C-TDS, así que `main(){ g(); }` con `g` definido más abajo da
   `Método no declarado`. Es lo que pide la letra ("todo se declara antes de
   usarse"), pero conviene tenerlo presente al escribir ejemplos.
-
-## Proximos pasos
-Revisar `TODO_intermediate_code.md` y para las tareas restantes `TODO_semantic_analyzer.md`
+- **El plegado de constantes desborda con signo en `+`, `-` y `*`.** Al plegar
+  una expresión como `2147483647 * 3` el cálculo se hace en `int`, lo que en C es
+  comportamiento indefinido. Hoy no se nota, porque GCC envuelve en silencio y el
+  resultado coincide con el que produciría el assembly generado, pero formalmente
+  no está garantizado. La división y el módulo sí están protegidos, tanto contra
+  el divisor cero como contra el único desborde posible (`INT_MIN / -1`). Se
+  detectó compilando el proyecto con UBSan.
+- **Los errores de ejecución del intérprete se reportan como errores semánticos
+  y sin número de línea**, y `-target interp` termina con código 0 aunque los
+  haya reportado. Está asumido: el intérprete no es entregable, el mensaje igual
+  sale por `stderr`, y arreglarlo pedía un contador de errores de ejecución
+  propio que no se justificaba.
