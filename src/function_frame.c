@@ -122,9 +122,9 @@ bool getSlotOffset(const FunctionFrame *frame, const char *name, int *outOffset)
     return false;
 }
 
-void ensurePendingParamCapacity(FunctionFrame *frame, int neededCapacity) {
+bool ensurePendingParamCapacity(FunctionFrame *frame, int neededCapacity) {
     if (frame == NULL || neededCapacity <= frame->pendingParamCapacity) {
-        return;
+        return true;
     }
 
     int newCapacity = (frame->pendingParamCapacity > 0) ? frame->pendingParamCapacity : INITIAL_PENDING_PARAMS_CAPACITY;
@@ -134,14 +134,15 @@ void ensurePendingParamCapacity(FunctionFrame *frame, int neededCapacity) {
 
     int *newSlots = (int *)realloc(frame->pendingParamSlots, sizeof(int) * newCapacity);
     if (newSlots == NULL) {
-        return;
+        return false;
     }
     frame->pendingParamSlots = newSlots;
 
     DataType *newTypes = (DataType *)realloc(frame->pendingParamTypes, sizeof(DataType) * newCapacity);
     if (newTypes == NULL) {
-        return;
+        return false;
     }
     frame->pendingParamTypes = newTypes;
     frame->pendingParamCapacity = newCapacity;
+    return true;
 }

@@ -121,7 +121,8 @@ bool getSlotOffset(const FunctionFrame *frame, const char *name, int *outOffset)
  *
  * @param frame Marco de función a expandir.
  * @param neededCapacity Cantidad mínima de ranuras requeridas.
+ * @return true si hay capacidad suficiente, false si falló la reserva de memoria.
  */
-void ensurePendingParamCapacity(FunctionFrame *frame, int neededCapacity);
+bool ensurePendingParamCapacity(FunctionFrame *frame, int neededCapacity);
 
 #endif // FUNCTION_FRAME_H

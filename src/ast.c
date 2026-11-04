@@ -53,7 +53,11 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
 
 NodeAST *newOperatorNode(OperationType operator, NodeAST *left, NodeAST *right) {
     NodeAST *node = newNode(OPERATOR_NODE, NULL, left, right, NULL);
-    if (node == NULL) return NULL;
+    if (node == NULL) {
+        freeAST(left);
+        freeAST(right);
+        return NULL;
+    }
     node->operationType = operator;
     return node;
 }
@@ -62,12 +66,16 @@ NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *pa
     Symbol *symbol = newSymbol(methodName, METHOD_SYMBOL, returnType, parameters);
     if (symbol == NULL) {
         free(methodName);
+        freeAST(parameters);
+        freeAST(body);
         return NULL;
     }
 
     NodeAST *node = newNode(METHOD_DECLARATION_NODE, symbol, NULL, NULL, NULL);
     if (node == NULL) {
         freeSymbol(symbol);
+        freeAST(parameters);
+        freeAST(body);
         return NULL;
     }
 
@@ -75,6 +83,8 @@ NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *pa
     if (node->children == NULL) {
         freeSymbol(symbol);
         free(node);
+        freeAST(parameters);
+        freeAST(body);
         return NULL;
     }
 

@@ -114,7 +114,7 @@ int compile(const Options *options) {
             if (runSemantic() != 0) { return 1; }
             Scope *globalScope = interpreteSemantics(astRoot, options->debug);
             freeScope(globalScope);
-            return 0;
+            return (semantic_errors > 0) ? 1 : 0;
         }
 
         default:
@@ -180,6 +180,11 @@ static int runIntermediateCode(const Options *options, const TACList *tacList) {
     resetBuildString();
     formatTACList(tacList);
 
+    if (hasStringBuilderError()) {
+        fprintf(stderr, "Error interno: no se pudo generar la salida del codigo intermedio.\n");
+        return 1;
+    }
+
     debugPrintf(options->debug, "%s", getBuiltString());
 
     return writeBuiltStringTo(options->output);
@@ -191,6 +196,11 @@ static int runAssembly(const Options *options, const TACList *tacList) {
 
     if (getObjectCodeErrors() > 0) {
         compileAborted("internos en la generacion de codigo objeto", getObjectCodeErrors());
+        return 1;
+    }
+
+    if (hasStringBuilderError()) {
+        fprintf(stderr, "Error interno: no se pudo generar la salida de assembly.\n");
         return 1;
     }
 

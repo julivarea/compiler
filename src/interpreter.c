@@ -23,7 +23,7 @@ static void registerVariableDeclaration(NodeAST *node, Scope *currentScope);
 static void executeMainMethod(Scope *globalScope, bool debug);
 
 static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argumentsNode, Scope *callerScope, Scope *globalScope);
-static Symbol *evaluateArguments(NodeAST *argumentsNode, Scope *callerScope);
+static Symbol *evaluateArguments(NodeAST *argumentsNode, Scope *callerScope, bool *outOfMemory);
 static Scope *createFunctionScope(Scope *globalScope);
 static void bindParameters(Scope *functionScope, NodeAST *parametersNode, Symbol *argumentValues);
 static void assignSymbolValue(Symbol *target, Symbol source);
@@ -142,7 +142,11 @@ static void executeMainMethod(Scope *globalScope, bool debug) {
 
 
 static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argumentsNode, Scope *callerScope, Scope *globalScope) {
-    Symbol *argumentValues = evaluateArguments(argumentsNode, callerScope);
+    bool argumentsOutOfMemory = false;
+    Symbol *argumentValues = evaluateArguments(argumentsNode, callerScope, &argumentsOutOfMemory);
+    if (argumentsOutOfMemory) {
+        return makeVoidSymbol();
+    }
 
     Scope *functionScope = createFunctionScope(globalScope);
     if (functionScope == NULL) {
@@ -162,7 +166,8 @@ static Symbol executeFunctionBody(NodeAST *methodDeclarationNode, NodeAST *argum
 }
 
 
-static Symbol *evaluateArguments(NodeAST *argumentsNode, Scope *callerScope) {
+static Symbol *evaluateArguments(NodeAST *argumentsNode, Scope *callerScope, bool *outOfMemory) {
+    *outOfMemory = false;
     int argumentCount = (argumentsNode != NULL) ? argumentsNode->childCount : 0;
     if (argumentCount == 0) {
         return NULL;
@@ -171,6 +176,7 @@ static Symbol *evaluateArguments(NodeAST *argumentsNode, Scope *callerScope) {
     Symbol *argumentValues = malloc(sizeof(Symbol) * argumentCount);
     if (argumentValues == NULL) {
         semanticError(argumentsNode->line, "Error: no se pudo reservar memoria para los argumentos de la llamada.");
+        *outOfMemory = true;
         return NULL;
     }
 

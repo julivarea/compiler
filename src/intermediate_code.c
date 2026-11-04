@@ -7,6 +7,7 @@
 
 static TACList *currentCode = NULL;
 static DataType currentMethodType = TYPE_VOID;
+static bool tacMemoryError = false;
 
 static int temporaryCount = 0;
 static int labelCount = 0;
@@ -43,6 +44,8 @@ const TACList *generateIntermediateCode(NodeAST *root) {
     }
 
     freeTACList(currentCode);
+    currentCode = NULL;
+    tacMemoryError = false;
     currentCode = createTACList();
     if (currentCode == NULL) {
         fprintf(stderr,
@@ -61,6 +64,12 @@ const TACList *generateIntermediateCode(NodeAST *root) {
         } else {
             generateStatementCode(declaration);
         }
+    }
+
+    if (tacMemoryError) {
+        freeTACList(currentCode);
+        currentCode = NULL;
+        return NULL;
     }
 
     return currentCode;
@@ -360,6 +369,7 @@ static void emit(TACOperation operation, TACOperand result, TACOperand firstOper
     if (instruction == NULL) {
         fprintf(stderr,
                 "\033[1;31mError interno del TAC:\033[0m no se pudo reservar memoria para una instruccion.\n");
+        tacMemoryError = true;
     }
 }
 

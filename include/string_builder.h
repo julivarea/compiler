@@ -1,6 +1,8 @@
 #ifndef STRING_BUILDER_H
 #define STRING_BUILDER_H
 
+#include <stdbool.h>
+
 /**
  * @file string_builder.h
  * @brief Acumulador dinámico de cadenas y formateador de texto en memoria.
@@ -37,6 +39,13 @@ void buildStringf(const char *format, ...);
  * @return Puntero constante a la cadena acumulada, o cadena vacía "" si no se ha emitido texto.
  */
 const char *getBuiltString(void);
+
+/**
+ * @brief Indica si alguna operación de construcción de texto falló por memoria.
+ *
+ * @return true si se descartó texto por un fallo de reserva, false en caso contrario.
+ */
+bool hasStringBuilderError(void);
 
 /**
  * @brief Restablece el acumulador liberando la memoria dinámica reservada.

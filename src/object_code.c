@@ -43,9 +43,9 @@ static int floatConstantCount = 0;
 static int floatConstantCapacity = 0;
 
 // Prototipos de submetodos para aplicar Step-Down Rule
-static void buildFrameLayout(FunctionFrame *frame, const TACInstruction *functionStart);
+static bool buildFrameLayout(FunctionFrame *frame, const TACInstruction *functionStart);
 static void allocateLocalSlots(FunctionFrame *frame, const TACInstruction *functionStart);
-static void allocatePendingParamSlots(FunctionFrame *frame, const TACInstruction *functionStart);
+static bool allocatePendingParamSlots(FunctionFrame *frame, const TACInstruction *functionStart);
 static const TACInstruction *emitFunction(FunctionFrame *frame, const TACInstruction *functionStart);
 
 static void emitParamDeclaration(const TACInstruction *instruction, FunctionFrame *frame);
@@ -133,7 +133,15 @@ void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
 
             frame->returnType = instruction->result.type;
 
-            buildFrameLayout(frame, instruction);
+            if (!buildFrameLayout(frame, instruction)) {
+                fprintf(stderr,
+                        "\033[1;31mError interno del generador de codigo objeto:\033[0m"
+                        " no se pudo reservar memoria para los argumentos pendientes de '%s'.\n",
+                        instruction->result.name);
+                objectCodeErrors++;
+                freeFrame(frame);
+                break;
+            }
             instruction = emitFunction(frame, instruction);
 
             freeFrame(frame);
@@ -154,10 +162,13 @@ int getObjectCodeErrors(void) {
     return objectCodeErrors;
 }
 
-static void buildFrameLayout(FunctionFrame *frame, const TACInstruction *functionStart) {
+static bool buildFrameLayout(FunctionFrame *frame, const TACInstruction *functionStart) {
     allocateLocalSlots(frame, functionStart);
-    allocatePendingParamSlots(frame, functionStart);
+    if (!allocatePendingParamSlots(frame, functionStart)) {
+        return false;
+    }
     frame->frameSize = ALIGN_UP(frame->nextOffset, 16);
+    return true;
 }
 
 static void allocateLocalSlots(FunctionFrame *frame, const TACInstruction *functionStart) {
@@ -197,7 +208,7 @@ static void allocateLocalSlots(FunctionFrame *frame, const TACInstruction *funct
     }
 }
 
-static void allocatePendingParamSlots(FunctionFrame *frame, const TACInstruction *functionStart) {
+static bool allocatePendingParamSlots(FunctionFrame *frame, const TACInstruction *functionStart) {
     int pendingCount = 0;
     for (const TACInstruction *scan = functionStart->next;
          scan != NULL && scan->operation != TAC_END_FUNC;
@@ -218,10 +229,13 @@ static void allocatePendingParamSlots(FunctionFrame *frame, const TACInstruction
         }
     }
 
-    ensurePendingParamCapacity(frame, frame->maxPendingParams);
+    if (!ensurePendingParamCapacity(frame, frame->maxPendingParams)) {
+        return false;
+    }
     for (int i = 0; i < frame->maxPendingParams; i++) {
         frame->pendingParamSlots[i] = addAnonymousSlot(frame);
     }
+    return true;
 }
 
 static const TACInstruction *emitFunction(FunctionFrame *frame, const TACInstruction *functionStart) {
@@ -527,7 +541,14 @@ static void emitIfTrue(const TACInstruction *instruction, const FunctionFrame *f
 }
 
 static void emitParam(const TACInstruction *instruction, FunctionFrame *frame) {
-    ensurePendingParamCapacity(frame, frame->pendingParamCount + 1);
+    if (!ensurePendingParamCapacity(frame, frame->pendingParamCount + 1)) {
+        fprintf(stderr,
+                "\033[1;31mError interno del generador de codigo objeto:\033[0m"
+                " no se pudo reservar memoria para el argumento '%s'.\n",
+                instruction->firstOperand.name);
+        objectCodeErrors++;
+        return;
+    }
     int slot = frame->pendingParamSlots[frame->pendingParamCount];
 
     bool isFloat = isFloatOperand(&instruction->firstOperand);
