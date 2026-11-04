@@ -78,7 +78,19 @@ static void registerGlobalDeclarations(NodeAST *root, Scope *globalScope) {
 }
 
 static void registerVariableDeclaration(NodeAST *node, Scope *currentScope) {
-    Symbol *symbol = newSymbol(strdup(node->symbol->id), VARIABLE_SYMBOL, node->type, NULL);
+    char *id = strdup(node->symbol->id);
+    if (id == NULL) {
+        semanticError(node->line, "Error: no se pudo reservar memoria para la variable '%s'.", node->symbol->id);
+        return;
+    }
+
+    Symbol *symbol = newSymbol(id, VARIABLE_SYMBOL, node->type, NULL);
+    if (symbol == NULL) {
+        free(id);
+        semanticError(node->line, "Error: no se pudo reservar memoria para la variable '%s'.", node->symbol->id);
+        return;
+    }
+
     bool isFloatType = (symbol->type == TYPE_FLOAT);
     if (isFloatType) {
         symbol->value.floatValue = 0.0f;
@@ -89,13 +101,30 @@ static void registerVariableDeclaration(NodeAST *node, Scope *currentScope) {
 }
 
 static void registerMethodDeclaration(NodeAST *node, Scope *globalScope) {
-    Symbol *symbol = newSymbol(strdup(node->symbol->id), FUNCTION_ENTRY_SYMBOL, node->type, node->symbol->parameters);
+    char *id = strdup(node->symbol->id);
+    if (id == NULL) {
+        semanticError(node->line, "Error: no se pudo reservar memoria para el metodo '%s'.", node->symbol->id);
+        return;
+    }
+
+    Symbol *symbol = newSymbol(id, FUNCTION_ENTRY_SYMBOL, node->type, node->symbol->parameters);
+    if (symbol == NULL) {
+        free(id);
+        semanticError(node->line, "Error: no se pudo reservar memoria para el metodo '%s'.", node->symbol->id);
+        return;
+    }
+
     symbol->value.function = node;
     appendSymbol(globalScope, symbol);
 }
 
 static void executeMainMethod(Scope *globalScope, bool debug) {
     Symbol *mainSymbol = lookupSymbol(globalScope, "main");
+    if (mainSymbol == NULL || mainSymbol->value.function == NULL) {
+        semanticError(0, "No se encontro la definicion del metodo 'main' para interpretar.");
+        return;
+    }
+
     NodeAST *mainDeclaration = mainSymbol->value.function;
 
     Symbol result = executeFunctionBody(mainDeclaration, NULL, globalScope, globalScope);
@@ -139,10 +168,13 @@ static Symbol *evaluateArguments(NodeAST *argumentsNode, Scope *callerScope) {
     }
 
     Symbol *argumentValues = malloc(sizeof(Symbol) * argumentCount);
-    if (argumentValues != NULL) {
-        for (int i = 0; i < argumentCount; i++) {
-            argumentValues[i] = evaluateExpression(argumentsNode->children[i], callerScope);
-        }
+    if (argumentValues == NULL) {
+        semanticError(argumentsNode->line, "Error: no se pudo reservar memoria para los argumentos de la llamada.");
+        return NULL;
+    }
+
+    for (int i = 0; i < argumentCount; i++) {
+        argumentValues[i] = evaluateExpression(argumentsNode->children[i], callerScope);
     }
     return argumentValues;
 }
@@ -169,7 +201,19 @@ static void assignSymbolValue(Symbol *target, Symbol source) {
 static void bindParameters(Scope *functionScope, NodeAST *parametersNode, Symbol *argumentValues) {
     for (int i = 0; i < parametersNode->childCount; i++) {
         NodeAST *parameterNode = parametersNode->children[i];
-        Symbol *parameterSymbol = newSymbol(strdup(parameterNode->symbol->id), VARIABLE_SYMBOL, parameterNode->type, NULL);
+        char *id = strdup(parameterNode->symbol->id);
+        if (id == NULL) {
+            semanticError(parameterNode->line, "Error: no se pudo reservar memoria para el parametro '%s'.", parameterNode->symbol->id);
+            continue;
+        }
+
+        Symbol *parameterSymbol = newSymbol(id, VARIABLE_SYMBOL, parameterNode->type, NULL);
+        if (parameterSymbol == NULL) {
+            free(id);
+            semanticError(parameterNode->line, "Error: no se pudo reservar memoria para el parametro '%s'.", parameterNode->symbol->id);
+            continue;
+        }
+
         if (argumentValues != NULL) {
             assignSymbolValue(parameterSymbol, argumentValues[i]);
         }
@@ -242,6 +286,10 @@ static ExecResult executeAssignment(NodeAST *node, Scope *currentScope) {
     ExecResult result = { .hasReturned = false, .value = makeVoidSymbol() };
     Symbol assignedValue = evaluateExpression(GET_EXPRESSION(node), currentScope);
     Symbol *target = lookupSymbol(currentScope, node->symbol->id);
+    if (target == NULL) {
+        semanticError(node->line, "Asignacion a variable no declarada '%s'.", node->symbol->id);
+        return result;
+    }
     assignSymbolValue(target, assignedValue);
 
     return result;
@@ -287,6 +335,11 @@ static ExecResult executeReturn(NodeAST *node, Scope *currentScope) {
 
 static Symbol executeMethodCall(NodeAST *node, Scope *currentScope) {
     Symbol *functionSymbol = lookupSymbol(currentScope, node->symbol->id);
+    if (functionSymbol == NULL || functionSymbol->value.function == NULL) {
+        semanticError(node->line, "Metodo no declarado: %s", node->symbol->id);
+        return makeVoidSymbol();
+    }
+
     NodeAST *functionDeclaration = functionSymbol->value.function;
     Scope *globalScope = getGlobalScope(currentScope);
     return executeFunctionBody(functionDeclaration, node, currentScope, globalScope);
@@ -317,6 +370,10 @@ static Symbol evaluateExpression(NodeAST *node, Scope *currentScope) {
 
 static Symbol evaluateIdentifier(NodeAST *node, Scope *currentScope) {
     Symbol *symbol = lookupSymbol(currentScope, node->symbol->id);
+    if (symbol == NULL) {
+        semanticError(node->line, "Variable no declarada: %s", node->symbol->id);
+        return makeVoidSymbol();
+    }
     return *symbol;
 }
 

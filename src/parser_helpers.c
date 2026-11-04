@@ -25,13 +25,19 @@ NodeArray *appendNode(NodeArray *array, NodeAST *node) {
 
     if (array == NULL) {
         array = createNodeArray(4);
-        if (array == NULL) return NULL;
+        if (array == NULL) {
+            freeAST(node);
+            return NULL;
+        }
     }
 
     if (array->count >= array->capacity) {
         int newCapacity = array->capacity * 2;
         NodeAST **newItems = realloc(array->items, newCapacity * sizeof(NodeAST *));
-        if (newItems == NULL) return array;
+        if (newItems == NULL) {
+            freeAST(node);
+            return array;
+        }
         array->items = newItems;
         array->capacity = newCapacity;
     }
@@ -71,7 +77,14 @@ NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second) {
     int total = first->count + second->count;
     if (total > first->capacity) {
         NodeAST **newItems = realloc(first->items, total * sizeof(NodeAST *));
-        if (newItems == NULL) return first;
+        if (newItems == NULL) {
+            for (int i = 0; i < second->count; i++) {
+                freeAST(second->items[i]);
+            }
+            free(second->items);
+            free(second);
+            return first;
+        }
         first->items = newItems;
         first->capacity = total;
     }
@@ -85,10 +98,19 @@ NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second) {
 }
 
 NodeAST *newParameterDeclaration(DataType type, char *id) {
-    NodeAST *declaration = newNode(VARIABLE_DECLARATION_NODE, newSymbol(id, VARIABLE_SYMBOL, type, NULL), NULL, NULL, NULL);
-    if (declaration != NULL) {
-        declaration->type = type;
+    Symbol *symbol = newSymbol(id, VARIABLE_SYMBOL, type, NULL);
+    if (symbol == NULL) {
+        free(id);
+        return NULL;
     }
+
+    NodeAST *declaration = newNode(VARIABLE_DECLARATION_NODE, symbol, NULL, NULL, NULL);
+    if (declaration == NULL) {
+        freeSymbol(symbol);
+        return NULL;
+    }
+
+    declaration->type = type;
     return declaration;
 }
 
@@ -97,6 +119,13 @@ NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers) {
 
     NodeArray *declarations = createNodeArray(identifiers->count);
     if (declarations == NULL) {
+        for (int i = 0; i < identifiers->count; i++) {
+            NodeAST *idNode = identifiers->items[i];
+            if (idNode != NULL) {
+                freeSymbol(idNode->symbol);
+                free(idNode);
+            }
+        }
         free(identifiers->items);
         free(identifiers);
         return NULL;
@@ -104,13 +133,23 @@ NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers) {
 
     for (int i = 0; i < identifiers->count; i++) {
         NodeAST *idNode = identifiers->items[i];
+        if (idNode == NULL) {
+            continue;
+        }
+
         Symbol *varSymbol = idNode->symbol;
+        if (varSymbol == NULL) {
+            free(idNode);
+            continue;
+        }
         varSymbol->type = type;
 
         NodeAST *individualDecl = newNode(VARIABLE_DECLARATION_NODE, varSymbol, NULL, NULL, NULL);
         if (individualDecl != NULL) {
             individualDecl->type = type;
             appendNode(declarations, individualDecl);
+        } else {
+            freeSymbol(varSymbol);
         }
 
         free(idNode);

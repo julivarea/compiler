@@ -57,6 +57,10 @@ static const char *getTargetExtension(const Options *options);
 static void printUsage(const char *program);
 
 int parseArguments(int argc, char **argv, Options *options) {
+    if (options == NULL) {
+        return CLI_ERROR;
+    }
+
     const char *program = (argc > 0) ? argv[0] : "c-tds";
     const char *requestedOutput = NULL;
 

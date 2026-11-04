@@ -33,6 +33,14 @@ FunctionFrame *createFrame(const char *functionName) {
     frame->floatParamCount = 0;
     frame->stackParamCount = 0;
 
+    bool allocationFailed = (frame->slots == NULL ||
+                             frame->pendingParamSlots == NULL ||
+                             frame->pendingParamTypes == NULL);
+    if (allocationFailed) {
+        freeFrame(frame);
+        return NULL;
+    }
+
     return frame;
 }
 
@@ -125,12 +133,15 @@ void ensurePendingParamCapacity(FunctionFrame *frame, int neededCapacity) {
     }
 
     int *newSlots = (int *)realloc(frame->pendingParamSlots, sizeof(int) * newCapacity);
-    if (newSlots != NULL) {
-        frame->pendingParamSlots = newSlots;
+    if (newSlots == NULL) {
+        return;
     }
+    frame->pendingParamSlots = newSlots;
+
     DataType *newTypes = (DataType *)realloc(frame->pendingParamTypes, sizeof(DataType) * newCapacity);
-    if (newTypes != NULL) {
-        frame->pendingParamTypes = newTypes;
+    if (newTypes == NULL) {
+        return;
     }
+    frame->pendingParamTypes = newTypes;
     frame->pendingParamCapacity = newCapacity;
 }

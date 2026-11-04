@@ -51,6 +51,10 @@ static const TACList *buildIntermediateCode(const Options *options) {
     bool hasOptimizations = (enabled != OPTIMIZATION_NONE);
 
     const TACList *tacList = generateIntermediateCode(astRoot);
+    if (tacList == NULL) {
+        fprintf(stderr, "Error interno: no se pudo generar el codigo intermedio.\n");
+        return NULL;
+    }
 
     if (options->debug) {
         LiveVariableAnalysis *analysis = createLiveVariableAnalysis(tacList);
@@ -70,6 +74,10 @@ static const TACList *buildIntermediateCode(const Options *options) {
 }
 
 int compile(const Options *options) {
+    if (options == NULL) {
+        return 1;
+    }
+
     switch (options->target) {
         case TARGET_SCAN:
             return runScan(options);
@@ -89,6 +97,7 @@ int compile(const Options *options) {
             if (runParse() != 0) { return 1; }
             if (runSemantic() != 0) { return 1; }
             const TACList *tacList = buildIntermediateCode(options);
+            if (tacList == NULL) { return 1; }
             return runIntermediateCode(options, tacList);
         }
 
@@ -96,6 +105,7 @@ int compile(const Options *options) {
             if (runParse() != 0) { return 1; }
             if (runSemantic() != 0) { return 1; }
             const TACList *tacList = buildIntermediateCode(options);
+            if (tacList == NULL) { return 1; }
             return runAssembly(options, tacList);
         }
 
@@ -131,7 +141,10 @@ static int runScan(const Options *options) {
         fprintf(outputFile, "[Linea %d] %-12s %s\n", yylineno, tokenName, yytext);
         debugPrintf(options->debug, "[SCAN] [Linea %d] %-12s %s\n", yylineno, tokenName, yytext);
     }
-    fclose(outputFile);
+    if (fclose(outputFile) != 0) {
+        perror(options->output);
+        return 1;
+    }
 
     if (lexical_errors > 0) {
         remove(options->output);
@@ -217,7 +230,10 @@ static int writeASTTo(const Options *options) {
     }
 
     fprintAST(outputFile, astRoot, 0);
-    fclose(outputFile);
+    if (fclose(outputFile) != 0) {
+        perror(options->output);
+        return 1;
+    }
 
     if (options->debug) {
         printAST(astRoot, 0);
@@ -231,8 +247,16 @@ static int writeBuiltStringTo(const char *path) {
         return 1;
     }
 
-    fputs(getBuiltString(), outputFile);
-    fclose(outputFile);
+    if (fputs(getBuiltString(), outputFile) == EOF) {
+        perror(path);
+        fclose(outputFile);
+        return 1;
+    }
+
+    if (fclose(outputFile) != 0) {
+        perror(path);
+        return 1;
+    }
 
     return 0;
 }

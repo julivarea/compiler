@@ -122,6 +122,15 @@ void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
         bool isFunctionStart = (instruction->operation == TAC_BEGIN_FUNC);
         if (isFunctionStart) {
             FunctionFrame *frame = createFrame(instruction->result.name);
+            if (frame == NULL) {
+                fprintf(stderr,
+                        "\033[1;31mError interno del generador de codigo objeto:\033[0m"
+                        " no se pudo reservar memoria para el frame de '%s'.\n",
+                        instruction->result.name);
+                objectCodeErrors++;
+                break;
+            }
+
             frame->returnType = instruction->result.type;
 
             buildFrameLayout(frame, instruction);
@@ -563,6 +572,16 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
     if (argumentCount > 0) {
         registerIndex = (int *)malloc(sizeof(int) * (size_t)argumentCount);
         goesToStack = (int *)malloc(sizeof(int) * (size_t)argumentCount);
+        if (registerIndex == NULL || goesToStack == NULL) {
+            free(registerIndex);
+            free(goesToStack);
+            fprintf(stderr,
+                    "\033[1;31mError interno del generador de codigo objeto:\033[0m"
+                    " no se pudo reservar memoria para clasificar los argumentos de '%s'.\n",
+                    instruction->firstOperand.name);
+            objectCodeErrors++;
+            return;
+        }
         classifyCallArguments(frame, base, argumentCount, registerIndex, goesToStack, &stackArguments);
     }
 

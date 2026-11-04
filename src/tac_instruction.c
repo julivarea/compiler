@@ -34,6 +34,8 @@ void printTACInstruction(const TACInstruction *instruction) {
 }
 
 void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instruction) {
+    if (buffer == NULL || size == 0) return;
+
     buffer[0] = '\0';
     if (instruction == NULL) return;
 

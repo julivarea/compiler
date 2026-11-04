@@ -44,6 +44,11 @@ const TACList *generateIntermediateCode(NodeAST *root) {
 
     freeTACList(currentCode);
     currentCode = createTACList();
+    if (currentCode == NULL) {
+        fprintf(stderr,
+                "\033[1;31mError interno del TAC:\033[0m no se pudo reservar memoria para la lista de instrucciones.\n");
+        return NULL;
+    }
     temporaryCount = 0;
     labelCount = 0;
     currentMethodType = TYPE_VOID;
@@ -351,7 +356,11 @@ static bool lastInstructionIsReturn(void) {
 }
 
 static void emit(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
-    appendInstruction(currentCode, operation, result, firstOperand, secondOperand);
+    TACInstruction *instruction = appendInstruction(currentCode, operation, result, firstOperand, secondOperand);
+    if (instruction == NULL) {
+        fprintf(stderr,
+                "\033[1;31mError interno del TAC:\033[0m no se pudo reservar memoria para una instruccion.\n");
+    }
 }
 
 static TACOperand newTemporary(DataType type) {

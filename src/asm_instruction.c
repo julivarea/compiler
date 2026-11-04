@@ -3,7 +3,6 @@
  * @brief Implementación de constructores y formateo de instrucciones x86-64.
  */
 
-#include <stdio.h>
 #include "asm_instruction.h"
 #include "string_builder.h"
 
@@ -79,32 +78,25 @@ static const char *getOpcodeMnemonic(AsmOpcode op) {
 }
 
 /**
- * @brief Convierte un operando a su representación en texto para GNU Assembler.
- * @param op Puntero al operando a formatear.
- * @param buf Buffer de destino.
- * @param size Tamaño del buffer.
+ * @brief Emite un operando en su representación en texto para GNU Assembler.
+ * @param op Puntero al operando a emitir.
  */
-static void formatOperand(const AsmOperand *op, char *buf, size_t size) {
+static void emitOperand(const AsmOperand *op) {
     switch (op->type) {
         case ASM_OP_REG:
-            if (op->customReg[0] != '\0') {
-                snprintf(buf, size, "%s", op->customReg);
-            } else {
-                snprintf(buf, size, "%s", getRegisterName(op->reg));
-            }
+            buildStringf("%s", op->customReg[0] != '\0' ? op->customReg : getRegisterName(op->reg));
             break;
         case ASM_OP_MEM:
-            snprintf(buf, size, "%d(%%rbp)", op->offset);
+            buildStringf("%d(%%rbp)", op->offset);
             break;
         case ASM_OP_IMM:
-            snprintf(buf, size, "$%d", op->immediate);
+            buildStringf("$%d", op->immediate);
             break;
         case ASM_OP_GLOBAL:
-            snprintf(buf, size, "%s(%%rip)", op->globalName ? op->globalName : "");
+            buildStringf("%s(%%rip)", op->globalName ? op->globalName : "");
             break;
         case ASM_OP_NONE:
         default:
-            buf[0] = '\0';
             break;
     }
 }
@@ -120,17 +112,18 @@ void emitAsm(const AsmInstruction *inst) {
 
     const char *opStr = getOpcodeMnemonic(inst->opcode);
 
-    char destBuf[32];
-    formatOperand(&inst->dest, destBuf, sizeof(destBuf));
-
     /* Instrucción unaria (ej: negl %eax, idivl %ecx) */
     if (inst->src.type == ASM_OP_NONE) {
-        buildStringf("    %s %s\n", opStr, destBuf);
+        buildStringf("    %s ", opStr);
+        emitOperand(&inst->dest);
+        buildStringf("\n");
         return;
     }
 
     /* Instrucción binaria en sintaxis AT&T: opcode source, destination (ej: addl %edx, %eax) */
-    char srcBuf[32];
-    formatOperand(&inst->src, srcBuf, sizeof(srcBuf));
-    buildStringf("    %s %s, %s\n", opStr, srcBuf, destBuf);
+    buildStringf("    %s ", opStr);
+    emitOperand(&inst->src);
+    buildStringf(", ");
+    emitOperand(&inst->dest);
+    buildStringf("\n");
 }
