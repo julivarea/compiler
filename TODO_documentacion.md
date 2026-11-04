@@ -143,10 +143,24 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
 
 ### Bloque 2 — Árbol de sintaxis abstracta
 
-- [ ] **F08 — El AST** · `ast.h`, `ast.c` · 350 líneas
+- [x] **F08 — El AST** · `ast.h`, `ast.c` · 350 líneas
   - `NodeAST`, el layout de hijos de cada tipo de nodo, las macros de acceso
     (`GET_CONDITION`, `GET_LEFT`…) y por qué se eligió un nodo genérico con
     arreglo de hijos en vez de un nodo por construcción.
+  - **Hecha:** `documentacion/wiki/03-ast.md`, reescrita. Lo que agrega sobre la
+    versión anterior: la **tabla completa de layout de hijos** de los 12 tipos de
+    nodo verificada contra `bison.y` y la salida real, la compactación de hijos
+    de `newNode` y por qué es carga estructural (el cuerpo del `while` aterriza
+    en el índice 1 justamente porque el hijo del medio es `NULL`), la regla de
+    propiedad de símbolos de `freeAST` basada en `uid == 0`, y la heurística del
+    campo `line` con la verificación de su asimetría.
+  - **Correcciones a documentación previa:** la página anterior documentaba un
+    `BINARYOPERATOR_NODE` que **no existe** en el código; el enum tiene
+    `OPERATOR_NODE`, que cubre unarios y binarios. El mismo nombre inexistente
+    aparece todavía en `wiki/05-intermediate-code.md` y en `CLAUDE.md`.
+  - Se confirmó que **`freeAST` nunca se llama sobre el árbol completo**: las
+    únicas llamadas están en `parser_helpers.c` y son caminos de falta de
+    memoria. El AST vive hasta que termina el proceso.
 
 ### Bloque 3 — Análisis semántico
 
@@ -242,7 +256,7 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/04-semantic-analysis.md` | 316 | Cubre F09–F11. Falta separar tabla de símbolos de chequeo de tipos |
 | `wiki/05-intermediate-code.md` | 285 | Cubre F12–F13. Falta el "qué es una cuádrupla" conceptual |
 | `live_variable_analysis.md` | 211 | Cubre F14. Falta por qué el punto fijo converge |
-| `wiki/03-ast.md` | 169 | Cubre F08. Falta el layout de hijos de cada nodo |
+| `wiki/03-ast.md` | 520 | **F08, hecha.** |
 | `wiki/02-lexical-analysis.md` | 452 | **F05, hecha.** |
 | `wiki/02.5-syntax-analysis.md` | 480 | **F06, hecha.** |
 | `wiki/02.7-parser-actions.md` | 40 | F07, esqueleto con la lista de lo que falta |
