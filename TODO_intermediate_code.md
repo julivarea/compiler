@@ -18,6 +18,8 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 8. ~~**Coerción `int`/`float` (sección 2.4).**~~ **HECHO.** El enunciado solo exige TAC para enteros y lógicos, así que el soporte de `float` es una extensión nuestra; se implementó igual para que sea coherente.
 9. ~~**Pruebas unitarias (sección 5).**~~ **HECHO (`tests/test_tac.c`).**
 
+Queda abierto, en orden de urgencia: **el alcance del Intérprete a consultar con la cátedra (3.7)**, las **asperezas del intérprete y el desborde con signo (3.9)** y el **alcance de los contadores de temporales (3.6)**, que solo importa si se decide redimensionar los stack frames por función.
+
 ---
 
 ## 1. Errores Críticos e Inmediatos (Bugs en la Generación de TAC)
@@ -373,7 +375,24 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 ### 3.7
 - [ ] **El Intérprete no está planificado y vale más que esta etapa**
   - **Contexto:** En la tabla de calificación de `documentacion/spec/00-TDS-proyecto.pdf` el **Intérprete vale 10%**, mientras que el **Generador de Código Intermedio vale 5%**. Sin embargo, el Intérprete no figura en el cronograma de entregas.
-  - **Acción:** Consultar a la cátedra si corresponde implementarlo, con qué alcance y para qué fecha. Si la respuesta es que sí, es un argumento más para ejecutar la migración de la sección 3.1 cuanto antes, porque el Intérprete se implementa como un `switch` sobre las cuádruplas.
+  - **Estado:** El intérprete ya está implementado en `src/interpreter.c` y conectado como `-target interp`. Recorre el AST (no las cuádruplas) y reporta el valor de retorno de `main` por `debugPrintf`, es decir solo con `-debug`. Está cruzado contra el ejecutable generado: sobre un corpus de 20 programas (aritmética, corto circuito, recursión, `while` anidados, métodos `void`, ocultamiento de scopes, más de 6 argumentos, `float` y globales) el valor que informa el intérprete coincide con el código de salida del binario compilado en los 20 casos.
+  - **Acción pendiente:** Consultar a la cátedra si corresponde entregarlo, con qué alcance y para qué fecha. Lo que sigue sin decidirse es el alcance, no la existencia.
+
+### 3.8
+- [x] **`INT_MIN / -1` e `INT_MIN % -1` hacían abortar al intérprete**
+  - **Ubicación:** `src/interpreter.c` (`evaluateBinaryOperator`, casos `OP_DIV` y `OP_MOD`).
+  - **Problema:** Ambos casos chequeaban división por cero pero no el único desborde posible de la división entera. `INT_MIN / -1` no es representable en `int`: en C es comportamiento indefinido y en x86 `idivl` trapea, porque el cociente no entra en el registro destino. `INT_MIN % -1` vale 0 matemáticamente, pero usa la misma instrucción y trapea igual.
+  - **Efecto:** El compilador moría con `SIGFPE` (`Floating point exception (core dumped)`) al interpretar un programa con esa operación, en vez de reportar el problema. Se detectó con una compilación instrumentada con UBSan/ASan: `src/interpreter.c:440: runtime error: division of -2147483648 by -1 cannot be represented in type 'int'` seguido de `AddressSanitizer:DEADLYSIGNAL`.
+  - **Causa de fondo:** El commit `62a59c8` ya había agregado exactamente este guard en `evaluateBinary` de `src/optimizer.c`, para que el plegado de constantes no desbordara. El guard no se replicó en el intérprete, que duplica la misma tabla de operaciones.
+  - **Corrección:** Guard `left == INT_MIN && right == -1` en ambos casos, reportando el desborde con `semanticError` y devolviendo `0`, igual que hace el chequeo de división por cero que ya estaba. Se agregó `#include <limits.h>`.
+  - **Verificación:** Los dos programas que antes abortaban ahora reportan el error y terminan limpios bajo UBSan/ASan. Sin regresiones: suite completa en 322 tests sin fallas, los 20 programas del corpus siguen dando el mismo resultado con y sin `-opt all`, y el cruce intérprete/ejecutable sigue en 20/20.
+
+### 3.9
+- [ ] **Quedan tres asperezas del intérprete en la misma línea que 3.8**
+  - **Contexto:** Se encontraron al verificar 3.8. Ninguna hace abortar el compilador, pero las tres son de la misma familia y conviene cerrarlas juntas.
+  - **1. Un error en tiempo de interpretación no se refleja en el código de salida.** `TARGET_INTERP` en `src/driver.c` hace `return 0` incondicionalmente, así que `-target interp` informa éxito aunque el intérprete haya reportado división por cero o desborde. Es preexistente, no lo introdujo 3.8. **Acción:** decidir si el target debe devolver `1` cuando el intérprete reporta un error, y si ese error debe contar en `semantic_errors` o en un contador propio de ejecución.
+  - **2. Los errores del intérprete salen como `Error semantico en la linea 0`.** No son errores semánticos (el programa es válido; el problema aparece al ejecutarlo) y `evaluateBinaryOperator` no recibe el `NodeAST`, así que no tiene el número de línea y pasa `0`. **Acción:** si se quiere la línea real, hay que pasar el nodo o su `line` a `evaluateBinaryOperator`; y evaluar agregar un `runtimeError()` en `error_handler.c` en vez de reusar `semanticError`.
+  - **3. El desborde con signo en `+`, `-` y `*` sigue siendo comportamiento indefinido**, tanto en el plegado de constantes (`src/optimizer.c`, `evaluateBinary`, caso `TAC_ADD`/`TAC_SUB`/`TAC_MUL`) como en el intérprete (`src/interpreter.c`, mismos operadores). UBSan lo marca, por ejemplo `signed integer overflow: 2147483647 * 3 cannot be represented in type 'int'`. Hoy no se nota porque gcc envuelve en silencio y el resultado coincide con lo que hace el assembly generado, pero formalmente es UB y con otros flags gcc podría hacer cualquier cosa. **Acción:** calcular en `int64_t` y envolver explícitamente a 32 bits, o usar `__builtin_add_overflow` y compañía para detectar el desborde y decidir qué hacer (el optimizador puede simplemente negarse a plegar, como ya hace con la división).
 
 ---
 
