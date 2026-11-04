@@ -124,15 +124,22 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
   - Se confirmó con `bison -Wall` que la gramática tiene **0 conflictos y 0
     warnings**; el comando quedó documentado en la página como chequeo de
     regresión.
-- [ ] **F07 — Acciones del parser** · `parser_helpers.h`, `parser_helpers.c` · 193 líneas
+- [x] **F07 — Acciones del parser** · `parser_helpers.h`, `parser_helpers.c` · 193 líneas
   - Las funciones que las acciones semánticas de Bison llaman para construir el
     árbol durante las reducciones.
-  - Página creada como esqueleto en `documentacion/wiki/02.7-parser-actions.md`,
-    con la lista de lo que tiene que cubrir.
+  - **Hecha:** `documentacion/wiki/02.7-parser-actions.md`. Las seis funciones,
+    el convenio del `NULL` que permite que ninguna acción de la gramática tenga
+    un `if`, la transferencia de propiedad en O(1) de `resolveNodeArray`, y por
+    qué `int a, b, c;` necesita dos pasos (los `ID_NODE` provisorios con
+    `TYPE_VOID` y el transplante del símbolo).
+  - **Corrección al inventario:** este archivo **no** contiene `newNode`,
+    `newMethodDeclaration`, `newOperatorNode` ni los `new*LiteralNode`. Están en
+    `ast.c`, así que pertenecen a F08. El esqueleto previo los listaba acá por
+    error.
 
-> La página que cubría estas tres fichas juntas tenía **39 líneas**. Era el hueco
-> más grande de la documentación y la fase con más teoría pura, así que se
-> arrancó por acá. F05 y F06 ya están; queda F07.
+> **Bloque 1 completo.** La página que cubría estas tres fichas juntas tenía
+> **39 líneas**; ahora son 452 + 586 + 432. Era el hueco más grande de la
+> documentación y la fase con más teoría pura, así que se arrancó por acá.
 
 ### Bloque 2 — Árbol de sintaxis abstracta
 
@@ -258,6 +265,25 @@ Como `mkdocs.yml` ya define `repo_url`, el reemplazo natural es el link a GitHub
 (`https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L16-L20`),
 que además conserva el ancla de líneas. Conviene hacerlo junto con las fichas
 F09–F11, que son las dueñas de esas páginas.
+
+### Pendiente de código: fuga de los símbolos provisorios
+
+Encontrado al documentar F07, medido con ASan. El parser crea un `Symbol`
+provisorio para cada aparición de un identificador, y el análisis semántico
+sobreescribe el puntero al resolverlo contra la tabla de símbolos **sin liberar
+el provisorio**:
+
+- `src/semantic_analyzer.c`, `analyzeAssignmentNode`: `node->symbol = resolvedSymbol;`
+- `src/type_checker.c`, `analyzeIdentifier`: `node->symbol = symbol;`
+
+Medición: `void main(){ }` pierde 6 asignaciones (los ámbitos, que no se liberan
+al terminar); con una asignación en el programa son 8; con cuatro, 14; con una
+asignación más tres usos de un identificador, 13. Es acotado y el sistema
+operativo lo recupera al terminar, así que no afecta la corrección.
+
+**Acción:** liberar el símbolo provisorio antes de reemplazar el puntero, en los
+dos lugares. Corresponde a las fichas F10 y F11; queda anotado acá para no
+perderlo. Está documentado en §10 de `wiki/02.7-parser-actions.md`.
 
 Además hay siete páginas en `documentacion/` que no están en el `nav:` y por eso
 no se ven: las cuatro de `bugs/`, `convenciones_comentarios.md`, `refactor.md` y
