@@ -616,4 +616,4 @@ flowchart LR
 
 ---
 
-**Siguiente:** [Análisis Léxico y Sintáctico](02-lexical-syntax-analysis.md)
+**Siguiente:** [Análisis Léxico](02-lexical-analysis.md)

@@ -112,18 +112,27 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
     propiedad de la memoria de los identificadores y cuatro extensiones.
   - De paso se corrigió un error de la página anterior: decía que un
     identificador podía empezar con `_`, y `_foo` es error léxico.
-- [ ] **F06 — Gramática y parser** · `bison.y` · 171 líneas
+- [x] **F06 — Gramática y parser** · `bison.y` · 171 líneas
   - La gramática de C-TDS, precedencia y asociatividad de operadores, y el
     conflicto LALR(1) que hubo que resolver. Teoría: análisis ascendente,
     LALR(1), conflictos shift/reduce.
+  - **Hecha:** `documentacion/wiki/02.5-syntax-analysis.md`. Incluye el inventario
+    de las 15 producciones, la tabla de precedencias contrastada con la
+    especificación y verificada con nueve expresiones ejecutadas, el pseudo-token
+    `UMINUS`, el conflicto histórico variable/método y su resolución, y por qué
+    **no existe el problema del `else` colgante** en esta gramática.
+  - Se confirmó con `bison -Wall` que la gramática tiene **0 conflictos y 0
+    warnings**; el comando quedó documentado en la página como chequeo de
+    regresión.
 - [ ] **F07 — Acciones del parser** · `parser_helpers.h`, `parser_helpers.c` · 193 líneas
   - Las funciones que las acciones semánticas de Bison llaman para construir el
     árbol durante las reducciones.
+  - Página creada como esqueleto en `documentacion/wiki/02.7-parser-actions.md`,
+    con la lista de lo que tiene que cubrir.
 
-> La página actual `wiki/02-lexical-syntax-analysis.md` tiene **39 líneas** para
-> estas tres fichas juntas. Es el hueco más grande de la documentación y además
-> es la fase que más teoría pura tiene, así que es la de mayor rendimiento para
-> el escrito.
+> La página que cubría estas tres fichas juntas tenía **39 líneas**. Era el hueco
+> más grande de la documentación y la fase con más teoría pura, así que se
+> arrancó por acá. F05 y F06 ya están; queda F07.
 
 ### Bloque 2 — Árbol de sintaxis abstracta
 
@@ -227,8 +236,28 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/05-intermediate-code.md` | 285 | Cubre F12–F13. Falta el "qué es una cuádrupla" conceptual |
 | `live_variable_analysis.md` | 211 | Cubre F14. Falta por qué el punto fijo converge |
 | `wiki/03-ast.md` | 169 | Cubre F08. Falta el layout de hijos de cada nodo |
-| `wiki/02-lexical-syntax-analysis.md` | **39** | **Cubre F05–F07 y es lo más flaco que hay.** Prioridad |
+| `wiki/02-lexical-analysis.md` | 452 | **F05, hecha.** |
+| `wiki/02.5-syntax-analysis.md` | 480 | **F06, hecha.** |
+| `wiki/02.7-parser-actions.md` | 40 | F07, esqueleto con la lista de lo que falta |
 | — | — | **No hay nada de F01–F04 ni de F19**, y `optimizaciones.md` (F15) está fuera del sitio |
+
+### Pendiente transversal: 22 links rotos a la máquina de Fran
+
+Tres páginas tienen links absolutos de la forma
+`file:///home/francisco/compiler/include/symbol_table.h#L16-L20`, que apuntan al
+disco de quien las escribió: están muertos para cualquier otro y además exponen
+una ruta personal en el sitio publicado.
+
+| Página | Links rotos |
+| --- | --- |
+| `analisis-semantico.md` | 15 |
+| `wiki/04-semantic-analysis.md` | 4 |
+| `convenciones_comentarios.md` | 3 |
+
+Como `mkdocs.yml` ya define `repo_url`, el reemplazo natural es el link a GitHub
+(`https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L16-L20`),
+que además conserva el ancla de líneas. Conviene hacerlo junto con las fichas
+F09–F11, que son las dueñas de esas páginas.
 
 Además hay siete páginas en `documentacion/` que no están en el `nav:` y por eso
 no se ven: las cuatro de `bugs/`, `convenciones_comentarios.md`, `refactor.md` y

@@ -449,4 +449,4 @@ Lo que implementa esta fase, con los nombres de la bibliografía:
 
 ---
 
-**Siguiente:** [Análisis Sintáctico](02-lexical-syntax-analysis.md) · fichas F06 y F07, todavía sin desarrollar
+**Siguiente:** [Análisis Sintáctico](02.5-syntax-analysis.md)
