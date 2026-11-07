@@ -164,7 +164,24 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
 
 ### Bloque 3 — Análisis semántico
 
-- [ ] **F09 — Tabla de símbolos y ámbitos** · `symbol_table.h`, `symbol_table.c` · 358 líneas
+- [x] **F09 — Tabla de símbolos y ámbitos** · `symbol_table.h`, `symbol_table.c` · 358 líneas
+  - **Hecha:** `documentacion/wiki/04-symbol-table.md`, página nueva. Se extrajo
+    de `04-semantic-analysis.md` el material de `Symbol` y `Scope` (que mezclaba
+    F09, F10 y F11) y se reescribió completo: las cuatro variantes de
+    `SymbolType` —la anterior documentaba solo tres y faltaba
+    `FUNCTION_ENTRY_SYMBOL`, que usa únicamente el intérprete—, las **dos vidas
+    de `Symbol`** (`newSymbol` en heap para la tabla contra `make*Symbol` por
+    valor para evaluar en el intérprete), por qué `parent` y `children` no son
+    redundantes, la herencia de `scope->function` que permite que un `return`
+    anidado sepa qué tipo devolver, y el `uid` como contador global.
+  - Verificado con un programa de tres `x` anidados: `uid` 1/3/4, el TAC los
+    nombra `x@1`/`x@3`/`x@4` y el `return x` resuelve al del método. También que
+    un local **no** puede ocultar a un parámetro (comparten ámbito) pero sí desde
+    un bloque interno, y que la recursión funciona porque el método se registra
+    antes de analizar su cuerpo.
+  - **Arreglados 4 de los 22 links** a la máquina de Fran, los de
+    `wiki/04-semantic-analysis.md`, apuntándolos a GitHub. Quedan 18, en
+    `analisis-semantico.md` (15) y `convenciones_comentarios.md` (3).
   - La jerarquía de `Scope`s, la búsqueda de adentro hacia afuera, el
     ocultamiento (shadowing) y los `uid`. Teoría: tabla de símbolos jerárquica.
 - [ ] **F10 — Chequeo de tipos** · `type_checker.h`, `type_checker.c` · 257 líneas
@@ -253,10 +270,11 @@ Lo que ya hay, para no reescribir de cero:
 | --- | --- | --- |
 | `wiki/01-overview.md` | 619 | Es la más completa. Revisar que el pipeline incluya optimizador e intérprete |
 | `wiki/06-object-code.md` | 370 | Cubre F16–F18. Falta la teoría de la convención de llamada |
-| `wiki/04-semantic-analysis.md` | 316 | Cubre F09–F11. Falta separar tabla de símbolos de chequeo de tipos |
+| `wiki/04-semantic-analysis.md` | 121 | F10 y F11. Se le extrajo la parte de F09 |
 | `wiki/05-intermediate-code.md` | 285 | Cubre F12–F13. Falta el "qué es una cuádrupla" conceptual |
 | `live_variable_analysis.md` | 211 | Cubre F14. Falta por qué el punto fijo converge |
-| `wiki/03-ast.md` | 520 | **F08, hecha.** |
+| `wiki/03-ast.md` | 569 | **F08, hecha.** |
+| `wiki/04-symbol-table.md` | 478 | **F09, hecha.** |
 | `wiki/02-lexical-analysis.md` | 452 | **F05, hecha.** |
 | `wiki/02.5-syntax-analysis.md` | 480 | **F06, hecha.** |
 | `wiki/02.7-parser-actions.md` | 40 | F07, esqueleto con la lista de lo que falta |
@@ -269,11 +287,11 @@ Tres páginas tienen links absolutos de la forma
 disco de quien las escribió: están muertos para cualquier otro y además exponen
 una ruta personal en el sitio publicado.
 
-| Página | Links rotos |
-| --- | --- |
-| `analisis-semantico.md` | 15 |
-| `wiki/04-semantic-analysis.md` | 4 |
-| `convenciones_comentarios.md` | 3 |
+| Página | Links rotos | Estado |
+| --- | --- | --- |
+| `analisis-semantico.md` | 15 | pendiente (F10/F11) |
+| `wiki/04-semantic-analysis.md` | 4 | **arreglados en F09** |
+| `convenciones_comentarios.md` | 3 | pendiente |
 
 Como `mkdocs.yml` ya define `repo_url`, el reemplazo natural es el link a GitHub
 (`https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L16-L20`),

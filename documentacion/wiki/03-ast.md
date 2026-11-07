@@ -566,4 +566,4 @@ una llamada por acceso.
 
 ---
 
-**Siguiente:** [Análisis Semántico y Tabla de Símbolos](04-semantic-analysis.md)
+**Siguiente:** [Tabla de Símbolos y Ámbitos](04-symbol-table.md)

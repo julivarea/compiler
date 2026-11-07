@@ -43,222 +43,27 @@ classDiagram
 
 ---
 
-## 2. Modelado de Símbolos (`Symbol`)
+## 2. Símbolos y tabla de símbolos
 
-Un `Symbol` representa una entidad con nombre, tipo o valor semántico dentro del compilador (variable declarada, función o constante literal).
-
-```mermaid
-classDiagram
-    class Symbol {
-        +char* id
-        +int uid
-        +DataType type
-        +SymbolType symbolType
-        +NodeAST* parameters
-        +ValueUnion value
-        +newSymbol(id, symbolType, type, parameters) Symbol*
-        +freeSymbol(symbol) void
-    }
-
-    class SymbolType {
-        <<enumeration>>
-        VARIABLE_SYMBOL
-        METHOD_SYMBOL
-        CONSTANT_SYMBOL
-    }
-
-    class ValueUnion {
-        <<union>>
-        +int intValue
-        +float floatValue
-    }
-
-    Symbol *-- SymbolType : symbolType
-    Symbol *-- ValueUnion : value
-```
-
-### Campos de la Estructura
-- **`id` (`char*`):** Nombre del identificador o método. Duplicado en memoria dinámica con `strdup()`. En literales numéricos o constantes es `NULL`.
-- **`uid` (`int`):** Identificador único secuencial de la entidad declarada:
-  - Permite distinguir inequívocamente a dos variables con el mismo nombre declaradas en distintos ámbitos (*shadowing*).
-  - Inicializado en `0` por `newSymbol()` para indicar entidad "no declarada".
-  - Asignado a un valor autoincremental ($\ge 1$) por `appendSymbol()` en el momento exacto en que la variable o método se registra en un ámbito.
-- **`type` (`DataType`):** Tipo de dato semántico asociado (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL`, `TYPE_VOID`, `TYPE_ERROR`).
-- **`symbolType` (`SymbolType`):** Categoría sintáctico-semántica del símbolo:
-  - `VARIABLE_SYMBOL`: Identificador de variable local, global o parámetro formal.
-  - `METHOD_SYMBOL`: Declaración de función o método.
-  - `CONSTANT_SYMBOL`: Literal o valor primitivo constante.
-- **`parameters` (`NodeAST*`):** En símbolos de tipo `METHOD_SYMBOL`, almacena un puntero al sub-árbol del AST de parámetros (`PARAMETERS_NODE`) para validar argumentos en llamadas.
-- **`value` (`union`):** Almacenamiento nativo del valor en constantes literales, evitando conversiones repetidas de texto a número:
-  ```c
-  union {
-      int intValue;      // Enteros y booleanos (0 o 1)
-      float floatValue;  // Flotantes
-  } value;
-  ```
-
-### Variantes de `SymbolType` y Uso Específico de Campos
-
-Cada variante de `SymbolType` especializa el uso de los campos de `Symbol` según su rol semántico:
-
-#### 1. `VARIABLE_SYMBOL` (Variables y Parámetros)
-Representa variables locales, variables globales y parámetros formales.
-- **`id`:** Nombre del identificador (`strdup`). Clave de búsqueda en `lookupSymbol` y detección de redeclaraciones con `lookupSymbolInScope`.
-- **`uid`:** Asignado secuencialmente ($\ge 1$) por `appendSymbol()`. Resuelve el sombreado léxico (*shadowing*) y asigna desplazamientos en el marco de pila (`FunctionFrame`) durante el código objeto. Vale `0` si el símbolo no está registrado.
-- **`type`:** Tipo estático (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL`). Chequeado por el `TypeChecker` para compatibilidad en asignaciones (`isAssignable`) y expresiones.
-- **`symbolType`:** Fijo en `VARIABLE_SYMBOL`. Previene invocar variables como funciones o asignar valores a métodos.
-- **`parameters`:** No se usa (`NULL`).
-- **`value`:** No se usa en análisis semántico.
-
-#### 2. `METHOD_SYMBOL` (Métodos y Funciones)
-Representa la declaración de métodos y funciones (incluido `main`).
-- **`id`:** Nombre del método. Usado en `lookupSymbol` para resolver invocaciones (`METHOD_CALL_NODE`).
-- **`uid`:** Identificador único asignado al registrar el método en el ámbito global. Usado para rotular etiquetas y saltos en TAC y ensamblador.
-- **`type`:** Tipo de retorno (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL`, `TYPE_VOID`). Usado para comprobar las sentencias `return`, rechazar retornos con valor en métodos `void`, y asignar el tipo a llamadas a métodos en expresiones.
-- **`symbolType`:** Fijo en `METHOD_SYMBOL`. Permite validar que las llamadas correspondan a funciones reales.
-- **`parameters`:** Puntero al subárbol del AST de parámetros (`PARAMETERS_NODE`). Permite validar aridad (cantidad de argumentos) y compatibilidad de tipos argumento a argumento, además de poblar el `Scope` local del método al entrar a su cuerpo.
-- **`value`:** No se usa.
-
-#### 3. `CONSTANT_SYMBOL` (Literales y Constantes Primitivas)
-Representa valores inmediatos constantes en expresiones (`42`, `3.14`, `true`, `false`).
-- **`id`:** `NULL` (literales anónimos).
-- **`uid`:** `0` (no se registra en la tabla de símbolos del `Scope`).
-- **`type`:** Tipo primitivo (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL`).
-- **`symbolType`:** Fijo en `CONSTANT_SYMBOL`.
-- **`parameters`:** No se usa (`NULL`).
-- **`value`:** Almacenamiento nativo del valor (`value.intValue` para enteros o booleanos 0/1; `value.floatValue` para flotantes). Evita conversiones de texto a número y se proyecta a operandos inmediatos TAC (`tacConstantInt`, `tacConstantFloat`, `tacConstantBool`) y ensamblador.
-
-| Campo en `Symbol` | `VARIABLE_SYMBOL` | `METHOD_SYMBOL` | `CONSTANT_SYMBOL` |
-| :--- | :--- | :--- | :--- |
-| **`id`** | Nombre de la variable (`char*`) | Nombre de la función (`char*`) | `NULL` (anónimo) |
-| **`uid`** | Secuencial único ($\ge 1$, $0$ si no declarada) | Secuencial único ($\ge 1$) | `0` (no registrado en `Scope`) |
-| **`type`** | Tipo de la variable (`int`, `float`, `boolean`) | Tipo de retorno (`int`, `float`, `boolean`, `void`) | Tipo del literal (`int`, `float`, `boolean`) |
-| **`symbolType`** | `VARIABLE_SYMBOL` | `METHOD_SYMBOL` | `CONSTANT_SYMBOL` |
-| **`parameters`** | `NULL` (no aplica) | Puntero a `PARAMETERS_NODE` (AST) | `NULL` (no aplica) |
-| **`value`** | No utilizado en análisis semántico | No utilizado | `intValue` (int/bool) o `floatValue` (float) |
-
-### Ciclo de Vida
-1. **Creación (`newSymbol`):** Reserva memoria en el heap, clona el identificador si no es nulo, enlaza los parámetros y fija `uid = 0`.
-2. **Liberación (`freeSymbol`):** Libera la cadena duplicada `symbol->id` y luego la estructura del símbolo en memoria.
+Las estructuras `Symbol` y `Scope`, la asignación de `uid`, la búsqueda local
+contra jerárquica y las reglas de ocultamiento tienen ahora su propia página:
+[Tabla de Símbolos y Ámbitos](04-symbol-table.md) (ficha F09).
 
 ---
 
-## 3. Modelado de la Tabla de Símbolos (`Scope`)
-
-El entorno léxico del programa no es una tabla plana única, sino un **árbol jerárquico de ámbitos** (`Scope`). Cada función y cada bloque delimitado por llaves `{ ... }` posee su propia tabla de símbolos.
-
-### Campos de la Estructura `Scope`
-- **`level` (`int`):** Nivel de profundidad léxica (`0` para el ámbito global, `1` para funciones, `2+` para bloques anidados).
-- **`symbols` (`Symbol**`):** Arreglo dinámico de punteros a símbolos registrados en este nivel.
-- **`symbolCount` y `symbolCapacity` (`int`):** Contador de símbolos activos y capacidad actual reservada (inicia con capacidad 8 y se duplica automáticamente mediante `realloc` cuando se llena).
-- **`function` (`Symbol*`):** Puntero al símbolo del método contenedor inmediato (es `NULL` para el ámbito global). Permite consultar en tiempo constante $\mathcal{O}(1)$ el método al que pertenece un bloque interno (por ejemplo, para validar que el tipo de una sentencia `return` coincida con la firma de la función).
-- **`parent` (`Scope*`):** Puntero al ámbito contenedor inmediato (es `NULL` para el ámbito global).
-- **`children` (`Scope**`):** Arreglo dinámico de sub-ámbitos contenidos para navegación y persistencia.
-- **`childrenCount` y `childrenCapacity` (`int`):** Contador y capacidad del arreglo de hijos (inicia en 4 y se duplica dinámicamente).
-
-### ¿Qué se almacena en `symbols` y qué se ignora?
-- **Se almacena:**
-  1. *Variables Locales y Globales:* Generadas por `VARIABLE_DECLARATION_NODE`.
-  2. *Parámetros de Métodos:* Se insertan como variables en el ámbito de la función para que el cuerpo pueda accederlos.
-  3. *Firmas de Métodos:* Se registran en el ámbito padre (usualmente el global) para posibilitar invocaciones y llamadas recursivas.
-- **Se ignora (no entra a la tabla):**
-  - Palabras clave, operadores y sentencias de control (`if`, `while`).
-  - Nodos de uso como `ID_NODE` o `ASSIGNMENT_NODE`: no crean símbolos en la tabla, sino que **consultan** la tabla existente mediante `lookupSymbol`.
-  - Bloques (`BLOCK_NODE`): generan un nuevo `Scope` hijo, pero el bloque en sí no se registra como símbolo dentro del padre.
-
----
-
-## 4. Dinámica de Ámbitos y Resolución de Identificadores
-
-```text
- Ámbito Global (level 0) [variables globales, métodos]
-        ▲
-        │ parent
- Ámbito Método (level 1) [parámetros formales, variables del cuerpo]
-        ▲
-        │ parent
- Ámbito Bloque { ... } (level 2) [variables locales internas]
-```
-
-### Mecanismo de Búsqueda: Búsqueda Local vs. Ascendente
-
-La resolución de símbolos se implementa en [`src/symbol_table.c`](file:///home/francisco/compiler/src/symbol_table.c) a través de dos funciones complementarias:
-
-#### 1. Búsqueda Local (`lookupSymbolInScope`)
-Realiza una inspección exclusivamente local sobre el arreglo `symbols` del ámbito actual:
-
-```c
-Symbol *lookupSymbolInScope(Scope *scope, const char *id) {
-    if (scope == NULL || id == NULL) return NULL;
-
-    for (int i = 0; i < scope->symbolCount; i++) {
-        Symbol *currentSymbol = scope->symbols[i];
-        if (currentSymbol->id != NULL && strcmp(currentSymbol->id, id) == 0) {
-            return currentSymbol;
-        }
-    }
-    return NULL;
-}
-```
-
-- **Propósito:** Validar colisiones locales al **declarar** variables o funciones.
-- **Comportamiento:** No consulta al padre (`scope->parent`). Si la variable no está en el nivel actual, retorna `NULL`.
-
-#### 2. Búsqueda Jerárquica y Ascendente (`lookupSymbol`)
-Resuelve un identificador inspeccionando primero el ámbito local y ascendiendo recursivamente por la cadena de padres:
-
-```c
-Symbol *lookupSymbol(Scope *scope, const char *id) {
-    if (scope == NULL || id == NULL) {
-        return NULL;
-    }
-
-    // 1. Búsqueda en el ámbito local
-    Symbol *symbol = lookupSymbolInScope(scope, id);
-    if (symbol != NULL) {
-        return symbol;
-    }
-
-    // 2. Ascenso recursivo al ámbito padre
-    return lookupSymbol(scope->parent, id);
-}
-```
-
-- **Propósito:** Resolver identificadores en lecturas (`ID_NODE`), asignaciones (`ASSIGNMENT_NODE`) e invocaciones (`METHOD_CALL_NODE`).
-- **Sombreado (*Shadowing*):** Si una variable local comparte identificador con otra en un ámbito externo, el paso 1 encuentra la versión local y detiene el ascenso, ocultando la variable externa sin generar conflicto.
-- **Enlace al AST:** Cuando la búsqueda es exitosa, el nodo del AST actualiza su puntero interno `node->symbol` apuntando al `Symbol` resuelto (con su `uid` y tipo correspondiente), permitiendo que las etapas posteriores (código intermedio y ensamblador) accedan directamente a los metadatos correctos.
-
-```mermaid
-flowchart TD
-    Inicio(["lookupSymbol(scope, id)"]) --> ValidInput{"¿scope != NULL y id != NULL?"}
-    ValidInput -- No --> RetNull["Retornar NULL"]
-    ValidInput -- Sí --> SearchLocal["lookupSymbolInScope(scope, id)"]
-    SearchLocal --> FoundLocal{"¿Encontrado localmente?"}
-    FoundLocal -- Sí --> RetLocal["Retornar Symbol (Shadowing efectivo)"]
-    FoundLocal -- No --> HasParent{"¿Tiene padre (scope->parent != NULL)?"}
-    HasParent -- Sí --> Recurse["lookupSymbol(scope->parent, id)"]
-    HasParent -- No --> RetNotFound["Retornar NULL (No declarado)"]
-    Recurse --> Fin(["Fin de resolución"])
-    RetLocal --> Fin
-    RetNull --> Fin
-    RetNotFound --> Fin
-```
-
----
-
-## 5. Casos Anómalos y Gestión de Errores ("Casos Malos")
+## 3. Casos Anómalos y Gestión de Errores ("Casos Malos")
 
 Cuando la resolución o verificación de un identificador falla, el compilador maneja la situación de forma robusta y determinista:
 
 ### 1. Variable no declarada en una expresión
-- **Detección:** En [`analyzeIdentifier`](file:///home/francisco/compiler/src/type_checker.c), `lookupSymbol(scope, node->symbol->id)` retorna `NULL`.
+- **Detección:** En [`analyzeIdentifier`](https://github.com/julivarea/compiler/blob/main/src/type_checker.c), `lookupSymbol(scope, node->symbol->id)` retorna `NULL`.
 - **Acción:**
   1. Se emite un error con la línea exacta: `semanticError(node->line, "Variable no declarada: %s", id)`.
   2. El tipo del nodo se asigna a `TYPE_ERROR` (`node->type = TYPE_ERROR;`).
   3. Los operadores que consumen este nodo propagan `TYPE_ERROR`, previniendo reportes falsos de tipos incompatibles en cadena.
 
 ### 2. Asignación a variable no declarada
-- **Detección:** En [`analyzeAssignmentNode`](file:///home/francisco/compiler/src/semantic_analyzer.c), `lookupSymbol(currentScope, node->symbol->id)` retorna `NULL`.
+- **Detección:** En [`analyzeAssignmentNode`](https://github.com/julivarea/compiler/blob/main/src/semantic_analyzer.c), `lookupSymbol(currentScope, node->symbol->id)` retorna `NULL`.
 - **Acción:**
   1. Se emite: `semanticError(node->line, "Asignacion a variable no declarada '%s'.", id)`.
   2. Se aborta el procesamiento de esa asignación sin enlazar el nodo al AST.
@@ -268,7 +73,7 @@ Cuando la resolución o verificación de un identificador falla, el compilador m
 - **Caso B (Llamar a una variable como método):** En `analyzeMethodCall`, si el símbolo resuelto posee `symbolType != METHOD_SYMBOL`, se emite: `"El simbolo encontrado pertenece a una variable no a una llamada de un metodo"`.
 
 ### 4. Redeclaración en el mismo ámbito
-- **Detección:** Al declarar una variable en [`analyzeVariableDeclarationNode`](file:///home/francisco/compiler/src/semantic_analyzer.c), se consulta `lookupSymbolInScope(currentScope, node->symbol->id)`.
+- **Detección:** Al declarar una variable en [`analyzeVariableDeclarationNode`](https://github.com/julivarea/compiler/blob/main/src/semantic_analyzer.c), se consulta `lookupSymbolInScope(currentScope, node->symbol->id)`.
 - **Acción:**
   1. Si retorna distinto de `NULL`, se emite: `semanticError(node->line, "La variable '%s' ya fue declarada previamente en este ambito.", id)`.
   2. El símbolo duplicado **no** se inserta en el `Scope` (`appendSymbol` se omite).
@@ -290,7 +95,7 @@ Si `lookupSymbol` o `lookupSymbolInScope` reciben un `scope == NULL` o `id == NU
 
 ---
 
-## 6. Verificación de Tipos y Reglas Semánticas
+## 4. Verificación de Tipos y Reglas Semánticas
 
 Durante el recorrido del AST, el componente de verificación de tipos deduce y comprueba los tipos de todas las expresiones:
 

@@ -56,10 +56,11 @@ nav:
       - 4. Análisis Sintáctico: wiki/02.5-syntax-analysis.md
       - 5. Acciones del Parser: wiki/02.7-parser-actions.md
       - 6. Árbol de Sintaxis Abstracta (AST): wiki/03-ast.md
-      - 7. Análisis Semántico: wiki/04-semantic-analysis.md
-      - 8. Código Intermedio (TAC): wiki/05-intermediate-code.md
-      - 9. Código Objeto y Stack: wiki/06-object-code.md
-      - 10. Live Variable Analysis: live_variable_analysis.md
+      - 7. Tabla de Símbolos y Ámbitos: wiki/04-symbol-table.md
+      - 8. Análisis Semántico: wiki/04-semantic-analysis.md
+      - 9. Código Intermedio (TAC): wiki/05-intermediate-code.md
+      - 10. Código Objeto y Stack: wiki/06-object-code.md
+      - 11. Live Variable Analysis: live_variable_analysis.md
   - Documentación Técnica:
       - Alcance Análisis Semántico: analisis-semantico.md
       - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md
