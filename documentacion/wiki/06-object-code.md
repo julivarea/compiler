@@ -1,12 +1,13 @@
 # Generación de Código Objeto y Gestión del Stack
 
 !!! note "Estado de esta página"
-    Cubre las fichas **F17** (marco de pila, `function_frame.c`) y **F18**
-    (el generador, `object_code.c`), todavía sin desarrollar al nivel de detalle
-    de las demás. El plan está en `TODO_documentacion.md`.
+    Cubre la ficha **F18** (el generador, `object_code.c`), todavía sin
+    desarrollar al nivel de detalle de las demás. El plan está en
+    `TODO_documentacion.md`.
 
-    El modelo de datos de una instrucción de assembly y su emisión textual tienen
-    su propia página: [Instrucciones x86-64](06-asm-instructions.md) (ficha F16).
+    Las otras dos piezas del back-end tienen su propia página:
+    [Instrucciones x86-64](06-asm-instructions.md) (F16) y
+    [Marco de Pila](06.5-stack-frame.md) (F17).
 
 La etapa de generación de código objeto traduce las cuádruplas TAC a instrucciones en lenguaje ensamblador x86-64 bajo la sintaxis AT&T de GNU Assembler. Esta etapa organiza la memoria en tiempo de ejecución: define el diseño del marco de activación (*stack frame*), coordina el uso de `%rsp` y `%rbp`, y aplica las reglas de la convención de llamada System V AMD64 ABI.
 
@@ -33,161 +34,15 @@ flowchart TD
 
 ---
 
-## 2. Organización del Stack y Registros Base
+## 2. El marco de pila
 
-En x86-64 la pila crece hacia direcciones de memoria más bajas. La organización del marco para cada función es la siguiente:
-
-```text
-Direcciones altas
-  ▲
-  │   ┌──────────────────────────────────────────┐
-  │   │ Parámetros 7 en adelante (si existieran) │ > +16(%rbp)
-  │   ├──────────────────────────────────────────┤
-  │   │ Dirección de retorno (colocada por call) │  +8(%rbp)
-  │   ├──────────────────────────────────────────┤
-  │   │ %rbp anterior (guardado en el prólogo)   │   0(%rbp)  ◄── %rbp (Frame Pointer)
-  │   ├──────────────────────────────────────────┤
-  │   │ Primer slot local o parámetro 1          │  -4(%rbp)
-  │   │ Segundo slot local o parámetro 2         │  -8(%rbp)
-  │   │ Variable local x                         │ -12(%rbp)
-  │   │ Temporal t0                              │ -16(%rbp)
-  │   │ ...                                      │ ...
-  │   │ Relleno de alineación a 16 bytes         │
-  ▼   └──────────────────────────────────────────┘            ◄── %rsp (Stack Pointer)
-Direcciones bajas
-```
-
-### Funciones de `%rsp` y `%rbp`
-
-- `%rsp` (Stack Pointer): Apunta a la cima de la pila. El compilador calcula el espacio total necesario de antemano y lo resta de `%rsp` una sola vez en el prólogo con `subq $frameSize, %rsp`.
-- `%rbp` (Base Pointer): Permanece fijo en la base del marco durante la ejecución del método. Todas las variables locales, parámetros y temporales se referencian como desplazamientos negativos respecto a `%rbp` (por ejemplo `-4(%rbp)` o `-8(%rbp)`).
+La organización del stack, las estructuras `FunctionFrame` y `StackSlot`, la
+pasada de dimensionamiento, la alineación a 16 bytes y el prólogo/epílogo tienen
+ahora su propia página: [Marco de Pila](06.5-stack-frame.md) (ficha F17).
 
 ---
 
-## 3. Estructuras del Marco (`FunctionFrame` y `StackSlot`)
-
-El compilador utiliza dos estructuras para llevar la cuenta de las posiciones asignadas en el marco:
-
-```mermaid
-classDiagram
-    class StackSlot {
-        +char name[64]
-        +int offset
-    }
-
-    class FunctionFrame {
-        +char functionName[64]
-        +StackSlot* slots
-        +int slotCount
-        +int slotCapacity
-        +int nextOffset
-        +int frameSize
-        +int paramCount
-    }
-
-    FunctionFrame "1" *-- "many" StackSlot : slots
-```
-
-### `StackSlot`
-Representa una ranura de 4 bytes en la pila:
-- `name`: Nombre del operando (por ejemplo `"x@2"`, `"total@1"`, `"t0"`).
-- `offset`: Desplazamiento negativo respecto a `%rbp` (por ejemplo `-4`, `-8`, `-12`).
-
-### `FunctionFrame`
-Almacena el estado del marco durante la compilación de una función:
-- `functionName`: Nombre de la función en curso.
-- `nextOffset`: Contador acumulado en bytes para los slots registrados. Cada variable o temporal de 32 bits suma 4 bytes.
-- `frameSize`: Tamaño total final del marco, ajustado al múltiplo de 16 más cercano.
-- `paramCount`: Contador de parámetros procesados, utilizado para asociar registros en la convención de llamada.
-
----
-
-## 4. Análisis Preliminar de Memoria (Pasada 1)
-
-Antes de emitir el código ensamblador del cuerpo de la función, el compilador realiza una pasada preliminar sobre las cuádruplas para calcular el tamaño del marco. Esto responde a dos necesidades:
-1. Conocer `frameSize` para emitir la reserva de espacio `subq $frameSize, %rsp` en el prólogo.
-2. Cumplir con la convención System V ABI, que exige que el puntero `%rsp` esté alineado a 16 bytes antes de ejecutar cualquier instrucción `call`.
-
-### Asignación de Ranuras con `addSlot`
-
-Durante la pasada preliminar, se invoca `addSlot(frame, operand)` en los siguientes casos:
-- Al encontrar `TAC_PARAM_DECL`: Reserva espacio para cada parámetro formal.
-- Al encontrar `TAC_LOCAL_DECL`: Reserva espacio para cada variable local.
-- Al encontrar instrucciones intermedias cuyo resultado sea un temporal (`OPERAND_TEMP`), como en operaciones aritméticas, relacionales o llamadas con retorno.
-
-```c
-int addSlot(FunctionFrame *frame, const TACOperand *operand) {
-    for (int i = 0; i < frame->slotCount; i++) {
-        if (strcmp(frame->slots[i].name, operand->name) == 0) {
-            return frame->slots[i].offset;
-        }
-    }
-
-    frame->nextOffset += 4;
-
-    StackSlot *slot = &frame->slots[frame->slotCount];
-    strncpy(slot->name, operand->name, TAC_NAME_LENGTH - 1);
-    slot->name[TAC_NAME_LENGTH - 1] = '\0';
-    slot->offset = -frame->nextOffset;
-
-    frame->slotCount++;
-    return slot->offset;
-}
-```
-
-Si el operando ya tenía una ranura asignada en el marco, se devuelve su desplazamiento existente sin duplicar espacio.
-
-### Alineación a 16 Bytes
-
-Al finalizar la pasada preliminar, el compilador calcula `frameSize` aplicando una macro de redondeo hacia arriba:
-
-```c
-#define ALIGN_UP(value, alignment) (((value) + (alignment) - 1) & ~((alignment) - 1))
-
-frame->frameSize = ALIGN_UP(frame->nextOffset, 16);
-```
-
-| `nextOffset` (bytes brutos) | `frameSize` (alineado a 16 bytes) | Relleno añadido |
-| :---: | :---: | :---: |
-| 4 bytes (1 variable) | 16 bytes | 12 bytes |
-| 12 bytes (3 variables) | 16 bytes | 4 bytes |
-| 16 bytes (4 variables) | 16 bytes | 0 bytes |
-| 20 bytes (5 variables) | 32 bytes | 12 bytes |
-
----
-
-## 5. Prólogo y Epílogo
-
-### Prólogo (`emitPrologue`)
-
-```assembly
-.globl sumar
-.type sumar, @function
-sumar:
-    pushq %rbp              # Guarda el frame pointer del llamador
-    movq %rsp, %rbp         # Establece el nuevo frame pointer
-    subq $16, %rsp          # Reserva el espacio calculado para la funcion
-```
-
-1. `pushq %rbp` almacena el `%rbp` previo en la pila y desplaza `%rsp` 8 bytes hacia abajo.
-2. `movq %rsp, %rbp` fija el inicio del marco actual.
-3. `subq $frameSize, %rsp` decrementa `%rsp` si `frameSize > 0`, reservando el bloque de pila.
-
-### Epílogo (`emitEpilogue`)
-
-```assembly
-.L_sumar_epilogue:
-    leave                   # Equivale a: movq %rbp, %rsp ; popq %rbp
-    ret                     # Extrae la direccion de retorno y vuelve al llamador
-```
-
-1. La etiqueta `.L_<funcion>_epilogue` sirve como punto de convergencia para todas las instrucciones de retorno de la función.
-2. `leave` restaura `%rsp` al valor de `%rbp` y recupera el `%rbp` previo del llamador mediante `popq %rbp`.
-3. `ret` salta a la dirección de retorno que quedó en la cima de la pila.
-
----
-
-## 6. Convención de Llamada (System V AMD64 ABI)
+## 3. Convención de Llamada (System V AMD64 ABI)
 
 La convención System V AMD64 ABI en Linux asigna los primeros seis argumentos enteros o booleanos a registros de 32 bits:
 
@@ -222,7 +77,7 @@ Cuando una función llama a otra:
 
 ---
 
-## 7. Instrucciones Condicionales y Extensión de Cero (`setCC` y `movzbl`)
+## 4. Instrucciones Condicionales y Extensión de Cero (`setCC` y `movzbl`)
 
 En x86-64, las instrucciones de seteo condicional (`setl`, `setg`, `sete`, etc.) solo pueden escribir su resultado en un registro de 8 bits (el byte bajo de un registro general, como `%al`).
 
@@ -235,7 +90,7 @@ Este patrón asegura que el booleano resultante quede normalizado como `0` o `1`
 
 ---
 
-## 8. Mapeo de Cuádruplas TAC a Assembly
+## 5. Mapeo de Cuádruplas TAC a Assembly
 
 A continuación se detalla la traducción implementada en el backend para cada operación:
 
@@ -308,7 +163,7 @@ jmp .L_calcular_epilogue
 
 ---
 
-## 9. Ejemplo Completo de Compilación
+## 6. Ejemplo Completo de Compilación
 
 ### Código Fuente en C-TDS
 ```c

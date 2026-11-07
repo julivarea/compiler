@@ -387,9 +387,40 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
   - Explicado por qué **no hay lista de `AsmInstruction`** y qué cambio
     estructural haría falta para habilitar los tres patrones de mirilla sobre el
     assembly que siguen pendientes en F15.
-- [ ] **F17 — Marco de pila** · `function_frame.h`, `function_frame.c` · 263 líneas
+- [x] **F17 — Marco de pila** · `function_frame.h`, `function_frame.c` · 263 líneas
   - Asignación de un slot por variable, parámetro y temporal; el cálculo del
     tamaño del frame y la alineación a 16 bytes.
+  - **Hecha:** `documentacion/wiki/06.5-stack-frame.md`. Se le extrajeron a
+    `06-object-code.md` las secciones del marco (§2 a §5, que eran F17 mezclada
+    con F18) y se completó con los 14 campos de `FunctionFrame`, las cinco
+    funciones, el mecanismo de argumentos pendientes y la teoría.
+  - **El mecanismo de argumentos pendientes, explicado y verificado.** Resuelve
+    que una llamada anidada destruiría los argumentos ya cargados en registros:
+    cada `param` copia su valor a una ranura propia del marco y el `call` consume
+    las últimas N. El dimensionamiento **simula la pila** de argumentos para
+    hallar el pico, y reserva solo esa cantidad de ranuras anónimas, no una por
+    argumento del programa. Verificado con `f(g(1), h(2))`: pico 2, marco de 32
+    bytes (3 temporales + 2 ranuras = 20, alineado a 32), offsets `-4` a `-20`, y
+    el programa devuelve 112.
+  - **Por qué hay dos contadores de parámetros formales por clase:** la ABI
+    reparte enteros y reales en **dos secuencias de registros independientes**, así
+    que en `f(int a, float b, int c)` los registros son `%edi`, `%xmm0`, `%esi`:
+    la posición en los registros no es la posición en la firma.
+  - **Corregido el diagrama de clases**, que estaba desactualizado: mostraba un
+    `paramCount` que **no existe** (los campos reales son `integerParamCount`,
+    `floatParamCount` y `stackParamCount`), le faltaban `returnType` y los cinco
+    campos de argumentos pendientes, y declaraba `char name[64]` cuando
+    `TAC_NAME_LENGTH` es 256.
+  - **`MAX_PENDING_PARAMS` es un alias muerto:** está definido y **no se usa en
+    ninguna parte**; quedó de cuando el arreglo de argumentos era de tamaño fijo.
+  - Documentadas dos asperezas verificadas: `addSlot` devuelve `0` ante error y 0
+    es también un offset sintácticamente válido (ambiguo por contrato, inocuo en
+    la práctica porque el primer slot es `-4`), y `ensurePendingParamCapacity`
+    puede dejar `pendingParamCapacity` desfasado si falla el segundo `realloc`.
+  - **Tres invariantes del marco verificados** sobre `examples/factorial.ctds` con
+    un script: `frameSize` múltiplo de 16, ningún offset usado excede el
+    `frameSize`, y todos los offsets negativos. Quedaron documentados como
+    chequeo de regresión.
 - [ ] **F18 — Generador de código objeto** · `object_code.h`, `object_code.c` · 1072 líneas
   - La traducción de cada instrucción TAC, la **convención de llamada System V
     AMD64**, el caso de `idivl` con `cltd`, el camino SSE para `float` y la
@@ -438,7 +469,8 @@ Lo que ya hay, para no reescribir de cero:
 | --- | --- | --- |
 | `wiki/01-overview.md` | 619 | Es la más completa. Revisar que el pipeline incluya optimizador e intérprete |
 | `wiki/06-asm-instructions.md` | 438 | **F16, hecha.** |
-| `wiki/06-object-code.md` | 378 | F17 y F18. Falta la teoría de la convención de llamada |
+| `wiki/06.5-stack-frame.md` | 528 | **F17, hecha.** |
+| `wiki/06-object-code.md` | 233 | F18. Se le extrajo lo de F16 y F17 |
 | `wiki/04.5-type-checker.md` | 457 | **F10, hecha.** |
 | `wiki/04-semantic-analysis.md` | 538 | **F11, hecha.** |
 | `wiki/05-tac-representation.md` | 573 | **F12, hecha.** |

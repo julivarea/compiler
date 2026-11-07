@@ -435,4 +435,4 @@ instrucciones contiguas, exactamente como `removeRedundantJumps` sobre el TAC.
 
 ---
 
-**Siguiente:** [Generación de Código Objeto y Gestión del Stack](06-object-code.md)
+**Siguiente:** [Marco de Pila](06.5-stack-frame.md)
