@@ -207,7 +207,27 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
     válido y es lo que usan los ejemplos para devolver un código de salida.
   - Inferencia del tipo de cada expresión, compatibilidad en asignaciones, la
     coerción `int`/`float` y por qué `==` es más estricto que `<` y `>`.
-- [ ] **F11 — Recorrido semántico** · `semantic_analyzer.h`, `semantic_analyzer.c` · 328 líneas
+- [x] **F11 — Recorrido semántico** · `semantic_analyzer.h`, `semantic_analyzer.c` · 328 líneas
+  - **Hecha:** `documentacion/wiki/04-semantic-analysis.md`, reescrita como ficha
+    F11. Las diez funciones; el doble papel de `analyzeSemantics` según
+    `parent == NULL`; la recursión mutua con `analyzeNodeSemantics` que es lo que
+    genera la jerarquía de ámbitos; **el catálogo completo de los 15 mensajes de
+    error** de este archivo, todos verificados ejecutándolos; y la política de
+    diagnóstico acumulativo contrastada con el corte del sintáctico.
+  - **`guaranteesReturn` con su tabla de siete casos verificados.** Incluye la
+    limitación: `while (true) { return 1; }` se **rechaza**, porque el `default`
+    devuelve `false` para `WHILE_NODE` sin mirar la condición. Documentado como
+    aproximación conservadora deliberada, con la extensión mínima que lo
+    arreglaría.
+  - **Corrección confirmada:** `checkMainMethodExists` **no exige que `main` sea
+    `void`**. `int main()` y `void main()` compilan los dos. La página anterior
+    afirmaba lo contrario.
+  - Se documentaron dos chequeos defensivos que son **código muerto**: el de
+    `return` fuera de una función (un `return` suelto es error de *sintaxis*, no
+    semántico) y el `hasExpression` de `analyzeAssignmentNode` (la gramática
+    siempre da el hijo).
+  - El diagrama de clases Mermaid que tenía la página anterior se movió a F09,
+    que es donde viven esas estructuras.
   - Las reglas semánticas del lenguaje, el registro de métodos antes de analizar
     el cuerpo (que es lo que habilita la recursión) y `guaranteesReturn`.
 
@@ -291,11 +311,11 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/01-overview.md` | 619 | Es la más completa. Revisar que el pipeline incluya optimizador e intérprete |
 | `wiki/06-object-code.md` | 370 | Cubre F16–F18. Falta la teoría de la convención de llamada |
 | `wiki/04.5-type-checker.md` | 457 | **F10, hecha.** |
-| `wiki/04-semantic-analysis.md` | 117 | F11. Se le extrajo lo de F09 y F10 |
+| `wiki/04-semantic-analysis.md` | 538 | **F11, hecha.** |
 | `wiki/05-intermediate-code.md` | 285 | Cubre F12–F13. Falta el "qué es una cuádrupla" conceptual |
 | `live_variable_analysis.md` | 211 | Cubre F14. Falta por qué el punto fijo converge |
 | `wiki/03-ast.md` | 569 | **F08, hecha.** |
-| `wiki/04-symbol-table.md` | 478 | **F09, hecha.** |
+| `wiki/04-symbol-table.md` | 506 | **F09, hecha.** |
 | `wiki/02-lexical-analysis.md` | 452 | **F05, hecha.** |
 | `wiki/02.5-syntax-analysis.md` | 480 | **F06, hecha.** |
 | `wiki/02.7-parser-actions.md` | 40 | F07, esqueleto con la lista de lo que falta |
@@ -310,7 +330,7 @@ una ruta personal en el sitio publicado.
 
 | Página | Links rotos | Estado |
 | --- | --- | --- |
-| `analisis-semantico.md` | 15 | pendiente (F10/F11) |
+| `analisis-semantico.md` | 15 | pendiente: es página de Documentación Técnica, no de una ficha |
 | `wiki/04-semantic-analysis.md` | 4 | **arreglados en F09** |
 | `convenciones_comentarios.md` | 3 | pendiente |
 

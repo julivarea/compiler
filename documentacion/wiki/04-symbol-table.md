@@ -132,6 +132,34 @@ una sola copia intermedia; el precio es que pasarle un literal de string a
 
 ## 4. La estructura `Scope`
 
+```mermaid
+classDiagram
+    class Scope {
+        +int level
+        +Symbol** symbols
+        +int symbolCount
+        +int symbolCapacity
+        +Symbol* function
+        +Scope* parent
+        +Scope** children
+        +int childrenCount
+        +int childrenCapacity
+    }
+
+    class Symbol {
+        +char* id
+        +int uid
+        +DataType type
+        +SymbolType symbolType
+        +NodeAST* parameters
+        +union value
+    }
+
+    Scope "1" *-- "many" Scope : children
+    Scope "1" o-- "0..1" Scope : parent
+    Scope "1" *-- "many" Symbol : symbols
+```
+
 ```c
 typedef struct Scope {
     int level;               /* 0 para el ámbito global */
