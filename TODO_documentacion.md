@@ -421,7 +421,38 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
     un script: `frameSize` múltiplo de 16, ningún offset usado excede el
     `frameSize`, y todos los offsets negativos. Quedaron documentados como
     chequeo de regresión.
-- [ ] **F18 — Generador de código objeto** · `object_code.h`, `object_code.c` · 1072 líneas
+- [x] **F18 — Generador de código objeto** · `object_code.h`, `object_code.c` · 1072 líneas
+  - **Hecha:** `documentacion/wiki/06-object-code.md`, reescrita como ficha F18
+    (233 → 600). Las tres secciones del objeto, el despachador con sus tres
+    patrones de traducción, la convención de llamada de los dos lados, las cinco
+    traducciones que tienen algo que contar, el pool de constantes reales, la
+    resolución de operandos y los cinco errores internos.
+  - **Corrección a lo que decía la página:** describía que `TAC_PARAM` carga el
+    argumento **directo al registro** y que `TAC_CALL` reinicia el índice a 0. Las
+    dos cosas cambiaron: hoy cada `param` copia su valor a una ranura del marco y
+    el `call` restaura el contador a la **base** de esa llamada, no a cero, que es
+    justamente lo que permite las llamadas anidadas. Tampoco mencionaba los
+    registros `%xmm` para reales.
+  - **Error mío, corregido antes de quedar:** escribí que las globales se emiten
+    como `g@1`. Es falso: `getGlobalName` devuelve `symbol->id`, o sea el nombre
+    **sin** el sufijo. Verificado con `nm` sobre el ejecutable (`D g`, `D gf`). El
+    porqué queda documentado: el `@uid` desambigua nombres repetidos y una global
+    no puede repetirse, así que usar el nombre limpio deja legible la tabla de
+    símbolos del objeto.
+  - **Lo verificado ejecutando:** división y módulo de negativos (`-17/5 = -3`,
+    `-17%5 = -2`, que valida el `cltd` y el divisor en `%ecx`); llamadas de 7 y de
+    8 argumentos (relleno de alineación con cantidad impar en la pila);
+    `f(int a, float b, int c, float d)` recibiendo `%edi`/`%xmm0`/`%esi`/`%xmm1`,
+    que muestra que **la posición en los registros no es la posición en la
+    firma**; y `NaN == NaN` dando falso vía `0.0 / 0.0`, que valida el filtro de
+    paridad con `setnp`.
+  - **Los tres detalles de x86 que más se preguntan**, cada uno con su porqué:
+    `cltd` obligatorio antes de `idivl`; el divisor nunca en `%edx` porque `cltd`
+    lo sobrescribe; y que `comiss` setea los flags como comparación **sin signo**,
+    así que las condiciones son `setb`/`seta` y no `setl`/`setg`.
+  - Documentado que **división y módulo son la misma instrucción**: `idivl` deja
+    el cociente en `%eax` y el resto en `%edx`, así que las dos comparten
+    `emitDivisionOp` y solo cambian el registro que leen.
   - La traducción de cada instrucción TAC, la **convención de llamada System V
     AMD64**, el caso de `idivl` con `cltd`, el camino SSE para `float` y la
     semántica de NaN en las comparaciones. El archivo más grande del proyecto.
@@ -470,7 +501,7 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/01-overview.md` | 619 | Es la más completa. Revisar que el pipeline incluya optimizador e intérprete |
 | `wiki/06-asm-instructions.md` | 438 | **F16, hecha.** |
 | `wiki/06.5-stack-frame.md` | 528 | **F17, hecha.** |
-| `wiki/06-object-code.md` | 233 | F18. Se le extrajo lo de F16 y F17 |
+| `wiki/06-object-code.md` | 625 | **F18, hecha.** |
 | `wiki/04.5-type-checker.md` | 457 | **F10, hecha.** |
 | `wiki/04-semantic-analysis.md` | 538 | **F11, hecha.** |
 | `wiki/05-tac-representation.md` | 573 | **F12, hecha.** |
@@ -483,6 +514,9 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/02.7-parser-actions.md` | 40 | F07, esqueleto con la lista de lo que falta |
 | `wiki/05.9-optimizer.md` | 827 | **F15, hecha.** Movida al sitio desde la raíz |
 | — | — | **No hay nada de F01–F04 ni de F19** |
+
+> **Bloque 6 completo.** Las tres fichas del back-end (F16, F17, F18) estaban
+> cubiertas por una sola página de 370 líneas; ahora son 438 + 528 + 625.
 
 ### Pendiente transversal: 22 links rotos a la máquina de Fran
 
