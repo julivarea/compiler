@@ -475,4 +475,4 @@ analizar ningún cuerpo. Es un cambio en F11, no acá: la tabla ya soporta el ca
 
 ---
 
-**Siguiente:** [Análisis Semántico](04-semantic-analysis.md)
+**Siguiente:** [Chequeo de Tipos](04.5-type-checker.md)

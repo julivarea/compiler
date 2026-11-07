@@ -95,19 +95,15 @@ Si `lookupSymbol` o `lookupSymbolInScope` reciben un `scope == NULL` o `id == NU
 
 ---
 
-## 4. Verificación de Tipos y Reglas Semánticas
+## 4. Reglas sobre sentencias
 
-Durante el recorrido del AST, el componente de verificación de tipos deduce y comprueba los tipos de todas las expresiones:
+El chequeo de tipos de las **expresiones** (`isAssignable`, las reglas de cada
+operador, la promoción `int`/`float`) tiene ahora su propia página:
+[Chequeo de Tipos](04.5-type-checker.md) (ficha F10).
 
-- **Compatibilidad en Asignaciones (`isAssignable`):**
-  - Tipos idénticos (`int` a `int`, `float` a `float`, `boolean` a `boolean`).
-  - Coerción implícita permitida: valor `int` asignado a variable `float`.
-  - Conversión rechazada: valor `float` a variable `int`, o mezclas con `boolean`.
-- **Operaciones Binarias:**
-  - `+`, `-`, `*`, `/`: Operandos enteros devuelven `TYPE_INT`. Si al menos uno es `float`, se promueve a `TYPE_FLOAT`.
-  - `%`: Requiere estrictamente operandos `TYPE_INT` y devuelve `TYPE_INT`.
-  - `&&`, `||`, `!`: Requieren operandos `TYPE_BOOL` y devuelven `TYPE_BOOL`.
-  - `<`, `>`, `==`: Comparan tipos compatibles y devuelven `TYPE_BOOL`.
+Lo que sigue son las reglas que esta etapa aplica sobre las **sentencias**, una
+vez que conoce el tipo de las expresiones que contienen:
+
 - **Sentencias de Control (`if`, `while`):** La condición debe evaluar obligatoriamente a `TYPE_BOOL`.
 - **Sentencias `return`:**
   - Fuera de una función: error semántico.

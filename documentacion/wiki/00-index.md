@@ -13,10 +13,11 @@
 5. [Acciones del Parser](02.7-parser-actions.md) — `parser_helpers.c`
 6. [Árbol de Sintaxis Abstracta (AST)](03-ast.md) — `ast.c`
 7. [Tabla de Símbolos y Ámbitos](04-symbol-table.md) — `symbol_table.c`
-8. [Análisis Semántico](04-semantic-analysis.md) — `type_checker.c`, `semantic_analyzer.c`
-9. [Generación de Código Intermedio (TAC)](05-intermediate-code.md)
-10. [Generación de Código Objeto y Gestión del Stack](06-object-code.md)
-11. [Live Variable Analysis](../live_variable_analysis.md)
+8. [Chequeo de Tipos](04.5-type-checker.md) — `type_checker.c`
+9. [Análisis Semántico](04-semantic-analysis.md) — `semantic_analyzer.c`
+10. [Generación de Código Intermedio (TAC)](05-intermediate-code.md)
+11. [Generación de Código Objeto y Gestión del Stack](06-object-code.md)
+12. [Live Variable Analysis](../live_variable_analysis.md)
 
 ---
 

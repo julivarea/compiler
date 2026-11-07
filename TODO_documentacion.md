@@ -184,7 +184,27 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
     `analisis-semantico.md` (15) y `convenciones_comentarios.md` (3).
   - La jerarquía de `Scope`s, la búsqueda de adentro hacia afuera, el
     ocultamiento (shadowing) y los `uid`. Teoría: tabla de símbolos jerárquica.
-- [ ] **F10 — Chequeo de tipos** · `type_checker.h`, `type_checker.c` · 257 líneas
+- [x] **F10 — Chequeo de tipos** · `type_checker.h`, `type_checker.c` · 257 líneas
+  - **Hecha:** `documentacion/wiki/04.5-type-checker.md`, página nueva. La **tabla
+    de reglas de tipos de los siete grupos de operadores**, verificada con 20
+    expresiones ejecutadas; la asimetría entre `<` (coerciona) y `==` (exige
+    tipos idénticos) con su justificación; que `isAssignable` solo **ensancha**
+    `int`→`float` y nunca al revés; la supresión de errores en cascada vía
+    `TYPE_ERROR` como tipo; y el reparto de responsabilidades con F11
+    (expresiones contra sentencias).
+  - **Dónde se ve una coerción:** no en el `.sem`, porque `describeNode` no
+    imprime el tipo de un `OPERATOR_NODE`, sino en el `.ci`, donde aparece como
+    una instrucción `int_to_float`. Queda documentado como técnica de
+    verificación.
+  - **Corrección a documentación previa:** `04-semantic-analysis.md` decía
+    "`<`, `>`, `==`: Comparan tipos compatibles", agrupando los tres. Es
+    impreciso: `int == float` es **error** y `int < float` es válido.
+  - Se le extrajo a `04-semantic-analysis.md` la sección de verificación de
+    tipos; quedó con las reglas sobre sentencias, que son F11.
+  - **Nota para F11:** esa misma página afirma que `checkMainMethodExists`
+    comprueba que exista `void main()`. Verificado que **no exige `void`**: solo
+    que `main` exista, sea un método y no tenga parámetros. `int main()` es
+    válido y es lo que usan los ejemplos para devolver un código de salida.
   - Inferencia del tipo de cada expresión, compatibilidad en asignaciones, la
     coerción `int`/`float` y por qué `==` es más estricto que `<` y `>`.
 - [ ] **F11 — Recorrido semántico** · `semantic_analyzer.h`, `semantic_analyzer.c` · 328 líneas
@@ -270,7 +290,8 @@ Lo que ya hay, para no reescribir de cero:
 | --- | --- | --- |
 | `wiki/01-overview.md` | 619 | Es la más completa. Revisar que el pipeline incluya optimizador e intérprete |
 | `wiki/06-object-code.md` | 370 | Cubre F16–F18. Falta la teoría de la convención de llamada |
-| `wiki/04-semantic-analysis.md` | 121 | F10 y F11. Se le extrajo la parte de F09 |
+| `wiki/04.5-type-checker.md` | 457 | **F10, hecha.** |
+| `wiki/04-semantic-analysis.md` | 117 | F11. Se le extrajo lo de F09 y F10 |
 | `wiki/05-intermediate-code.md` | 285 | Cubre F12–F13. Falta el "qué es una cuádrupla" conceptual |
 | `live_variable_analysis.md` | 211 | Cubre F14. Falta por qué el punto fijo converge |
 | `wiki/03-ast.md` | 569 | **F08, hecha.** |
