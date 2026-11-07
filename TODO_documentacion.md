@@ -359,8 +359,34 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
 
 ### Bloque 6 — Código objeto
 
-- [ ] **F16 — Instrucciones x86-64** · `asm_instruction.h`, `asm_instruction.c` · 391 líneas
+- [x] **F16 — Instrucciones x86-64** · `asm_instruction.h`, `asm_instruction.c` · 391 líneas
   - La representación de una instrucción de assembly y el repertorio usado.
+  - **Hecha:** `documentacion/wiki/06-asm-instructions.md`, página nueva. Era un
+    **hueco completo**: `06-object-code.md` no tenía ni una sección sobre este
+    módulo. Cubre los 11 opcodes, los 5 tipos de operando, los 13 constructores,
+    y dónde vive la sintaxis AT&T.
+  - **Hallazgo medido: el módulo cubre solo la aritmética entera de 32 bits.** En
+    `object_code.c` hay **14 llamadas a `emitAsm` contra 56 a `buildStringf`**, o
+    sea que ~20% del assembly pasa por el modelo tipado. Reales (SSE), saltos,
+    llamadas, marco de pila, `setCC` y directivas se emiten como texto directo.
+    Queda documentado como limitación real y no como diseño: la sintaxis AT&T
+    está centralizada solo para una parte del back-end.
+  - **`asmLoad` y `asmStore` son la misma función**, carácter por carácter. No es
+    un bug: x86 tiene un solo `mov` para leer y escribir memoria, a diferencia de
+    las RISC. Los dos nombres existen para que el generador exprese la intención.
+  - **El enum de registros quedó chico y `customReg` lo compensa.** Hay 3
+    registros en `AsmRegister` y 6 llamadas a `opRegStr` contra 2 a `opReg`, así
+    que el camino por nombre es el principal. Documentado por qué `customReg` no
+    puede estar en la unión, y que mientras conviva un registro se puede nombrar
+    de dos maneras sin garantía de que se traten como equivalentes.
+  - **Dos `default` silenciosos:** `getRegisterName` devuelve `"%eax"` y
+    `getOpcodeMnemonic` devuelve `"nop"`. Un opcode nuevo sin su caso emite un
+    `nop` y el programa hace algo distinto sin un solo aviso. Comparado con
+    `getTACOperation` de F13, que sí reporta error interno, acá falta ese aviso:
+    es la mejora más chica y más valiosa del módulo.
+  - Explicado por qué **no hay lista de `AsmInstruction`** y qué cambio
+    estructural haría falta para habilitar los tres patrones de mirilla sobre el
+    assembly que siguen pendientes en F15.
 - [ ] **F17 — Marco de pila** · `function_frame.h`, `function_frame.c` · 263 líneas
   - Asignación de un slot por variable, parámetro y temporal; el cálculo del
     tamaño del frame y la alineación a 16 bytes.
@@ -411,7 +437,8 @@ Lo que ya hay, para no reescribir de cero:
 | Página | Líneas | Qué le falta para servir de estudio |
 | --- | --- | --- |
 | `wiki/01-overview.md` | 619 | Es la más completa. Revisar que el pipeline incluya optimizador e intérprete |
-| `wiki/06-object-code.md` | 370 | Cubre F16–F18. Falta la teoría de la convención de llamada |
+| `wiki/06-asm-instructions.md` | 438 | **F16, hecha.** |
+| `wiki/06-object-code.md` | 378 | F17 y F18. Falta la teoría de la convención de llamada |
 | `wiki/04.5-type-checker.md` | 457 | **F10, hecha.** |
 | `wiki/04-semantic-analysis.md` | 538 | **F11, hecha.** |
 | `wiki/05-tac-representation.md` | 573 | **F12, hecha.** |

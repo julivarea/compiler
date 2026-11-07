@@ -1,5 +1,13 @@
 # Generación de Código Objeto y Gestión del Stack
 
+!!! note "Estado de esta página"
+    Cubre las fichas **F17** (marco de pila, `function_frame.c`) y **F18**
+    (el generador, `object_code.c`), todavía sin desarrollar al nivel de detalle
+    de las demás. El plan está en `TODO_documentacion.md`.
+
+    El modelo de datos de una instrucción de assembly y su emisión textual tienen
+    su propia página: [Instrucciones x86-64](06-asm-instructions.md) (ficha F16).
+
 La etapa de generación de código objeto traduce las cuádruplas TAC a instrucciones en lenguaje ensamblador x86-64 bajo la sintaxis AT&T de GNU Assembler. Esta etapa organiza la memoria en tiempo de ejecución: define el diseño del marco de activación (*stack frame*), coordina el uso de `%rsp` y `%rbp`, y aplica las reglas de la convención de llamada System V AMD64 ABI.
 
 ---

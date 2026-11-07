@@ -63,7 +63,8 @@ nav:
       - 11. Generación de Código Intermedio: wiki/05.5-tac-generation.md
       - 12. Análisis de Variables Vivas: wiki/05.7-live-variables.md
       - 13. Optimización del Código Intermedio: wiki/05.9-optimizer.md
-      - 14. Código Objeto y Stack: wiki/06-object-code.md
+      - 14. Instrucciones x86-64: wiki/06-asm-instructions.md
+      - 15. Código Objeto y Stack: wiki/06-object-code.md
   - Documentación Técnica:
       - Alcance Análisis Semántico: analisis-semantico.md
       - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md
