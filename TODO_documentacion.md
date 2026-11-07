@@ -260,7 +260,30 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
     `{operación, resultado, operando1, operando2}` con operandos tipados. Es una
     de las decisiones de diseño más defendibles del proyecto y conviene tenerla
     muy clara.
-- [ ] **F13 — Generación del TAC** · `intermediate_code.h`, `intermediate_code.c` · 403 líneas
+- [x] **F13 — Generación del TAC** · `intermediate_code.h`, `intermediate_code.c` · 403 líneas
+  - **Hecha:** `documentacion/wiki/05.5-tac-generation.md`, reescrita como ficha.
+    La distinción entre los dos dispatchers (una sentencia no devuelve nada, una
+    expresión **devuelve el operando donde quedó su resultado**, y eso es lo que
+    hace que la recursión componga); el recorrido postorden; el corto circuito
+    con su esquema y el porqué del temporal nuevo; los tres patrones de etiquetas
+    de `if`/`if-else`/`while`; las cuatro coerciones en correspondencia uno a uno
+    con las reglas de F10; y los tres puntos de detección de errores internos.
+  - **Por qué no hace falta backpatching**, que es la pregunta natural de esta
+    ficha: las etiquetas son **nombres y no direcciones**, y el AST ya está
+    completo cuando se genera. El backpatching es inevitable solo si se genera
+    código durante el parseo.
+  - Verificado: ciclos anidados producen pares de etiquetas correctamente
+    anidados (`L0`/`L1` externo, `L2`/`L3` interno, `L4` el `if`) y el programa
+    da el resultado correcto; `void vacio(){ }` recibe su `ret` implícito; el
+    corto circuito no evalúa el segundo operando (efecto observable comprobado).
+  - **Detalles contraintuitivos documentados:** los números de temporal **no
+    siguen el orden de emisión** (el temporal del resultado se reserva entre los
+    dos operandos: `t3 = t2 + t4`), y el `const` del retorno de
+    `generateIntermediateCode` **se descarta con un cast** en `driver.c:69`
+    porque el optimizador necesita mutar la lista.
+  - Confirmado que **los contadores de temporales son globales al programa**, que
+    es la decisión abierta §3.6 de `TODO_intermediate_code.md`; queda explicado
+    ahí con el costo que tiene para dimensionar el marco de pila.
   - El recorrido del AST, la generación de temporales y etiquetas, el **corto
     circuito** de `&&` y `||`, y por qué las etiquetas se resuelven en una sola
     pasada sin backpatching. Teoría: código de tres direcciones.
@@ -335,7 +358,7 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/04.5-type-checker.md` | 457 | **F10, hecha.** |
 | `wiki/04-semantic-analysis.md` | 538 | **F11, hecha.** |
 | `wiki/05-tac-representation.md` | 573 | **F12, hecha.** |
-| `wiki/05.5-tac-generation.md` | 144 | F13. Se le extrajo lo de F12 |
+| `wiki/05.5-tac-generation.md` | 631 | **F13, hecha.** |
 | `live_variable_analysis.md` | 211 | Cubre F14. Falta por qué el punto fijo converge |
 | `wiki/03-ast.md` | 569 | **F08, hecha.** |
 | `wiki/04-symbol-table.md` | 506 | **F09, hecha.** |
