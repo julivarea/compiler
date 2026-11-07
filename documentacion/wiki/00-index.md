@@ -17,8 +17,8 @@
 9. [Análisis Semántico](04-semantic-analysis.md) — `semantic_analyzer.c`
 10. [La Representación Intermedia (TAC)](05-tac-representation.md) — `tac_*.c`
 11. [Generación de Código Intermedio](05.5-tac-generation.md) — `intermediate_code.c`
-12. [Generación de Código Objeto y Gestión del Stack](06-object-code.md)
-13. [Live Variable Analysis](../live_variable_analysis.md)
+12. [Análisis de Variables Vivas](05.7-live-variables.md) — `live_variable_analysis.c`
+13. [Generación de Código Objeto y Gestión del Stack](06-object-code.md) — `object_code.c`
 
 ---
 

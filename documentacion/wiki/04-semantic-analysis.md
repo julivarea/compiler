@@ -487,7 +487,7 @@ Es la extensión más chica que amplía el conjunto de programas aceptados.
   general.
 - **Análisis de alcanzabilidad** (*reachability* / *definite return analysis*):
   `guaranteesReturn` es una versión mínima de un análisis de flujo de control. A
-  diferencia del [análisis de variables vivas](../live_variable_analysis.md), que
+  diferencia del [análisis de variables vivas](05.7-live-variables.md), que
   resuelve un punto fijo sobre un grafo, acá alcanza con una recursión sobre el
   árbol, porque las construcciones del lenguaje son estructuradas (no hay `goto`)
   y el único caso que bifurca es el `if`.

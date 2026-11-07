@@ -290,7 +290,34 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
 
 ### Bloque 5 — Optimización
 
-- [ ] **F14 — Grafo de flujo y variables vivas** · `live_variable_analysis.h`, `live_variable_analysis.c` · 481 líneas
+- [x] **F14 — Grafo de flujo y variables vivas** · `live_variable_analysis.h`, `live_variable_analysis.c` · 481 líneas
+  - **Hecha:** la página existente era buena (tenía el modelo de datos, las dos
+    ecuaciones, un ejemplo a mano y las limitaciones), así que se **completó en
+    vez de reescribir**. Se movió con `git mv` de `documentacion/` a
+    `wiki/05.7-live-variables.md` y se reubicó en el recorrido: iba **al final,
+    después del código objeto**, y ahora va donde corresponde, entre la
+    generación de TAC y el back-end.
+  - **Agregado:** por qué converge el punto fijo (ecuaciones monótonas sobre
+    conjuntos acotados: sucesión creciente y acotada se estabiliza; cota
+    `O(variables × bloques)`), los nombres de bibliografía (marco monótono,
+    líder, problema distributivo, análisis hacia atrás), cómo reusar la
+    infraestructura para un análisis hacia adelante como definiciones
+    alcanzables, y el aislamiento natural de las funciones en el CFG.
+  - **El límite de 64 variables, medido:** un programa de 70 variables reporta
+    `Variables candidatas (64)` y descarta el resto en silencio, **pero la
+    compilación sigue siendo correcta** (69 con y sin `-opt all`). La razón es que
+    `getOperandVariableIndex` devuelve `-1` y `isDeadDefinitionInBlock` responde
+    "no es muerta", que es el lado conservador. Pasarse del límite degrada la
+    optimización, no la corrección.
+  - **Qué detecta y qué no:** encuentra asignaciones muertas, no cómputos
+    inútiles. Documentado con el caso del acumulador de un ciclo que sobrevive a
+    `-opt all` porque **el ciclo se sostiene a sí mismo** (`a = a + i` lee `a`, lo
+    que la mantiene viva vía la arista de retorno). Romperlo pide *faint variable
+    analysis*, que es otro análisis.
+  - **Corregida una limitación obsoleta:** la página afirmaba una fuga cuando
+    `blockCount == 0`. El código ya usa `freeLiveVariableAnalysis` ahí, así que no
+    existe. Se reemplazó por la real: `addSuccessor` escribe en `successors[2]`
+    **sin verificar el límite** (seguro por construcción, pero sin guarda).
   - Construcción de bloques básicos, el CFG, y las ecuaciones de vivacidad
     resueltas hasta el punto fijo. Teoría: análisis de flujo de datos,
     `LIVE_IN`/`LIVE_OUT`, análisis hacia atrás, por qué converge.
@@ -359,7 +386,7 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/04-semantic-analysis.md` | 538 | **F11, hecha.** |
 | `wiki/05-tac-representation.md` | 573 | **F12, hecha.** |
 | `wiki/05.5-tac-generation.md` | 631 | **F13, hecha.** |
-| `live_variable_analysis.md` | 211 | Cubre F14. Falta por qué el punto fijo converge |
+| `wiki/05.7-live-variables.md` | 438 | **F14, hecha.** |
 | `wiki/03-ast.md` | 569 | **F08, hecha.** |
 | `wiki/04-symbol-table.md` | 506 | **F09, hecha.** |
 | `wiki/02-lexical-analysis.md` | 452 | **F05, hecha.** |
