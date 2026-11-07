@@ -367,4 +367,4 @@ calcular:
 
 ---
 
-**Anterior:** [Generación de Código Intermedio (TAC)](05-intermediate-code.md) | **Volver al:** [Índice de Onboarding](00-index.md)
+**Anterior:** [Generación de Código Intermedio (TAC)](05.5-tac-generation.md) | **Volver al:** [Índice de Onboarding](00-index.md)

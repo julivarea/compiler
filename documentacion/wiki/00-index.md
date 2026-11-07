@@ -15,9 +15,10 @@
 7. [Tabla de Símbolos y Ámbitos](04-symbol-table.md) — `symbol_table.c`
 8. [Chequeo de Tipos](04.5-type-checker.md) — `type_checker.c`
 9. [Análisis Semántico](04-semantic-analysis.md) — `semantic_analyzer.c`
-10. [Generación de Código Intermedio (TAC)](05-intermediate-code.md)
-11. [Generación de Código Objeto y Gestión del Stack](06-object-code.md)
-12. [Live Variable Analysis](../live_variable_analysis.md)
+10. [La Representación Intermedia (TAC)](05-tac-representation.md) — `tac_*.c`
+11. [Generación de Código Intermedio](05.5-tac-generation.md) — `intermediate_code.c`
+12. [Generación de Código Objeto y Gestión del Stack](06-object-code.md)
+13. [Live Variable Analysis](../live_variable_analysis.md)
 
 ---
 

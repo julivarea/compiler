@@ -59,9 +59,10 @@ nav:
       - 7. Tabla de Símbolos y Ámbitos: wiki/04-symbol-table.md
       - 8. Chequeo de Tipos: wiki/04.5-type-checker.md
       - 9. Análisis Semántico: wiki/04-semantic-analysis.md
-      - 10. Código Intermedio (TAC): wiki/05-intermediate-code.md
-      - 11. Código Objeto y Stack: wiki/06-object-code.md
-      - 12. Live Variable Analysis: live_variable_analysis.md
+      - 10. Representación Intermedia (TAC): wiki/05-tac-representation.md
+      - 11. Generación de Código Intermedio: wiki/05.5-tac-generation.md
+      - 12. Código Objeto y Stack: wiki/06-object-code.md
+      - 13. Live Variable Analysis: live_variable_analysis.md
   - Documentación Técnica:
       - Alcance Análisis Semántico: analisis-semantico.md
       - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md

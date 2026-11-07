@@ -233,7 +233,29 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
 
 ### Bloque 4 — Código intermedio
 
-- [ ] **F12 — La representación intermedia** · `tac_operation.h`, `tac_operand.h`, `tac_operand.c`, `tac_instruction.h`, `tac_instruction.c`, `tac_list.h`, `tac_list.c` · 659 líneas
+- [x] **F12 — La representación intermedia** · `tac_operation.h`, `tac_operand.h`, `tac_operand.c`, `tac_instruction.h`, `tac_instruction.c`, `tac_list.h`, `tac_list.c` · 659 líneas
+  - **Hecha:** `documentacion/wiki/05-tac-representation.md`, página nueva. Se le
+    extrajo a `05-intermediate-code.md` el modelo de datos y el catálogo de
+    opcodes (que mezclaba F12 con F13) y se reescribió: **qué es una cuádrupla**
+    y por qué se eligieron cuádruplas y no triplas (las triplas referencian por
+    posición, así que mover o borrar una instrucción invalida las demás: hostil
+    para un optimizador), la tabla texto-contra-estructura que justifica la
+    migración, las seis categorías de `OperandKind` y por qué distinguir temporal
+    de variable habilita optimizar con confianza, el nombre calificado `x@uid`, y
+    el formateador como única fuente de verdad del formato textual.
+  - **Lo que no está y por qué:** no hay `TAC_AND` ni `TAC_OR`, porque el corto
+    circuito que exige el lenguaje no se puede expresar con un opcode cuyos dos
+    operandos deban estar calculados antes. Se muestra la secuencia de saltos que
+    los reemplaza, con `if ... false goto` para `&&` y `if ... true goto` para
+    `||`. Eso cierra la referencia obsoleta que quedaba en `optimizaciones.md`.
+  - Verificado que **los 24 opcodes declarados se emiten**: ninguno muerto. La
+    página incluye un programa de referencia que los recorre todos de una pasada,
+    comprobado.
+  - **Corregido el `BINARYOPERATOR_NODE`** que quedaba en la página de generación:
+    el enum tiene `OPERATOR_NODE`. Ya no queda ninguna mención en toda la
+    documentación (sigue en `CLAUDE.md`, que no es del sitio).
+  - El archivo se renombró con `git mv` a `05.5-tac-generation.md` para dejarle
+    el número a F12; los 4 links entrantes quedaron actualizados.
   - **Qué es una cuádrupla** y por qué se migró de texto plano a una estructura:
     `{operación, resultado, operando1, operando2}` con operandos tipados. Es una
     de las decisiones de diseño más defendibles del proyecto y conviene tenerla
@@ -312,7 +334,8 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/06-object-code.md` | 370 | Cubre F16–F18. Falta la teoría de la convención de llamada |
 | `wiki/04.5-type-checker.md` | 457 | **F10, hecha.** |
 | `wiki/04-semantic-analysis.md` | 538 | **F11, hecha.** |
-| `wiki/05-intermediate-code.md` | 285 | Cubre F12–F13. Falta el "qué es una cuádrupla" conceptual |
+| `wiki/05-tac-representation.md` | 573 | **F12, hecha.** |
+| `wiki/05.5-tac-generation.md` | 144 | F13. Se le extrajo lo de F12 |
 | `live_variable_analysis.md` | 211 | Cubre F14. Falta por qué el punto fijo converge |
 | `wiki/03-ast.md` | 569 | **F08, hecha.** |
 | `wiki/04-symbol-table.md` | 506 | **F09, hecha.** |

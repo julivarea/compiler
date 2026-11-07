@@ -535,4 +535,4 @@ Es la extensión más chica que amplía el conjunto de programas aceptados.
 
 ---
 
-**Siguiente:** [Generación de Código Intermedio (TAC)](05-intermediate-code.md)
+**Siguiente:** [La Representación Intermedia (TAC)](05-tac-representation.md)
