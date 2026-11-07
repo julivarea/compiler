@@ -358,8 +358,8 @@ corrido.
 Dos pasos, y el segundo es el que se olvida:
 
 1. Crear el `.md` **dentro de `documentacion/`**. Es el `docs_dir` del sitio, así
-   que todo lo que esté en la raíz del repo (`optimizaciones.md`, los
-   `TODO_*.md`, este mismo README) queda afuera y no aparece.
+   que todo lo que esté en la raíz del repo (los `TODO_*.md`, este mismo README)
+   queda afuera y no aparece.
 2. Agregarlo al `nav:` de `mkdocs.yml`. Una página que no está en el `nav` igual
    se compila, pero no figura en el menú y solo se llega a ella por el buscador
    o por un link directo, así que en la práctica es invisible.

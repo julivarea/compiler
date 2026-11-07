@@ -321,7 +321,37 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
   - Construcción de bloques básicos, el CFG, y las ecuaciones de vivacidad
     resueltas hasta el punto fijo. Teoría: análisis de flujo de datos,
     `LIVE_IN`/`LIVE_OUT`, análisis hacia atrás, por qué converge.
-- [ ] **F15 — El optimizador** · `optimizer.h`, `optimizer.c` · 839 líneas
+- [x] **F15 — El optimizador** · `optimizer.h`, `optimizer.c` · 839 líneas
+  - **Hecha:** `optimizaciones.md` se movió con `git mv` de la raíz a
+    `wiki/05.9-optimizer.md`, así que **el optimizador por fin figura en el
+    sitio** (era el hueco que el plan marcaba como "casi gratis"). Se le agregaron
+    las secciones que le faltaban de la plantilla y se corrigió lo que había
+    quedado obsoleto.
+  - **La corrección grande: `hasExecute` ya no existe.** El documento lo describía
+    como un mecanismo vigente en **seis lugares**, incluida una subsección entera
+    y el estado de implementación que afirmaba "quedó funcionando". Verificado que
+    el campo **no está en el código**: ninguna optimización terminó trabajando
+    sobre el AST, quedó sin usuarios y se eliminó de `NodeAST`. Se reescribió como
+    decisión de diseño registrada —por qué se descartó optimizar el árbol— en vez
+    de borrarlo, porque es la respuesta a "¿por qué no optimizaron el AST?".
+  - **Hallazgo estructural:** de los siete flags, **seis actúan sobre el TAC y
+    `strength-reduce` actúa sobre el assembly**, en `object_code.c:710`. No está en
+    el bucle de `optimizeIntermediateCode`; el conjunto se le pasa aparte a
+    `generateAssembly`. El documento no lo distinguía; ahora hay una tabla
+    flag → nivel → función.
+  - **Agregado:** la máscara de bits de `OptimizationSet`; el bucle de punto fijo
+    con las tres preguntas (por qué se repiten las pasadas, por qué termina, por
+    qué igual hay un tope de 16 rondas); la `KnownConstantTable` con el porqué de
+    `destinationKind` y de vaciarla en cada frontera de control; que la
+    propagación es **local** y la eliminación de asignaciones muertas es **global**;
+    los cinco pasos de código para agregar una optimización; y la teoría con los
+    nombres de bibliografía.
+  - **Estado actualizado:** la eliminación de asignaciones muertas ya está
+    conectada al análisis de vivacidad, y `removeUnreferencedLabels` ya corre.
+    Lo único pendiente son los tres patrones de mirilla sobre el assembly.
+  - Se dedujo §5 contra la nueva §9 (criterios de diseño contra pasos de código) y
+    se corrigió la referencia del README, que citaba `optimizaciones.md` como
+    ejemplo de archivo fuera del sitio.
   - Las siete optimizaciones, el bucle de punto fijo que las repite, el orden en
     que se aplican y por qué, y qué garantiza que preservan la semántica.
   - Ya existe `optimizaciones.md` en la raíz con el catálogo completo: esta ficha
@@ -392,7 +422,8 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/02-lexical-analysis.md` | 452 | **F05, hecha.** |
 | `wiki/02.5-syntax-analysis.md` | 480 | **F06, hecha.** |
 | `wiki/02.7-parser-actions.md` | 40 | F07, esqueleto con la lista de lo que falta |
-| — | — | **No hay nada de F01–F04 ni de F19**, y `optimizaciones.md` (F15) está fuera del sitio |
+| `wiki/05.9-optimizer.md` | 827 | **F15, hecha.** Movida al sitio desde la raíz |
+| — | — | **No hay nada de F01–F04 ni de F19** |
 
 ### Pendiente transversal: 22 links rotos a la máquina de Fran
 
@@ -447,5 +478,5 @@ No el del inventario, sino el de mayor rendimiento para la defensa:
    teoría pura, que es lo que entra en el escrito.
 2. **F01–F02** (CLI y driver). Son los que explican cómo se arma todo; sin esto
    no se puede contestar "¿qué pasa cuando corrés el compilador?".
-3. **F15** (optimizador), que es casi gratis: mover `optimizaciones.md` al sitio.
+3. ~~**F15** (optimizador), que es casi gratis: mover `optimizaciones.md` al sitio.~~ **HECHA.**
 4. El resto de los bloques en orden.
