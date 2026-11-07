@@ -66,6 +66,7 @@ nav:
       - 14. Instrucciones x86-64: wiki/06-asm-instructions.md
       - 15. Marco de Pila: wiki/06.5-stack-frame.md
       - 16. Generación de Código Objeto: wiki/06-object-code.md
+      - 17. Intérprete (extensión): wiki/07-interpreter.md
   - Documentación Técnica:
       - Alcance Análisis Semántico: analisis-semantico.md
       - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md

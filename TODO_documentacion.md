@@ -459,7 +459,41 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
 
 ### Bloque 7 — Intérprete
 
-- [ ] **F19 — Intérprete sobre el AST** · `interpreter.h`, `interpreter.c` · 535 líneas
+- [x] **F19 — Intérprete sobre el AST** · `interpreter.h`, `interpreter.c` · 590 líneas
+  - **Hecha:** `documentacion/wiki/07-interpreter.md`, página nueva. Era el otro
+    hueco completo: el intérprete no tenía ni una página, solo una mención en la
+    portada. Los dos recorridos, `ExecResult`, el ámbito de una llamada, las
+    coerciones, lo que asume y lo que cuesta.
+  - **`ExecResult` como respuesta a "¿cómo se implementa un `return` en un
+    intérprete de árbol?"**: cada sentencia devuelve si retornó, y cada bloque y
+    cada ciclo lo chequean y lo propagan. Es la alternativa explícita a
+    `setjmp`/`longjmp` o a una excepción que C no tiene.
+  - **El hallazgo conceptual: `createFunctionScope` usa el ámbito global como
+    padre, no el del llamador.** Esa única línea es la que hace que el lenguaje
+    tenga **alcance léxico y no dinámico**. Los argumentos se evalúan en el
+    ámbito del llamador y sus valores se copian, que es el pasaje por valor
+    materializado en el arreglo `argumentValues` intermedio.
+  - **Lo medido: la memoria crece lineal con las iteraciones, no con el
+    programa.** `executeBlock` crea un ámbito por cada ejecución de un bloque y lo
+    cuelga del árbol sin liberarlo, y el cuerpo de un `while` **es** un bloque.
+    Medido: 10 000 iteraciones → 4224 KB, 20 000 → 7040 KB, 40 000 → 12 416 KB,
+    contra 1664 KB del mismo programa compilado. Unos 280 bytes por iteración. Es
+    correcto pero no escalable, y la corrección —liberar el ámbito al salir— es
+    viable porque los valores ya viajan por copia.
+  - **Lo que asume sin verificar:** `isTruthy` acepta cualquier valor distinto de
+    cero, que es más permisivo que el lenguaje; funciona porque el semántico ya
+    filtró. Y reimplementa las reglas de tipos, que es lo que lo hace útil como
+    oráculo y lo que duplica el mantenimiento.
+  - **Reverificado en esta sesión:** `-target interp` sobre `INT_MIN / -1` reporta
+    el desborde y **termina con código 1** (la propagación del error que
+    agregaron los compañeros está en su lugar), y el cruce intérprete/ejecutable
+    da 5/5 sobre recursión, corto circuito, ocultamiento de scopes, 8 argumentos
+    y reales. El corpus completo de 20 ya se había cruzado antes con 20/20.
+  - Dejado explícito el argumento a favor de haberlo hecho: es **testing
+    diferencial**: dos implementaciones independientes de la misma semántica
+    comparadas entre sí encuentran bugs sin escribir los resultados esperados a
+    mano. Y que el guard de `INT_MIN` fue un bug **del intérprete**, encontrado
+    con UBSan, no del back-end.
   - Evaluación directa del árbol, el manejo de ámbitos en tiempo de ejecución y
     por qué sirve como oráculo contra el backend. Es una extensión nuestra.
 
@@ -513,10 +547,12 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/02.5-syntax-analysis.md` | 480 | **F06, hecha.** |
 | `wiki/02.7-parser-actions.md` | 40 | F07, esqueleto con la lista de lo que falta |
 | `wiki/05.9-optimizer.md` | 827 | **F15, hecha.** Movida al sitio desde la raíz |
-| — | — | **No hay nada de F01–F04 ni de F19** |
+| `wiki/07-interpreter.md` | 437 | **F19, hecha.** |
+| — | — | **No hay nada de F01–F04** |
 
-> **Bloque 6 completo.** Las tres fichas del back-end (F16, F17, F18) estaban
-> cubiertas por una sola página de 370 líneas; ahora son 438 + 528 + 625.
+> **Bloques 1 a 7 completos.** Queda solo el bloque 0 (infraestructura:
+> F01–F04). Las tres fichas del back-end estaban cubiertas por una sola página
+> de 370 líneas; ahora son 438 + 528 + 625.
 
 ### Pendiente transversal: 22 links rotos a la máquina de Fran
 

@@ -620,6 +620,4 @@ exactamente lo que el diseño actual evita a propósito.
 
 ---
 
-Con esto termina el recorrido del compilador. Queda el **intérprete**
-(ficha F19), que es una extensión nuestra y no forma parte de la entrega: lo
-describe la [página de inicio](../index.md).
+**Siguiente:** [Intérprete](07-interpreter.md) · extensión nuestra, fuera de la entrega
