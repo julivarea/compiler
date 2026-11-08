@@ -616,4 +616,4 @@ flowchart LR
 
 ---
 
-**Siguiente:** [Análisis Léxico](02-lexical-analysis.md)
+**Siguiente:** [Entrada y Línea de Comandos](01.2-cli.md)

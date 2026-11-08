@@ -122,18 +122,64 @@ dimensionar el trabajo y detectar dónde está la complejidad.
 No es ninguna fase del compilador, pero todas las fases la usan. Va primero
 porque es lo que explica **cómo se orquesta todo lo demás**.
 
-- [ ] **F01 — Entrada y línea de comandos** · `main.c`, `cli.h`, `cli.c` · 500 líneas
-  - El contrato de la CLI del enunciado, el parseo de argumentos, la deducción
-    de la extensión de salida por etapa y la constante `CURRENT_TARGET`.
-- [ ] **F02 — Orquestación de las etapas** · `driver.h`, `driver.c` · 325 líneas
-  - El `switch` sobre `-target` que decide hasta dónde compilar, el corte
-    temprano ante errores, y el ensamblado/enlace final con `gcc`.
-- [ ] **F03 — Errores y salida de debug** · `error_handler.h`, `error_handler.c`, `debug.h` · 144 líneas
-  - Los tres niveles de error y sus contadores, por qué el sintáctico aborta al
-    primero y el semántico acumula, y la convención de `-debug`.
-- [ ] **F04 — Utilidades y tipos base** · `string_builder.h`, `string_builder.c`, `types.h` · 164 líneas
-  - El buffer dinámico con el que se arma la salida de cada etapa, y los
-    enumerados (`DataType`, `OperationType`) que atraviesan todo el compilador.
+- [x] **F01 — Entrada y línea de comandos** · `main.c`, `cli.h`, `cli.c` · 500 líneas
+  - **Hecha:** `wiki/01.2-cli.md`. `main.c` paso por paso, `Options` campo por
+    campo, las tres tablas estáticas que gobiernan el parseo, y las dieciséis
+    funciones.
+  - **Cómo se resolvió la ambigüedad del enunciado**: `BUILDS_EXECUTABLE` es
+    `!explicitTarget`, y de ahí sale por qué `explicitTarget` no es redundante con
+    `target` (los dos valen `TARGET_ASSEMBLY` sin `-target`).
+  - **Verificado:** `interpret` es alias de `interp` y el usage lo imprime una
+    sola vez; la heurística del argumento opcional de `-opt` (`-opt programa.ctds`
+    se entiende como `all`); y la protección contra sobrescribir el fuente, que
+    compara **dispositivo e inodo** y por eso atrapa también `./p.ctds` y la ruta
+    absoluta. Los ocho casos de error de la CLI, cada uno con su mensaje.
+- [x] **F02 — Orquestación de las etapas** · `driver.h`, `driver.c` · 325 líneas
+  - **Hecha:** `wiki/01.4-driver.md`. El `switch` de seis casos leído como el
+    pipeline, las cinco funciones de etapa, y dónde se enchufa el optimizador.
+  - **El hallazgo más interesante: `assembleAndLink` usa `fork` + `execvp`, no
+    `system()`.** Con `system` el comando pasa por un shell y un nombre de archivo
+    con espacios, `'`, `;` o `$` lo rompería o ejecutaría otra cosa. Verificado con
+    los cuatro: los cuatro compilan y ejecutan bien. Documentados también los dos
+    flags (`-x assembler` y `-no-pie`) y por qué el hijo usa `_exit(127)`.
+  - **Verificado:** un programa con error de sintaxis **pasa `-target scan`**
+    (exit 0) porque el escaneo no construye el AST; y `-debug` conserva el
+    `.tmp.s` mientras sin `-debug` se borra.
+- [x] **F03 — Errores y salida de debug** · `error_handler.h`, `error_handler.c`, `debug.h` · 144 líneas
+  - **Hecha:** `wiki/01.6-errors.md`. Los tres niveles con **dos contadores**, y
+    por qué la asimetría no es un olvido: el léxico y el semántico acumulan porque
+    sus errores son independientes, el sintáctico aborta porque después de un error
+    el parser no sabe en qué estado quedó. Más la tabla de los tres casos de salida
+    (éxito silencioso, éxito con `-debug`, error).
+  - **Hallazgo: `getLastErrorLine` y `getLastErrorMessage` son API muerta.**
+    Verificado con una búsqueda en `src/`, `include/` y `tests/`: no se llaman
+    desde ninguna parte. El buffer de 256 bytes se llena en cada error solo para
+    alimentarlas. Anotado también que usarlas sería la mejora de testing más
+    barata que habilita el módulo.
+  - **La convención de `debug.h` está desincronizada con el código:** nombra
+    `[TAC]`, que no se usa, y omite `[DRIVER]` y `[ELIMINADA]`, que sí. Y el
+    volcado del análisis de variables vivas no respeta el formato de prefijos.
+- [x] **F04 — Utilidades y tipos base** · `string_builder.h`, `string_builder.c`, `types.h` · 164 líneas
+  - **Hecha:** `wiki/01.8-utilities.md`. El acumulador global con su ciclo de uso,
+    el crecimiento por duplicación con **los dos chequeos de desborde de
+    `size_t`** y por qué importan, y el truco de `vsnprintf(NULL, 0, ...)` con la
+    explicación de por qué `va_copy` es obligatorio y no estilo.
+  - **El reparto de uso, medido:** 56 llamadas desde `object_code.c`, 10 desde
+    `asm_instruction.c`, 7 desde `driver.c` y **una sola** desde
+    `tac_instruction.c`. Esa última cuenta la historia de por qué el formato del
+    TAC tiene tres consumidores.
+  - **`types.h` no tiene `.c`**, y `getDataTypeName` está declarada ahí pero
+    **definida en `ast.c:220`**: una incoherencia de ubicación que acopla cualquier
+    usuario del enum a que `ast.c` esté en el enlazado. Documentado también que
+    `TYPE_VOID` cumple dos papeles (tipo de retorno y "todavía no se sabe") y que
+    `OP_AND`/`OP_OR` existen en el enum **sin opcode TAC equivalente**.
+
+> **Bloque 0 completo, y con eso el inventario entero.** Las cuatro fichas eran el
+> último hueco de archivos: `main.c` y `driver.c` son por donde arranca la
+> ejecución, así que sin ellas el recorrido empezaba por el lexer sin explicar
+> quién lo llamaba. **Cobertura a nivel método: 45/45 funciones nombradas.**
+> En el `nav` el bloque quedó entre la visión general y el análisis léxico, con la
+> cadena de *Siguiente* enlazada.
 
 ### Bloque 1 — Análisis léxico y sintáctico
 
@@ -582,7 +628,10 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/02.7-parser-actions.md` | 40 | F07, esqueleto con la lista de lo que falta |
 | `wiki/05.9-optimizer.md` | 827 | **F15, hecha.** Movida al sitio desde la raíz |
 | `wiki/07-interpreter.md` | 437 | **F19, hecha.** |
-| — | — | **No hay nada de F01–F04** |
+| `wiki/01.2-cli.md` | 454 | **F01, hecha.** |
+| `wiki/01.4-driver.md` | 499 | **F02, hecha.** |
+| `wiki/01.6-errors.md` | 385 | **F03, hecha.** |
+| `wiki/01.8-utilities.md` | 405 | **F04, hecha.** |
 
 > **Bloques 1 a 7 completos.** Queda solo el bloque 0 (infraestructura:
 > F01–F04). Las tres fichas del back-end estaban cubiertas por una sola página

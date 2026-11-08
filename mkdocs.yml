@@ -52,21 +52,25 @@ nav:
       - Índice: wiki/00-index.md
       - 1. Primeros Pasos: wiki/00.5-getting-started.md
       - 2. Visión General y Arquitectura: wiki/01-overview.md
-      - 3. Análisis Léxico: wiki/02-lexical-analysis.md
-      - 4. Análisis Sintáctico: wiki/02.5-syntax-analysis.md
-      - 5. Acciones del Parser: wiki/02.7-parser-actions.md
-      - 6. Árbol de Sintaxis Abstracta (AST): wiki/03-ast.md
-      - 7. Tabla de Símbolos y Ámbitos: wiki/04-symbol-table.md
-      - 8. Chequeo de Tipos: wiki/04.5-type-checker.md
-      - 9. Análisis Semántico: wiki/04-semantic-analysis.md
-      - 10. Representación Intermedia (TAC): wiki/05-tac-representation.md
-      - 11. Generación de Código Intermedio: wiki/05.5-tac-generation.md
-      - 12. Análisis de Variables Vivas: wiki/05.7-live-variables.md
-      - 13. Optimización del Código Intermedio: wiki/05.9-optimizer.md
-      - 14. Instrucciones x86-64: wiki/06-asm-instructions.md
-      - 15. Marco de Pila: wiki/06.5-stack-frame.md
-      - 16. Generación de Código Objeto: wiki/06-object-code.md
-      - 17. Intérprete (extensión): wiki/07-interpreter.md
+      - 3. Entrada y Línea de Comandos: wiki/01.2-cli.md
+      - 4. Orquestación de las Etapas: wiki/01.4-driver.md
+      - 5. Errores y Salida de Debug: wiki/01.6-errors.md
+      - 6. Utilidades y Tipos Base: wiki/01.8-utilities.md
+      - 7. Análisis Léxico: wiki/02-lexical-analysis.md
+      - 8. Análisis Sintáctico: wiki/02.5-syntax-analysis.md
+      - 9. Acciones del Parser: wiki/02.7-parser-actions.md
+      - 10. Árbol de Sintaxis Abstracta (AST): wiki/03-ast.md
+      - 11. Tabla de Símbolos y Ámbitos: wiki/04-symbol-table.md
+      - 12. Chequeo de Tipos: wiki/04.5-type-checker.md
+      - 13. Análisis Semántico: wiki/04-semantic-analysis.md
+      - 14. Representación Intermedia (TAC): wiki/05-tac-representation.md
+      - 15. Generación de Código Intermedio: wiki/05.5-tac-generation.md
+      - 16. Análisis de Variables Vivas: wiki/05.7-live-variables.md
+      - 17. Optimización del Código Intermedio: wiki/05.9-optimizer.md
+      - 18. Instrucciones x86-64: wiki/06-asm-instructions.md
+      - 19. Marco de Pila: wiki/06.5-stack-frame.md
+      - 20. Generación de Código Objeto: wiki/06-object-code.md
+      - 21. Intérprete (extensión): wiki/07-interpreter.md
   - Documentación Técnica:
       - Alcance Análisis Semántico: analisis-semantico.md
       - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md
