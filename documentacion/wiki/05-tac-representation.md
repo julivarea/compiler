@@ -7,6 +7,13 @@
 La estructura de datos del **Código de Tres Direcciones**: el puente entre el
 front-end y el back-end.
 
+!!! note "El soporte de `float` es una extensión nuestra"
+    El enunciado acotaba el alcance de esta etapa a **tipos enteros y lógicos**:
+    generar código para `float` **no era necesario**. Se implementó igual, para
+    que el compilador no quedara incoherente con la especificación de su propio
+    lenguaje. El argumento completo está en la sección *Extensiones sobre el
+    enunciado* de [la página inicial](../index.md).
+
 ---
 
 ## 1. Qué problema resuelve

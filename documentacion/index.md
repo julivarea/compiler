@@ -46,10 +46,74 @@ hasta un ejecutable x86-64, con un optimizador sobre el código intermedio.
   asignaciones muertas se apoya en un análisis de variables vivas sobre el grafo
   de flujo de control.
 
-Además hay un **intérprete** sobre el AST, accesible con `-target interp`. No
-forma parte de la entrega: se mantiene porque sirve como oráculo de testing,
-es decir una segunda implementación independiente contra la cual comparar el
-resultado del backend.
+---
+
+## Extensiones sobre el enunciado
+
+Tres partes del compilador **no las pedía el enunciado** y se implementaron
+igual. Conviene saberlo antes de leer las fichas, porque cambian el alcance
+respecto de lo exigido y aparecen mencionadas en varias de ellas.
+
+### Soporte de `float` y coerción `int`/`float`
+
+La **especificación del lenguaje** (`spec/01-TDS-spec-lenguaje.pdf`) incluye
+`float` entre los tipos, y su regla 14 permite las conversiones entre `int` y
+`float`. Pero el **alcance de las etapas** definido en
+`spec/00-TDS-proyecto.pdf` acotaba la generación de código intermedio y de
+código objeto a **tipos enteros y lógicos**, y la descripción de las
+asignaciones menciona solo `int` y `boolean`.
+
+O sea que **generar código para `float` no era necesario**: alcanzaba con que el
+front-end aceptara el tipo y el back-end lo ignorara.
+
+Conviene separar qué parte era obligatoria y qué parte no:
+
+| Fase | ¿Estaba en el alcance? | Qué hay implementado |
+| --- | --- | --- |
+| Léxico, AST, tabla de símbolos | **Sí** | `float` es un tipo del lenguaje: reconocerlo y representarlo era obligatorio |
+| [Chequeo de tipos (F10)](wiki/04.5-type-checker.md) | **Sí** | La regla 14 de la especificación es una de las catorce que el semántico debe verificar |
+| [Código intermedio (F12, F13)](wiki/05-tac-representation.md) | **No** | Operandos `float`, el opcode `TAC_INT_TO_FLOAT` y las cuatro coerciones materializadas |
+| [Marco de pila (F17)](wiki/06.5-stack-frame.md) | **No** | Los dos contadores de parámetros por clase de registro |
+| [Código objeto (F18)](wiki/06-object-code.md) | **No** | El camino SSE completo: `%xmm`, `movss`, `comiss`, pool de constantes en `.rodata` |
+
+Dicho de otro modo: el front-end tenía que entender `float` de todas formas, y lo
+voluntario fue **que ese entendimiento llegara a producir un ejecutable**.
+
+**El argumento de la decisión:** aceptar `float` en el front-end y abandonarlo en
+el back-end habría dejado al compilador incoherente con la especificación de su
+propio lenguaje. Un programa que declara un `float` habría pasado el análisis
+semántico y fallado o generado código incorrecto más abajo.
+
+Dos aclaraciones de alcance que sí quedaron por debajo de la especificación:
+
+- Los reales son de **precisión simple** (4 bytes, IEEE-754). No hay doble
+  precisión.
+- La implementación **solo ensancha** (`int` → `float`), nunca trunca. La
+  especificación habla de coerciones *y truncamientos*; esto es más restrictivo,
+  así que rechaza algunos programas que la letra permitiría pero nunca acepta uno
+  inválido. Está explicado en [F10](wiki/04.5-type-checker.md).
+
+### Intérprete
+
+La tabla de calificación del enunciado incluye un ítem *Intérprete*, pero no
+figura en el cronograma de entregas, y al consultarlo se confirmó que **no hacía
+falta implementarlo**.
+
+Se implementó igual, accesible con `-target interp`. Más allá del ítem, resultó
+útil por una razón concreta de testing: es una **segunda implementación
+independiente** del mismo lenguaje, así que sirve de oráculo contra el generador
+de código. Si el intérprete y el ejecutable compilado difieren sobre el mismo
+programa, uno de los dos tiene un bug. Lo describe la
+[ficha F19](wiki/07-interpreter.md).
+
+### El valor `sem` de `-target`
+
+El enunciado enumera `scan`, `parse`, `codinter` y `assembly`, pero también lista
+la extensión `.sem` entre las salidas posibles. Se agregó `-target sem` porque de
+otro modo la etapa de análisis semántico no era alcanzable y esa extensión no se
+podía producir.
+
+---
 
 ## Por dónde empezar
 

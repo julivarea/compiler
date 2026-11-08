@@ -433,13 +433,20 @@ código intermedio y código objeto estaba acotado a **tipos enteros y lógicos*
 y la descripción de las asignaciones menciona solo `int` y `boolean`. Es decir
 que generar código para `float` no era necesario.
 
-Se implementó de punta a punta igual: inferencia y coerción en el chequeo de
-tipos, operandos `float` en el TAC, y el camino SSE completo en el generador de
-código objeto (registros `%xmm`, instrucciones `movss`/`addss`/`comiss`,
-constantes en `.rodata`, y la clase de registros separada que impone la
-convención de llamada para argumentos reales). La decisión fue mantener el
-lenguaje coherente con su propia especificación, en vez de aceptar `float` en el
-front-end y abandonarlo en el back-end.
+Conviene separar qué parte era obligatoria. El **front-end** tenía que entender
+`float` de todas formas: reconocer el tipo, representarlo en el AST y en la tabla
+de símbolos, y verificar la regla 14, que es una de las catorce del análisis
+semántico. Lo **voluntario** fue que ese entendimiento llegara a producir un
+ejecutable: operandos `float` en el TAC con el opcode `TAC_INT_TO_FLOAT`, los dos
+contadores de parámetros por clase de registro en el marco de pila, y el camino
+SSE completo en el generador de código objeto (registros `%xmm`, instrucciones
+`movss`/`addss`/`comiss`, constantes en `.rodata`, y la clase de registros
+separada que impone la convención de llamada para argumentos reales).
+
+La decisión fue mantener el lenguaje coherente con su propia especificación, en
+vez de aceptar `float` en el front-end y abandonarlo en el back-end: un programa
+que declara un `float` habría pasado el análisis semántico y fallado o generado
+código incorrecto más abajo.
 
 Los `float` son de **precisión simple** (4 bytes, IEEE-754). No hay doble
 precisión.

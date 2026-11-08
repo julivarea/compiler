@@ -6,6 +6,13 @@ La traducción de cada [cuádrupla TAC](05-tac-representation.md) a assembly
 x86-64, usando el [modelo de instrucciones](06-asm-instructions.md) y el
 [marco de pila](06.5-stack-frame.md). **Es el archivo más grande del proyecto.**
 
+!!! note "El soporte de `float` es una extensión nuestra"
+    El enunciado acotaba el alcance de esta etapa a **tipos enteros y lógicos**:
+    generar código para `float` **no era necesario**. Se implementó igual, para
+    que el compilador no quedara incoherente con la especificación de su propio
+    lenguaje. El argumento completo está en la sección *Extensiones sobre el
+    enunciado* de [la página inicial](../index.md).
+
 ---
 
 ## 1. Qué problema resuelve

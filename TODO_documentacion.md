@@ -69,6 +69,40 @@ Toda página de ficha responde estas ocho preguntas, en este orden. Las dos
 
 ---
 
+## Aclaraciones de alcance en el sitio — HECHO
+
+El enunciado pide documentar las **extensiones**, y había un hueco: la aclaración
+de que `float` no era obligatorio existía **solo en el `README.md`**, que está
+fuera del `docs_dir` y por lo tanto fuera del sitio navegable. El wiki hablaba de
+reales en cinco fichas (23 menciones en F10, 20 en F18, 9 en F17, 8 en F12, 7 en
+F13) sin aclararlo en ninguna.
+
+Resuelto así:
+
+- **`documentacion/index.md`** tiene ahora una sección *Extensiones sobre el
+  enunciado* con el argumento completo de los tres ítems (`float`, intérprete,
+  `-target sem`), espejando la del README. Es el lugar canónico dentro del sitio.
+- **F10, F12, F13, F17 y F18** llevan una nota al principio que remite ahí.
+
+**Precisión que hubo que corregir sobre la marcha:** la primera versión de la
+nota decía que el enunciado acotaba "el alcance de esta etapa" en las cinco
+fichas por igual. Es inexacto. El recorte a tipos enteros y lógicos era sobre las
+etapas de **generación** (código intermedio y código objeto); el front-end tenía
+que entender `float` de todas formas, y **la regla 14 es una de las catorce que el
+análisis semántico debe verificar**. O sea que lo voluntario no fue chequear los
+tipos de `float`, sino **que ese chequeo llegara a producir un ejecutable**. La
+nota de F10 quedó con el texto correcto y la portada con una tabla que separa qué
+estaba en el alcance y qué no. El README se ajustó al mismo criterio.
+
+También se corrigió una afirmación falsa que escribí en F10: decía que el límite
+del ensanchamiento quedaba registrado en `documentacion/analisis-semantico.md`.
+Esa página menciona la coerción `int`→`float` pero **no** el hecho de que la
+implementación solo ensancha y nunca trunca, al contrario de lo que permite la
+regla 14. La referencia ahora apunta solo a la portada; si se quiere, es una línea
+para agregar a `analisis-semantico.md` cuando se toque.
+
+---
+
 ## Inventario completo
 
 Los **44 archivos** de `include/` y `src/` están repartidos en 19 fichas, cada
