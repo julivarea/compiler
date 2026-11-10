@@ -946,6 +946,34 @@ void test_tac_format_list_null_safe(void) {
     TEST_ASSERT_EQUAL_STRING("", getBuiltString());
 }
 
+// appendTACInstruction agrega a TACList preservando conteo y enlaces O(1)
+void test_tac_helper_append_tac_instruction(void) {
+    TEST_ASSERT_NULL(appendTACInstruction(NULL, NULL));
+
+    TACList *list = createTACList();
+    TEST_ASSERT_NOT_NULL(list);
+    TEST_ASSERT_NULL(appendTACInstruction(list, NULL));
+
+    TACOperand cond = tacTemp("t0", TYPE_BOOL);
+    TACOperand label = tacLabel("L0");
+
+    TACInstruction *inst1 = createTACInstruction(TAC_IF_FALSE, tacNone(), cond, label);
+    TACInstruction *inst2 = createTACInstruction(TAC_LABEL, label, tacNone(), tacNone());
+
+    TEST_ASSERT_EQUAL_PTR(inst1, appendTACInstruction(list, inst1));
+    TEST_ASSERT_EQUAL_INT(1, list->count);
+    TEST_ASSERT_EQUAL_PTR(inst1, list->head);
+    TEST_ASSERT_EQUAL_PTR(inst1, list->tail);
+
+    TEST_ASSERT_EQUAL_PTR(inst2, appendTACInstruction(list, inst2));
+    TEST_ASSERT_EQUAL_INT(2, list->count);
+    TEST_ASSERT_EQUAL_PTR(inst1, list->head);
+    TEST_ASSERT_EQUAL_PTR(inst2, list->tail);
+    TEST_ASSERT_EQUAL_PTR(inst2, inst1->next);
+
+    freeTACList(list);
+}
+
 /* ------------------------------------------------------------------------
  * Punto de entrada del ejecutable de pruebas
  * ------------------------------------------------------------------------ */
@@ -1010,6 +1038,7 @@ int main(void) {
     RUN_TEST(test_tac_null_ast_root_returns_null);
     RUN_TEST(test_tac_get_operand_name_null_and_none_return_empty_string);
     RUN_TEST(test_tac_format_list_null_safe);
+    RUN_TEST(test_tac_helper_append_tac_instruction);
 
     return UNITY_END();
 }

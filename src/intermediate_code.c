@@ -35,6 +35,23 @@ static TACOperand coerceToFloat(TACOperand operand);
 static TACOperation getTACOperation(OperationType operation);
 static bool lastInstructionIsReturn(void);
 static void emit(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand);
+static void emitGlobalDecl(TACOperand variable);
+static void emitLocalDecl(TACOperand variable);
+static void emitBeginFunc(TACOperand method, int parameterCount);
+static void emitEndFunc(TACOperand method);
+static void emitParamDecl(TACOperand parameter);
+static void emitParam(TACOperand argument);
+static void emitCall(TACOperand result, TACOperand method, int argumentCount);
+static void emitReturn(TACOperand value);
+static void emitReturnVoid(void);
+static void emitLabel(TACOperand label);
+static void emitGoto(TACOperand label);
+static void emitIfFalse(TACOperand condition, TACOperand label);
+static void emitIfTrue(TACOperand condition, TACOperand label);
+static void emitAssign(TACOperand destination, TACOperand source);
+static void emitBinary(TACOperation operation, TACOperand result, TACOperand left, TACOperand right);
+static void emitUnary(TACOperation operation, TACOperand result, TACOperand operand);
+static TACOperand emitCondition(TACOperation operation, TACOperand left, TACOperand right);
 static TACOperand newTemporary(DataType type);
 static TACOperand newLabel(void);
 
@@ -76,7 +93,7 @@ const TACList *generateIntermediateCode(NodeAST *root) {
 }
 
 static void generateGlobalDeclarationCode(NodeAST *node) {
-    emit(TAC_GLOBAL_DECL, tacNone(), tacVariable(node->symbol), tacNone());
+    emitGlobalDecl(tacVariable(node->symbol));
 }
 
 static void generateStatementCode(NodeAST *node) {
@@ -128,19 +145,19 @@ static void generateMethodDeclarationCode(NodeAST *node) {
     DataType previousMethodType = currentMethodType;
     currentMethodType = node->type;
 
-    emit(TAC_BEGIN_FUNC, method, tacConstantInt(parameterCount), tacNone());
+    emitBeginFunc(method, parameterCount);
     for (int i = 0; i < parameterCount; i++) {
-        emit(TAC_PARAM_DECL, tacNone(), tacVariable(parameters->children[i]->symbol), tacNone());
+        emitParamDecl(tacVariable(parameters->children[i]->symbol));
     }
 
     generateStatementCode(GET_RIGHT(node));
 
     bool needsImplicitReturn = (node->type == TYPE_VOID && !lastInstructionIsReturn());
     if (needsImplicitReturn) {
-        emit(TAC_RETURN, tacNone(), tacNone(), tacNone());
+        emitReturnVoid();
     }
 
-    emit(TAC_END_FUNC, method, tacNone(), tacNone());
+    emitEndFunc(method);
     currentMethodType = previousMethodType;
 }
 
@@ -151,7 +168,7 @@ static void generateBlockCode(NodeAST *node) {
 }
 
 static void generateVariableDeclarationCode(NodeAST *node) {
-    emit(TAC_LOCAL_DECL, tacNone(), tacVariable(node->symbol), tacNone());
+    emitLocalDecl(tacVariable(node->symbol));
 }
 
 static void generateAssignmentCode(NodeAST *node) {
@@ -160,12 +177,12 @@ static void generateAssignmentCode(NodeAST *node) {
     if (needsFloatCoercion) {
         value = coerceToFloat(value);
     }
-    emit(TAC_ASSIGN, tacVariable(node->symbol), value, tacNone());
+    emitAssign(tacVariable(node->symbol), value);
 }
 
 static void generateCallStatementCode(NodeAST *node) {
     generateCallArguments(node);
-    emit(TAC_CALL, tacNone(), tacMethod(node->symbol->id, node->type), tacConstantInt(node->childCount));
+    emitCall(tacNone(), tacMethod(node->symbol->id, node->type), node->childCount);
 }
 
 static void generateReturnCode(NodeAST *node) {
@@ -178,7 +195,11 @@ static void generateReturnCode(NodeAST *node) {
         value = coerceToFloat(value);
     }
 
-    emit(TAC_RETURN, tacNone(), value, tacNone());
+    if (hasExpression) {
+        emitReturn(value);
+    } else {
+        emitReturnVoid();
+    }
 }
 
 static void generateIfElseCode(NodeAST *node) {
@@ -188,18 +209,18 @@ static void generateIfElseCode(NodeAST *node) {
 
     if (!hasElseBlock) {
         TACOperand endIf = newLabel();
-        emit(TAC_IF_FALSE, tacNone(), condition, endIf);
+        emitIfFalse(condition, endIf);
         generateStatementCode(GET_IF_BLOCK(node));
-        emit(TAC_LABEL, endIf, tacNone(), tacNone());
+        emitLabel(endIf);
     } else {
         TACOperand elseIf = newLabel();
         TACOperand endIf = newLabel();
-        emit(TAC_IF_FALSE, tacNone(), condition, elseIf);
+        emitIfFalse(condition, elseIf);
         generateStatementCode(GET_IF_BLOCK(node));
-        emit(TAC_GOTO, tacNone(), endIf, tacNone());
-        emit(TAC_LABEL, elseIf, tacNone(), tacNone());
+        emitGoto(endIf);
+        emitLabel(elseIf);
         generateStatementCode(elseBlock);
-        emit(TAC_LABEL, endIf, tacNone(), tacNone());
+        emitLabel(endIf);
     }
 }
 
@@ -207,15 +228,15 @@ static void generateWhileCode(NodeAST *node) {
     TACOperand startOfWhile = newLabel();
     TACOperand endOfWhile = newLabel();
 
-    emit(TAC_LABEL, startOfWhile, tacNone(), tacNone());
+    emitLabel(startOfWhile);
 
     TACOperand condition = generateExpressionCode(GET_CONDITION(node));
-    emit(TAC_IF_FALSE, tacNone(), condition, endOfWhile);
+    emitIfFalse(condition, endOfWhile);
 
     generateStatementCode(GET_WHILE_BLOCK(node));
 
-    emit(TAC_GOTO, tacNone(), startOfWhile, tacNone());
-    emit(TAC_LABEL, endOfWhile, tacNone(), tacNone());
+    emitGoto(startOfWhile);
+    emitLabel(endOfWhile);
 }
 
 static TACOperand generateExpressionCode(NodeAST *node) {
@@ -250,13 +271,12 @@ static TACOperand generateOperatorCode(NodeAST *node) {
     TACOperand left = generateExpressionCode(GET_LEFT(node));
     TACOperand result = newTemporary(node->type);
     bool isUnary = (node->operationType == OP_UMINUS || node->operationType == OP_NOT);
-
     if (isUnary) {
-        emit(getTACOperation(node->operationType), result, left, tacNone());
+        emitUnary(getTACOperation(node->operationType), result, left);
     } else {
         TACOperand right = generateExpressionCode(GET_RIGHT(node));
         coerceBinaryOperands(&left, &right);
-        emit(getTACOperation(node->operationType), result, left, right);
+        emitBinary(getTACOperation(node->operationType), result, left, right);
     }
 
     return result;
@@ -266,17 +286,20 @@ static TACOperand generateShortCircuitCode(NodeAST *node) {
     TACOperand left = generateExpressionCode(GET_LEFT(node));
     TACOperand result = newTemporary(node->type);
 
-    emit(TAC_ASSIGN, result, left, tacNone());
+    emitAssign(result, left);
 
     bool isAndOperation = (node->operationType == OP_AND);
-    TACOperation shortCircuitJump = isAndOperation ? TAC_IF_FALSE : TAC_IF_TRUE;
     TACOperand endLabel = newLabel();
-    emit(shortCircuitJump, tacNone(), result, endLabel);
+    if (isAndOperation) {
+        emitIfFalse(result, endLabel);
+    } else {
+        emitIfTrue(result, endLabel);
+    }
 
     TACOperand right = generateExpressionCode(GET_RIGHT(node));
-    emit(TAC_ASSIGN, result, right, tacNone());
+    emitAssign(result, right);
 
-    emit(TAC_LABEL, endLabel, tacNone(), tacNone());
+    emitLabel(endLabel);
     return result;
 }
 
@@ -284,7 +307,7 @@ static TACOperand generateCallExpressionCode(NodeAST *node) {
     generateCallArguments(node);
 
     TACOperand result = newTemporary(node->type);
-    emit(TAC_CALL, result, tacMethod(node->symbol->id, node->type), tacConstantInt(node->childCount));
+    emitCall(result, tacMethod(node->symbol->id, node->type), node->childCount);
     return result;
 }
 
@@ -312,7 +335,7 @@ static void generateCallArguments(NodeAST *node) {
             argument = coerceToFloat(argument);
         }
 
-        emit(TAC_PARAM, tacNone(), argument, tacNone());
+        emitParam(argument);
     }
 }
 
@@ -334,7 +357,7 @@ static TACOperand coerceToFloat(TACOperand operand) {
     }
 
     TACOperand result = newTemporary(TYPE_FLOAT);
-    emit(TAC_INT_TO_FLOAT, result, operand, tacNone());
+    emitUnary(TAC_INT_TO_FLOAT, result, operand);
     return result;
 }
 
@@ -365,12 +388,83 @@ static bool lastInstructionIsReturn(void) {
 }
 
 static void emit(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
-    TACInstruction *instruction = appendInstruction(currentCode, operation, result, firstOperand, secondOperand);
-    if (instruction == NULL) {
+    TACInstruction *instruction = createTACInstruction(operation, result, firstOperand, secondOperand);
+    if (instruction == NULL || appendTACInstruction(currentCode, instruction) == NULL) {
         fprintf(stderr,
                 "\033[1;31mError interno del TAC:\033[0m no se pudo reservar memoria para una instruccion.\n");
         tacMemoryError = true;
     }
+}
+
+static void emitGlobalDecl(TACOperand variable) {
+    emit(TAC_GLOBAL_DECL, tacNone(), variable, tacNone());
+}
+
+static void emitLocalDecl(TACOperand variable) {
+    emit(TAC_LOCAL_DECL, tacNone(), variable, tacNone());
+}
+
+static void emitBeginFunc(TACOperand method, int parameterCount) {
+    emit(TAC_BEGIN_FUNC, method, tacConstantInt(parameterCount), tacNone());
+}
+
+static void emitEndFunc(TACOperand method) {
+    emit(TAC_END_FUNC, method, tacNone(), tacNone());
+}
+
+static void emitParamDecl(TACOperand parameter) {
+    emit(TAC_PARAM_DECL, tacNone(), parameter, tacNone());
+}
+
+static void emitParam(TACOperand argument) {
+    emit(TAC_PARAM, tacNone(), argument, tacNone());
+}
+
+static void emitCall(TACOperand result, TACOperand method, int argumentCount) {
+    emit(TAC_CALL, result, method, tacConstantInt(argumentCount));
+}
+
+static void emitReturn(TACOperand value) {
+    emit(TAC_RETURN, tacNone(), value, tacNone());
+}
+
+static void emitReturnVoid(void) {
+    emit(TAC_RETURN, tacNone(), tacNone(), tacNone());
+}
+
+static void emitLabel(TACOperand label) {
+    emit(TAC_LABEL, label, tacNone(), tacNone());
+}
+
+static void emitGoto(TACOperand label) {
+    emit(TAC_GOTO, tacNone(), label, tacNone());
+}
+
+static void emitIfFalse(TACOperand condition, TACOperand label) {
+    emit(TAC_IF_FALSE, tacNone(), condition, label);
+}
+
+static void emitIfTrue(TACOperand condition, TACOperand label) {
+    emit(TAC_IF_TRUE, tacNone(), condition, label);
+}
+
+static void emitAssign(TACOperand destination, TACOperand source) {
+    emit(TAC_ASSIGN, destination, source, tacNone());
+}
+
+static void emitBinary(TACOperation operation, TACOperand result, TACOperand left, TACOperand right) {
+    emit(operation, result, left, right);
+}
+
+static void emitUnary(TACOperation operation, TACOperand result, TACOperand operand) {
+    emit(operation, result, operand, tacNone());
+}
+
+static TACOperand emitCondition(TACOperation operation, TACOperand left, TACOperand right) {
+    coerceBinaryOperands(&left, &right);
+    TACOperand condition = newTemporary(TYPE_BOOL);
+    emitBinary(operation, condition, left, right);
+    return condition;
 }
 
 static TACOperand newTemporary(DataType type) {

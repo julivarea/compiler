@@ -34,12 +34,10 @@ void formatTACList(const TACList *list) {
     }
 }
 
-TACInstruction *appendInstruction(TACList *list, TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
-    if (list == NULL) return NULL;
+TACInstruction *appendTACInstruction(TACList *list, TACInstruction *instruction) {
+    if (list == NULL || instruction == NULL) return NULL;
 
-    TACInstruction *instruction = createTACInstruction(operation, result, firstOperand, secondOperand);
-    if (instruction == NULL) return NULL;
-
+    instruction->next = NULL;
     if (list->tail == NULL) {
         list->head = instruction;
     } else {
@@ -49,4 +47,13 @@ TACInstruction *appendInstruction(TACList *list, TACOperation operation, TACOper
     list->count++;
 
     return instruction;
+}
+
+TACInstruction *appendInstruction(TACList *list, TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
+    if (list == NULL) return NULL;
+
+    TACInstruction *instruction = createTACInstruction(operation, result, firstOperand, secondOperand);
+    if (instruction == NULL) return NULL;
+
+    return appendTACInstruction(list, instruction);
 }

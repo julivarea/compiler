@@ -51,6 +51,18 @@ void freeTACList(TACList *list);
 void formatTACList(const TACList *list);
 
 /**
+ * @brief Conecta una instrucción TAC ya creada al final de la lista.
+ *
+ * Si la lista o la instrucción son NULL, no realiza acción y retorna NULL.
+ * Actualiza el puntero de cola y el contador de elementos de la lista en O(1).
+ *
+ * @param list Puntero a la lista TAC receptora.
+ * @param instruction Puntero a la instrucción TAC a anexar.
+ * @return Puntero a la instrucción agregada, o NULL si list o instruction son NULL.
+ */
+TACInstruction *appendTACInstruction(TACList *list, TACInstruction *instruction);
+
+/**
  * @brief Agrega una instrucción al final de la lista TAC.
  *
  * Construye una nueva instrucción TAC cuádrupla con los operandos suministrados
