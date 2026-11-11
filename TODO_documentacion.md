@@ -237,6 +237,92 @@ variables vivas, 9 de 29 sin nombrar) y **F19** (intérprete, 8 de 27).
 
 ---
 
+## Inventarios de método de F14 y F19 — HECHO (cierra la cobertura)
+
+Las dos últimas fichas con funciones sin nombrar: F14 tenía 20 de 29 y F19 16 de
+27. Las dos cerraron en **29/29** y **27/27**, y con eso
+
+> **no queda ninguna función de `src/` ni de `include/` sin nombrar en la
+> documentación.** Medido con un script sobre los 44 archivos: 422/422.
+
+| Ficha | Sección nueva | Agrupada por |
+| --- | --- | --- |
+| F14 | §9 Inventario de funciones | públicas · las cinco etapas de la construcción · el índice de variables · los predicados sobre instrucciones · la impresión |
+| F19 | §9 Inventario de funciones | la única pública · el registro de declaraciones · la llamada · las sentencias · las expresiones · los tres auxiliares |
+
+Renumeradas las secciones siguientes (las dos fichas: 9→10 … 13→14) y
+corregidas las tres referencias internas que apuntaban a esos números.
+
+### Hallazgos de F14
+
+- **Ningún bloque básico cruza la frontera entre dos funciones, y ninguna arista
+  tampoco.** `isLeader` trata `begin_func` como líder y `endsBasicBlock` trata
+  `end_func` como terminador, así que el bloque anterior cierra ahí y no recibe
+  la arista de caída. Eso es lo que hace **sano el análisis intraprocedural**
+  aunque los bloques de todas las funciones vivan en un mismo arreglo: no existe
+  camino en el grafo del final de una función al principio de la siguiente. Es
+  la respuesta a "¿cómo separa las funciones si el CFG es uno?".
+- **`solveFixedPointLiveness` recorre los bloques en orden inverso**, que es el
+  orden natural de un análisis hacia atrás: propaga en una ronda lo que el orden
+  directo tardaría varias. El punto fijo es el mismo; cambia cuántas vueltas
+  cuesta llegar.
+- **`USE` y `DEF` no se guardan.** Viven en dos arreglos locales de
+  `createLiveVariableAnalysis` que se liberan en cuanto converge; solo `liveIn` y
+  `liveOut` quedan en los bloques. Por eso `printLiveVariableAnalysis` **los
+  recalcula** para poder mostrarlos.
+- **`computeBlockUseAndDef` saltea las declaraciones**, y con razón: si un
+  `local_decl` contara como definición, la variable entraría en `DEF(B)` y eso la
+  sacaría de `LIVE_IN(B)`, que es lo contrario de lo que corresponde.
+- **Las dos versiones de la pregunta no son duplicación.** `isDeadDefinition`
+  tiene que buscar el bloque (lineal sobre bloques × instrucciones);
+  `isDeadDefinitionInBlock` lo recibe. `removeDeadStores` usa la segunda porque
+  ya recorre por bloques: la diferencia es cuadrático contra lineal.
+- Aproximar "destino de un salto" por "toda etiqueta" puede partir un bloque de
+  más si la etiqueta quedó sin referencias. Es inofensivo —más bloques dan el
+  mismo punto fijo— y quedó documentado.
+
+### Hallazgos de F19
+
+- **La asimetría entre leer y asignar es el pasaje por valor.**
+  `evaluateIdentifier` devuelve `*symbol`, o sea **una copia**; `executeAssignment`
+  busca el `Symbol *` y escribe ahí. Por eso asignarle a un parámetro cambia solo
+  la copia local. Es la pregunta de parcial sobre pasaje por valor contestada en
+  dos líneas de código.
+- **El corto circuito vive en dos ramas que se evalúan antes del caso general**
+  de `evaluateOperator`. El caso general evalúa los dos operandos y después opera,
+  que es justo lo que `&&` y `||` no pueden hacer; las dos ramas lo saltean. Es la
+  misma semántica que el TAC consigue con etiquetas, y la razón de que el
+  intérprete sirva de oráculo para probarla.
+- **`createFunctionScope` tiene una línea y es la decisión más importante del
+  módulo.** `createScope(1, globalScope, NULL)`: el padre es el **global**, no el
+  llamador. Cambiarlo por `callerScope` convertiría el lenguaje a alcance
+  dinámico y los programas seguirían corriendo, dando otros resultados.
+- **El orden de `executeFunctionBody` importa:** los argumentos se evalúan
+  **antes** de crear el ámbito de la función, en el ámbito del llamador. Al revés,
+  un argumento que nombra una local del llamador no se encontraría.
+- **`registerVariableDeclaration` sirve para globales y locales**, y en el segundo
+  caso agrega el símbolo al ámbito **del bloque**: eso es todo lo que hace falta
+  para que el ocultamiento de nombres funcione.
+- **`evaluateArguments` devuelve `NULL` para cero argumentos y eso no es un
+  error**, de ahí el `bool *outOfMemory` aparte: `NULL` ya significa otra cosa.
+- **`ExecResult.hasReturned` reemplaza al `goto` al epílogo** del código objeto:
+  cada nivel del recorrido mira la bandera y corta. Un `return` dentro de tres
+  `while` anidados sale de los tres porque los tres consultan lo mismo.
+
+### Nota para `CLAUDE.md`
+
+El archivo lista el enumerado `OperationType` con `OP_NEGATIVE` y `OP_NEGATION`.
+Los nombres reales en `include/types.h` son **`OP_UMINUS`** y **`OP_NOT`**; los
+otros diez coinciden. Conviene corregir esos dos en `CLAUDE.md` para que no
+mande a buscar identificadores que no existen.
+
+Verificado: build limpio, las tres suites en verde (51 + 35 + 45 tests), los seis
+programas correctos con el mismo código de salida sin optimizar y con `-opt all`,
+el intérprete terminando en 0 en los seis, el sitio armando con `--strict` sin
+avisos y ningún link roto.
+
+---
+
 ## Inventario completo
 
 Los **44 archivos** de `include/` y `src/` están repartidos en 19 fichas, cada

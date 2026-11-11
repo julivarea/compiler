@@ -302,7 +302,150 @@ no se hizo porque el intérprete no se entrega.
 
 ---
 
-## 9. Conexión con las fases vecinas
+## 9. Inventario de funciones
+
+Veintisiete funciones: **una pública** y **veintiséis `static`**. El archivo está
+ordenado como el recorrido: registrar, llamar, ejecutar sentencias, evaluar
+expresiones.
+
+### La única pública
+
+| Función | Qué hace |
+| --- | --- |
+| `interpreteSemantics(root, debug)` | Crea el ámbito global, registra las declaraciones, ejecuta `main` y **devuelve el ámbito global** |
+
+Devolver el ámbito en lugar de liberarlo es lo que permite que el llamador
+inspeccione el estado final, y es también quien queda a cargo de liberarlo.
+
+### El registro de declaraciones
+
+| Función | Qué hace |
+| --- | --- |
+| `registerGlobalDeclarations` | Recorre los hijos de la raíz y reparte entre las dos de abajo |
+| `registerVariableDeclaration` | Crea un `Symbol` con valor inicial **cero** y lo agrega al ámbito |
+| `registerMethodDeclaration` | Crea un `Symbol` de función guardando **el nodo del AST** en `value.function` |
+| `executeMainMethod` | Busca `main`, lo ejecuta y reporta su resultado si está `-debug` |
+
+**`registerVariableDeclaration` sirve para las globales y para las locales.** La
+llama `registerGlobalDeclarations` al arrancar, y también `executeStatement`
+cuando se topa con una declaración dentro de un bloque. En el segundo caso el
+símbolo se agrega al ámbito **del bloque**, y eso es todo lo que hace falta para
+que el ocultamiento de nombres funcione: `lookupSymbol` encuentra primero el más
+interno.
+
+**`registerMethodDeclaration` es donde se ve que esto es un intérprete de AST y
+no de código.** Guardar un método es guardar un puntero a su nodo
+`METHOD_DECLARATION_NODE`; llamarlo es volver a recorrer ese nodo. No hay
+compilación de por medio, y por eso no hay ni direcciones ni marcos de pila.
+
+`executeMainMethod` reusa `executeFunctionBody` pasándole `NULL` como nodo de
+argumentos, que es la forma de decir "cero argumentos". Una llamada sin
+argumentos y `main` siguen exactamente el mismo camino.
+
+### La llamada
+
+| Función | Qué hace |
+| --- | --- |
+| `executeMethodCall` | Resuelve el nombre, encuentra el ámbito global y delega |
+| `executeFunctionBody` | Evaluar argumentos, crear el ámbito, ligar parámetros, ejecutar el cuerpo, coercionar el retorno, liberar |
+| `evaluateArguments` | Evalúa los argumentos **de izquierda a derecha** a un arreglo de `Symbol` |
+| `createFunctionScope` | Una línea: `createScope(1, globalScope, NULL)` |
+| `bindParameters` | Un `Symbol` nuevo por parámetro, con el valor del argumento ya copiado |
+| `coerceReturnValue` | Ensancha `int` a `float` si el método devuelve `float` |
+| `getGlobalScope` | Sube por los `parent` hasta la raíz |
+
+**`createFunctionScope` tiene una línea y es la decisión más importante del
+módulo.** El padre del ámbito nuevo es el **global**, no el ámbito del llamador.
+Eso es alcance léxico, y es lo que hace que un método no vea las variables
+locales de quien lo llamó. Si dijera `createScope(1, callerScope, NULL)` el
+lenguaje pasaría a tener alcance dinámico y los programas seguirían corriendo —
+dando otros resultados. Está desarrollado en §5.
+
+**El orden de los pasos de `executeFunctionBody` importa:** los argumentos se
+evalúan **antes** de crear el ámbito de la función, en el ámbito del llamador. Al
+revés, un argumento que nombra una variable del llamador no se encontraría.
+
+`evaluateArguments` devuelve `NULL` para cero argumentos, y eso **no es un
+error**: `bindParameters` lo recibe y simplemente no copia valores. El error de
+reserva se señala aparte, por el `bool *outOfMemory`, precisamente porque `NULL`
+ya significa otra cosa.
+
+### Las sentencias
+
+| Función | Qué hace |
+| --- | --- |
+| `executeStatement` | El despachador: un `switch` sobre `nodeType` con siete casos |
+| `executeBlock` | Crea un ámbito nuevo, ejecuta las sentencias y corta si alguna retornó |
+| `executeAssignment` | Evalúa la expresión, busca el **puntero** al símbolo y lo muta |
+| `executeIfElse` | Evalúa la condición y ejecuta una rama; si no hay `else`, no hace nada |
+| `executeWhile` | Reevalúa la condición en cada vuelta; corta si el cuerpo retornó |
+| `executeReturn` | Devuelve `hasReturned = true` con el valor, o `void` si no hay expresión |
+
+**`ExecResult` con su `hasReturned` es el mecanismo de retorno**, y es lo que
+reemplaza al `goto` al epílogo que usa el código objeto: cada nivel del recorrido
+mira la bandera y, si está prendida, **corta inmediatamente** y la pasa hacia
+arriba. Un `return` dentro de tres `while` anidados sale de los tres porque los
+tres consultan lo mismo.
+
+`executeBlock` cuelga su ámbito del actual con `appendChildScope` y **no lo
+libera**: lo libera el `freeScope(functionScope)` del final de la llamada, que
+baja por el árbol. Por eso la memoria crece con las **iteraciones** y no con el
+tamaño del programa, que es el costo medido en §8.
+
+### Las expresiones
+
+| Función | Qué hace |
+| --- | --- |
+| `evaluateExpression` | El despachador: constante, identificador, operador o llamada |
+| `evaluateIdentifier` | Busca el símbolo y devuelve **una copia de su valor** |
+| `evaluateConstant` | Arma un `Symbol` del tipo del literal |
+| `evaluateOperator` | Decide unario o binario, y resuelve el **corto circuito** de `&&` y `\|\|` |
+| `evaluateUnaryOperator` | `OP_NOT` y `OP_UMINUS`, este último con rama para reales |
+| `evaluateBinaryOperator` | Las nueve operaciones restantes. Es la función más larga del archivo |
+
+**La asimetría entre `evaluateIdentifier` y `executeAssignment` es el pasaje por
+valor.** Leer una variable devuelve `*symbol`, o sea **una copia**; asignarle
+busca el `Symbol *` y escribe ahí. Por eso asignarle a un parámetro cambia solo
+la copia local y no afecta al argumento del llamador: lo que se ligó al entrar
+fue un valor copiado.
+
+**El corto circuito vive en `evaluateOperator`**, en dos ramas que se evalúan
+antes del caso general:
+
+```c
+if (node->operationType == OP_AND) {
+    Symbol left = evaluateExpression(GET_LEFT(node), currentScope);
+    if (!isTruthy(left)) return makeBoolSymbol(false);   /* no se evalua la derecha */
+    ...
+}
+```
+
+Que esas dos ramas estén **antes** de la evaluación de los dos operandos es todo
+el corto circuito: el caso general al final evalúa izquierda y derecha y recién
+entonces opera, que es exactamente lo que `&&` y `||` no pueden hacer. Es la
+misma semántica que el TAC consigue con etiquetas, y la razón de que el
+intérprete sirva como oráculo para probarla.
+
+`evaluateBinaryOperator` decide `isFloat` con un `or`: **basta con que uno de los
+dos operandos sea real** para que la operación se haga en reales y el otro se
+ensanche con `getFloatValue`. Es la tercera de las tres coerciones de §6.
+
+### Los tres auxiliares
+
+| Función | Qué hace |
+| --- | --- |
+| `assignSymbolValue` | Copia un valor a un símbolo, ensanchando `int` → `float` si hace falta |
+| `getFloatValue` | Lee un `Symbol` como `float`, convirtiendo si era entero |
+| `isTruthy` | `value.intValue != 0` |
+
+Los tres son de dos o tres líneas y los tres aparecen en todas las preguntas
+interesantes: `assignSymbolValue` es la coerción de la asignación y del ligado de
+parámetros, `getFloatValue` es la de las operaciones mixtas, e `isTruthy` es la
+que decide todas las condiciones del lenguaje (§7).
+
+---
+
+## 10. Conexión con las fases vecinas
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
@@ -323,7 +466,7 @@ existe únicamente para esto.
 
 ---
 
-## 10. Cómo se extiende
+## 11. Cómo se extiende
 
 ### Una construcción nueva
 
@@ -352,7 +495,7 @@ Ver §8. Es la corrección pendiente más clara del módulo.
 
 ---
 
-## 11. Trampas y límites conocidos
+## 12. Trampas y límites conocidos
 
 - **La memoria crece con las iteraciones, no con el programa** (§8).
 - **`isTruthy` acepta cualquier valor distinto de cero** (§7), que es más
@@ -368,14 +511,14 @@ Ver §8. Es la corrección pendiente más clara del módulo.
 - **Reimplementa las reglas de tipos** (§6). Es lo que lo hace útil como oráculo y
   lo que duplica el mantenimiento: un cambio en la semántica del lenguaje hay que
   hacerlo en dos lugares.
-- **Los dos `default` de los despachadores son silenciosos** (§10).
+- **Los dos `default` de los despachadores son silenciosos** (§11).
 - **El desborde con signo en `+`, `-` y `*` sigue siendo comportamiento
   indefinido**, igual que en el plegado de constantes del optimizador. UBSan lo
   marca; hoy GCC envuelve y el resultado coincide con el del assembly generado.
 
 ---
 
-## 12. La teoría detrás
+## 13. La teoría detrás
 
 - **Intérprete contra compilador**: un intérprete ejecuta el programa; un
   compilador lo traduce a otro lenguaje que después se ejecuta. Este proyecto
@@ -410,7 +553,7 @@ Ver §8. Es la corrección pendiente más clara del módulo.
 
 ---
 
-## 13. Cómo se valida
+## 14. Cómo se valida
 
 - **Suite:** no tiene una propia. Se valida por **comparación con el ejecutable**,
   que es su razón de ser.
