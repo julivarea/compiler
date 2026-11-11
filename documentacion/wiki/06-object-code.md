@@ -1,6 +1,6 @@
 # Generación de Código Objeto
 
-**Ficha F18** · Archivos: `include/object_code.h`, `src/object_code.c` (1136 líneas)
+**Ficha F18** · Archivos: `include/object_code.h`, `src/object_code.c` (1112 líneas)
 
 La traducción de cada [cuádrupla TAC](05-tac-representation.md) a assembly
 x86-64, usando el [modelo de instrucciones](06-asm-instructions.md) y el
@@ -44,7 +44,7 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
 
 `generateAssembly` es el punto de entrada. Las otras tres están expuestas para
 que los tests puedan emitir una instrucción aislada sin recorrer un programa
-entero; el resto de las ~45 funciones del módulo son `static`.
+entero; las otras **cincuenta** funciones del módulo son `static`.
 
 **`enabled` llega acá porque `strength-reduce` es la única optimización que
 depende de la máquina** (ver la [ficha F15](05.9-optimizer.md)): decidir si una
@@ -457,11 +457,18 @@ situaciones, todas bugs del compilador y no del programa compilado:
 
 | Dónde | Cuándo |
 | --- | --- |
-| `generateAssembly` | No se pudo crear el marco |
-| `buildFrameLayout` | No se pudo reservar las ranuras de argumentos |
-| `emitParam` | No se pudo ampliar la pila de argumentos |
+| `generateAssembly` | No se pudo crear el marco de una función |
+| `generateAssembly` | `buildFrameLayout` devolvió `false`: no se pudieron reservar las ranuras de argumentos |
+| `emitParam` | No se pudo ampliar el arreglo de argumentos pendientes |
 | `emitCall` | No se pudo reservar la clasificación de argumentos |
 | `resolveOperandLocation` | Un operando sin lugar asignado (§8) |
+
+**Los dos primeros se reportan en `generateAssembly` y no en la función que
+falló**, que es la forma del arreglo de propagación de fallas de reserva:
+`buildFrameLayout` y `allocatePendingParamSlots` devuelven `bool` y el mensaje
+—que es el que tiene el nombre de la función a mano— lo emite el llamador. En los
+dos casos se hace `break` del bucle: si no se pudo dimensionar un marco, seguir
+emitiendo produciría assembly con offsets inventados.
 
 `getObjectCodeErrors` permite que el driver los consulte y aborte en lugar de
 entregar un ejecutable que compiló pero está roto. La diferencia con un error
@@ -470,7 +477,161 @@ error interno significa "el compilador está mal".
 
 ---
 
-## 10. Conexión con las fases vecinas
+## 10. Inventario de funciones
+
+Cincuenta y cinco funciones: **cinco públicas** y **cincuenta `static`**. Es el
+archivo con más funciones del proyecto, y está ordenado por la regla de descenso:
+el punto de entrada arriba, el acceso a operandos abajo.
+
+### Públicas
+
+| Función | Qué hace |
+| --- | --- |
+| `generateAssembly(tacList, enabled)` | Las tres secciones y el bucle por función de §3 |
+| `getObjectCodeErrors()` | La cuenta de errores internos de §9 |
+| `emitPrologue(frame)` | `.globl`, la etiqueta, `pushq %rbp`, `movq %rsp, %rbp` y el `subq` del marco |
+| `emitEpilogue(frame)` | La etiqueta `.L_f_epilogue`, el `leave` y el `ret` |
+| `generateInstruction(instruction, frame)` | El despachador de §4 |
+
+`emitEpilogue` tiene un caso especial que conviene conocer porque se pregunta
+fácil: si la función es `main` **y** su tipo de retorno es `void`, pone `%eax` en
+cero antes de salir. El sistema operativo toma `%eax` como código de salida del
+proceso, así que un `void main` sin esa línea devolvería lo que hubiera quedado
+en el registro.
+
+### El armado del marco (pasada 1)
+
+| Función | Qué hace |
+| --- | --- |
+| `buildFrameLayout` | Llama a las dos de abajo y **alinea `frameSize` a 16** |
+| `allocateLocalSlots` | Una ranura por `local_decl`, por `param_decl` y por cada temporal que aparezca como resultado |
+| `allocatePendingParamSlots` | Calcula el **pico** de argumentos pendientes y reserva esa cantidad de ranuras anónimas |
+
+`allocatePendingParamSlots` es la más sutil de las tres. Recorre la función
+llevando un contador: cada `param` lo sube, cada `call n` lo baja en `n`, y se
+queda con el máximo que alcanzó. Ese pico es cuántas ranuras hacen falta **a la
+vez**, y es lo que hace que `f(g(1), h(2))` funcione: cuando se evalúa `g(1)` ya
+hay un argumento de `f` pendiente, así que los dos necesitan ranura propia. Un
+contador que se reseteara en cada `call` daría un pico demasiado chico y los
+argumentos se pisarían.
+
+### Una función por opcode (pasada 2)
+
+| Función | Qué emite |
+| --- | --- |
+| `emitParamDeclaration` | Copia el registro de argumento a su ranura, o lo lee del marco del llamador si los registros se agotaron. Avanza el contador de **su clase** |
+| `emitAssignment` | Cargar y guardar, por `%eax` o por `%xmm0` según el tipo |
+| `emitAddition` / `emitSubtraction` | `addss`/`subss` si es real; si no, `ASM_ADD`/`ASM_SUB` vía `emitBinaryOp` |
+| `emitMultiplication` | Primero prueba la reducción de fuerza; si no aplica, el `imull` normal |
+| `emitDivision` | `divss` si es real; si no, `emitDivisionOp` leyendo `%eax` |
+| `emitModulo` | `emitDivisionOp` leyendo `%edx`. **No pregunta si es real:** `%` solo existe para enteros |
+| `emitUnaryMinus` | `negl` para enteros; para reales, `0 - x` con `pxor` y `subss` |
+| `emitNot` | `xorl $1` |
+| `emitLessThan` / `emitGreaterThan` / `emitEquality` | Eligen entre la comparación entera (`setl`/`setg`/`sete`) y la de reales (`setb`/`seta`/`sete`) |
+| `emitIntToFloat` | `cvtsi2ss` de `%eax` a `%xmm0`: la coerción de la regla 14 |
+| `emitLabel` | `.L3:` — la etiqueta sale de `result` |
+| `emitGoto` | `jmp .L3` — sale de `firstOperand` |
+| `emitIfFalse` / `emitIfTrue` | `cmpl $0` más `je`/`jne` — la etiqueta sale de `secondOperand` |
+| `emitParam` | Deja el argumento en su ranura pendiente y anota su tipo |
+| `emitCall` | Los siete pasos de §5 |
+| `emitReturn` | Deja el valor en `%eax`/`%xmm0` y salta al epílogo común |
+
+**Las tres posiciones distintas de la etiqueta** —`result` en `emitLabel`,
+`firstOperand` en `emitGoto`, `secondOperand` en los saltos condicionales— son la
+asimetría del catálogo de cuádruplas, y son exactamente la razón de que el
+generador de TAC tenga una capa de emisores con nombre
+([ficha F13](05.5-tac-generation.md)). Acá se paga del otro lado: hay que saber en
+qué campo guardó la etiqueta cada opcode.
+
+**`emitNot` merece un párrafo.** Negar un booleano con `xorl $1` da el resultado
+correcto **solo si el valor es exactamente 0 o 1**: con cualquier otro bit
+prendido devolvería un número distinto de 0 y de 1, y el `if` siguiente lo leería
+como verdadero. El invariante lo garantizan las comparaciones, que terminan en
+`movzbl` (§6), y las constantes booleanas del TAC, que son 0 o 1. A cambio es una
+instrucción en lugar de las tres que costaría `cmpl $0` + `sete` + `movzbl`.
+
+### Los auxiliares de emisión
+
+| Función | Qué hace |
+| --- | --- |
+| `emitFunction` | Prólogo, el bucle de instrucciones hasta `end_func`, epílogo. Devuelve dónde quedó el recorrido |
+| `emitBinaryOp` | El patrón entero: `%eax`, `%edx`, operar, guardar |
+| `emitFloatBinaryOp` | El mismo con `%xmm0`/`%xmm1` y el mnemónico por parámetro |
+| `emitDivisionOp` | `cltd` más `idivl %ecx`, con el registro de resultado por parámetro |
+| `emitRelationalOp` | `cmpl` + `setCC` + `movzbl` |
+| `emitFloatRelationalOp` | `comiss` + `setCC` + el filtro de NaN si corresponde + `movzbl` |
+| `emitStrengthReducedMultiplication` | Los tres casos de §6; devuelve `false` si no aplica |
+| `powerOfTwoExponent` | `(v & (v - 1)) == 0` y después el exponente |
+| `classifyCallArguments` | Decide, argumento por argumento, registro de su clase o pila |
+| `emitCallStackArguments` | Los `pushq`, en orden inverso |
+| `emitCallRegisterArguments` | Las cargas a los registros, después de los `pushq` |
+| `emitCallResult` | `%eax`/`%xmm0` a la ranura del resultado, si la llamada tiene resultado |
+
+Las cuatro funciones con un **mnemónico o un registro por parámetro** son el
+patrón que mantiene corto al archivo: `emitDivisionOp` sirve para `/` y para `%`
+cambiando el registro que se lee, y `emitRelationalOp` sirve para los tres
+relacionales cambiando el `setCC`. Agregar `!=` es una línea precisamente por eso.
+
+`powerOfTwoExponent` tiene una sutileza de contrato: devuelve **`-1`** si el
+valor no es potencia de dos, pero devuelve **`0`** para el valor `1`, que sí lo
+es. El llamador exige `exponent > 0`, así que trata ese `0` como "no aplica" — y
+es correcto, porque el caso `× 1` ya se resolvió antes, en su propia rama.
+
+### El acceso a operandos
+
+| Función | Qué hace |
+| --- | --- |
+| `loadOperand` | Constante → inmediato; si no, resuelve y carga de la pila o de la global |
+| `storeOperand` | Resuelve y guarda a la pila o a la global |
+| `loadFloatOperand` | Constante → `movss` de la etiqueta de `.rodata`; si no, como el anterior |
+| `storeFloatOperand` | `movss` del `%xmm` a la pila o a la global |
+| `resolveOperandLocation` | Pila, global, o el error interno de §8 |
+| `isFloatOperand` | `operand->type == TYPE_FLOAT` |
+| `isDeclaredGlobal` | Búsqueda lineal en el arreglo de nombres globales |
+| `registerGlobalVariable` | Agrega un nombre al arreglo, duplicando la capacidad desde 64 |
+| `getGlobalName` | El `id` del símbolo si lo tiene; si no, el nombre calificado (§7) |
+
+**`isFloatOperand` es una línea y es la bisagra del módulo entero**: cada `emitX`
+con dos rutas la consulta. Y **cuál operando se le pasa no es indistinto**:
+
+| Quién pregunta | Qué operando mira | Por qué |
+| --- | --- | --- |
+| Las aritméticas | `result` | El tipo del resultado es el tipo de la operación |
+| Las comparaciones | `firstOperand` | El resultado de una comparación es **siempre `boolean`**: preguntarle a él nunca diría que la comparación es de reales |
+
+Equivocarse ahí es un error que compila y da resultados incorrectos solo en los
+programas con reales, que es la peor clase de bug para encontrar.
+
+Y hay una asimetría más, entre las dos funciones de globales:
+`isDeclaredGlobal` busca por `operand->name`, el nombre **calificado con `@uid`**,
+mientras `getGlobalName` emite el símbolo **sin** el sufijo. Las dos conviven
+porque la lista interna habla el idioma del TAC y el assembly habla el del
+programa (§7).
+
+### Las constantes reales y las globales
+
+| Función | Qué hace |
+| --- | --- |
+| `internFloatConstant` | Devuelve la etiqueta de un valor, reutilizándola si ya apareció |
+| `getFloatBits` | El `union` que lee un `float` como `unsigned int` |
+| `emitFloatConstantPool` | Una pasada por todo el TAC: interna cada constante real y emite `.rodata` |
+| `emitGlobals` | Emite `.data` con una palabra por `global_decl`, y las registra |
+| `resetGlobalVariables` / `resetFloatConstants` | Liberan los dos arreglos estáticos |
+
+**`internFloatConstant` compara patrones de bits, no valores**, y eso resuelve
+dos problemas de IEEE-754 de una vez: `-0.0 == 0.0` es verdadero, así que con `==`
+las dos constantes compartirían etiqueta y una quedaría con el signo equivocado;
+y `NaN == NaN` es falso, así que un NaN repetido nunca se reutilizaría y llenaría
+el pool de copias. Comparar los 32 bits es exacto en los dos casos.
+
+**Los dos `reset` se llaman al entrar y al salir** de `generateAssembly`. El de
+salida es el que permite que los tests llamen a `generateAssembly` muchas veces
+en el mismo proceso sin arrastrar las globales ni las etiquetas `.LC` de la
+corrida anterior.
+
+---
+
+## 11. Conexión con las fases vecinas
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
@@ -494,7 +655,7 @@ error interno significa "el compilador está mal".
 
 ---
 
-## 11. Cómo se extiende
+## 12. Cómo se extiende
 
 ### Un opcode TAC nuevo
 
@@ -526,9 +687,9 @@ exactamente lo que el diseño actual evita a propósito.
 
 ---
 
-## 12. Trampas y límites conocidos
+## 13. Trampas y límites conocidos
 
-- **El `default` del despachador no avisa** (§11).
+- **El `default` del despachador no avisa** (§12).
 - **El divisor nunca puede ir en `%edx`** porque `cltd` lo sobrescribe (§6).
 - **Las comparaciones de reales usan condiciones sin signo** (`setb`/`seta`), no
   las de con signo (§6).
@@ -545,10 +706,20 @@ exactamente lo que el diseño actual evita a propósito.
   el símbolo es `g`.
 - **Todo es de 32 bits.** Los mnemónicos tienen el sufijo `l` fijo y los reales
   son de precisión simple.
+- **`-0.0` no se puede producir.** `emitUnaryMinus` niega un real como `0 - x`, y
+  en IEEE-754 `0.0 - 0.0` es `+0.0`, no `-0.0`. Negar el cero da cero positivo.
+  La alternativa correcta sería invertir el bit de signo con un `xorps` contra una
+  máscara. No afecta a ninguna operación aritmética del lenguaje, pero es una
+  diferencia real con la semántica de C.
+- **`internFloatConstant` degrada en silencio si falla la reserva**: devuelve la
+  etiqueta de la primera constante del pool, o la cadena vacía si el pool está
+  vacío. Lo primero haría que el programa calcule con **otra** constante; es
+  inalcanzable en la práctica, pero es el único camino del módulo que produce
+  código incorrecto en lugar de reportar el error.
 
 ---
 
-## 13. La teoría detrás
+## 14. La teoría detrás
 
 - **Generación de código** (*code generation*): la fase que traduce la IR a
   instrucciones de máquina. Sus tres subproblemas clásicos son la **selección de
@@ -588,7 +759,7 @@ exactamente lo que el diseño actual evita a propósito.
 
 ---
 
-## 14. Cómo se valida
+## 15. Cómo se valida
 
 - **Suite:** `tests/test_object_code.c` (1401 líneas), la más grande del
   proyecto. Verifica el assembly emitido por cada instrucción TAC.

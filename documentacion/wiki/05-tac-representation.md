@@ -357,7 +357,7 @@ La usan tres consumidores distintos:
 | Quién | Para qué |
 | --- | --- |
 | `printTACInstruction` → `formatTACList` | Escribir el archivo `.ci` o `.opt` |
-| El optimizador | El volcado de `-debug` que muestra en rojo lo que eliminó |
+| El optimizador | El volcado de `-debug`, que marca con `[ELIMINADA]` lo que sacó |
 | El análisis de variables vivas | Imprimir las instrucciones de cada bloque básico |
 
 Tener una sola fuente garantiza que las tres salidas coincidan. Si el formato

@@ -148,6 +148,95 @@ el intérprete.
 
 ---
 
+## Inventarios de método de F15 y F18 — HECHO
+
+Las dos fichas más grandes del back-end tenían las secciones de la plantilla
+completas pero **no nombraban todas sus funciones**: F15 tenía 11 de 30 y F18
+32 de 55. Las dos cerraron en **30/30** y **55/55**.
+
+| Ficha | Sección nueva | Agrupada por |
+| --- | --- | --- |
+| F15 | §9 Inventario de funciones | públicas · las ocho pasadas · la tabla de constantes · la evaluación · el desenlazado · clasificación de opcodes · el conjunto de etiquetas · la depuración |
+| F18 | §10 Inventario de funciones | públicas · el armado del marco · una función por opcode · los auxiliares de emisión · el acceso a operandos · las constantes reales |
+
+Las secciones que venían después se renumeraron (F15: 9→10, 10→11, 11→12; F18:
+10→11 … 14→15) y las dos referencias internas a esos números se corrigieron.
+
+### Hallazgos de F15
+
+- **`printTACWithDeletedInRed` no imprime nada en rojo.** El nombre dice *InRed*
+  y no hay un solo código ANSI en `optimizer.c`: marca las líneas con el prefijo
+  `[ELIMINADA]`. Verificado con `cat -v` sobre la salida de `-debug`. La
+  documentación repetía lo que decía el nombre: **dos páginas afirmaban "en
+  rojo"** —F15, en cómo se valida, y F12, en la tabla de consumidores del formato
+  del TAC— y las dos se corrigieron. El color sí existe, pero en
+  `error_handler.c`.
+- **`unlinkInstructionList` tiene dos contratos implícitos** que no están
+  escritos en el código: el arreglo que recibe **tiene que estar en orden de
+  lista** —recorre la lista una sola vez, así que un arreglo desordenado dejaría
+  instrucciones sin borrar en silencio— y **libera el arreglo**, incluido el
+  camino de salida temprana, así que quien lo llama no debe liberarlo. Las cinco
+  pasadas que lo usan cumplen lo primero por construcción.
+- **El conjunto de etiquetas referenciadas guarda punteros al `name` de las
+  instrucciones, no copias.** Por eso `removeUnreferencedLabels` termina de
+  marcar, libera el arreglo de punteros, y recién entonces desenlaza: consultar
+  el conjunto después de liberar instrucciones sería leer memoria liberada.
+- **`forgetConstant` borra pisando con el último elemento**, no desplazando. Es
+  correcto porque la tabla es un conjunto y nadie depende de su orden, y
+  convierte un borrado O(n) en O(1).
+- **`isGlobalVariable` corta en el primer `begin_func`**, lo que codifica el
+  orden de emisión del generador de TAC (globales antes que funciones).
+- Quedó documentado el límite ya conocido: las guardas de desborde están en
+  `/` y `%` pero **no** en `+`, `-` y `*`.
+
+### Hallazgos de F18
+
+- **Qué operando se le pasa a `isFloatOperand` no es indistinto, y es la clase de
+  error que solo se ve con reales.** Las aritméticas miran `result`; las
+  comparaciones miran `firstOperand`, porque el resultado de una comparación es
+  siempre `boolean` y preguntarle a él nunca diría que la comparación es de
+  reales. Las dos reglas quedaron en una tabla.
+- **`-0.0` no se puede producir.** `emitUnaryMinus` niega un real como `0 - x`, y
+  en IEEE-754 `0.0 - 0.0` es `+0.0`. Verificado ejecutando: `n = -z` con
+  `z = 0.0`, después `1.0 / n > 0.0` da verdadero, o sea que quedó `+inf`, o sea
+  que `n` es cero **positivo**. La forma correcta sería invertir el bit de signo
+  con `xorps`. No afecta a ninguna operación aritmética del lenguaje; es una
+  diferencia real con C y quedó anotada como límite.
+- **`emitNot` usa `xorl $1` y eso depende de un invariante.** Solo es correcto si
+  un booleano vale exactamente 0 o 1, lo que garantizan el `movzbl` de las
+  comparaciones y las constantes booleanas del TAC. A cambio es una instrucción
+  en lugar de tres.
+- **`emitModulo` es el único `emitX` que no pregunta si el operando es real.**
+  Verificado que corresponde: `1.5 % 2.0` es error semántico
+  (*Tipos incompatibles en la operacion binaria*), así que el generador nunca ve
+  un módulo de reales.
+- **`internFloatConstant` compara patrones de bits y no valores**, lo que resuelve
+  dos problemas de IEEE-754 a la vez: `-0.0 == 0.0` es verdadero (las dos
+  constantes compartirían etiqueta y una saldría con el signo equivocado) y
+  `NaN == NaN` es falso (un NaN repetido nunca se reutilizaría). Su camino de
+  error, en cambio, **degrada en silencio**: devuelve la etiqueta de la primera
+  constante del pool, que haría calcular con otra constante. Anotado como límite.
+- **`powerOfTwoExponent` devuelve `0` para el valor 1** y el llamador trata ese
+  `0` como "no aplica" (`exponent > 0`). No es un bug: el caso `× 1` ya se
+  resolvió en su propia rama antes.
+- **Corrección a la tabla de errores internos de F18:** decía que uno de los
+  cinco se reporta en `buildFrameLayout`. Tras el commit
+  `21b2ea3 fix: propagate allocation failures safely`, esa función devuelve
+  `bool` y **el mensaje lo emite `generateAssembly`**, que es quien tiene el
+  nombre de la función a mano. Son dos sitios en `generateAssembly`, no uno.
+- **Conteo de líneas corregido:** la cabecera decía 1136 y el total real de los
+  dos archivos es **1112** (el archivo se acortó con los refactors del back-end).
+  Y "~45 funciones `static`" eran **50**.
+
+Verificado después de los cambios: build sin warnings nuevos, las suites en
+verde, los 6 programas correctos de `examples/` con el mismo código de salida sin
+optimizar y con `-opt all`, y ningún link roto en el sitio.
+
+**Queda para el último prompt:** los inventarios de **F14** (análisis de
+variables vivas, 9 de 29 sin nombrar) y **F19** (intérprete, 8 de 27).
+
+---
+
 ## Inventario completo
 
 Los **44 archivos** de `include/` y `src/` están repartidos en 19 fichas, cada
@@ -546,7 +635,7 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
     un script: `frameSize` múltiplo de 16, ningún offset usado excede el
     `frameSize`, y todos los offsets negativos. Quedaron documentados como
     chequeo de regresión.
-- [x] **F18 — Generador de código objeto** · `object_code.h`, `object_code.c` · 1072 líneas
+- [x] **F18 — Generador de código objeto** · `object_code.h`, `object_code.c` · 1112 líneas
   - **Hecha:** `documentacion/wiki/06-object-code.md`, reescrita como ficha F18
     (233 → 600). Las tres secciones del objeto, el despachador con sus tres
     patrones de traducción, la convención de llamada de los dos lados, las cinco
