@@ -24,7 +24,7 @@ La resolución léxica se apoya en un árbol de ámbitos (`Scope`) donde cada bl
 
 ## 2. Modelado de Símbolos (`Symbol`) y Variantes de `SymbolType`
 
-El compilador clasifica todas las entidades semánticas registradas en los entornos o referenciadas en el AST mediante el enumerado [`SymbolType`](file:///home/francisco/compiler/include/symbol_table.h#L16-L20) definido en [`include/symbol_table.h`](file:///home/francisco/compiler/include/symbol_table.h):
+El compilador clasifica todas las entidades semánticas registradas en los entornos o referenciadas en el AST mediante el enumerado [`SymbolType`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L16-L20) definido en [`include/symbol_table.h`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h):
 
 ```c
 typedef enum SymbolType {
@@ -34,7 +34,7 @@ typedef enum SymbolType {
 } SymbolType;
 ```
 
-Cada entidad en memoria dinámica se modela a través de la estructura [`Symbol`](file:///home/francisco/compiler/include/symbol_table.h#L25-L35):
+Cada entidad en memoria dinámica se modela a través de la estructura [`Symbol`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L25-L35):
 
 ```c
 typedef struct Symbol {
@@ -52,14 +52,14 @@ typedef struct Symbol {
 
 ### Las 3 Variantes de `SymbolType` y Uso de Cada Campo
 
-A continuación se describen las 3 variantes de [`SymbolType`](file:///home/francisco/compiler/include/symbol_table.h#L16-L20), su propósito semántico en el compilador y para qué se utiliza cada campo de [`Symbol`](file:///home/francisco/compiler/include/symbol_table.h#L25-L35):
+A continuación se describen las 3 variantes de [`SymbolType`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L16-L20), su propósito semántico en el compilador y para qué se utiliza cada campo de [`Symbol`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L25-L35):
 
 #### 1. `VARIABLE_SYMBOL` (Variables y Parámetros)
 Representa identificadores de variables locales, variables globales y parámetros formales dentro de métodos.
 
-- **`id` (`char*`):** Almacena el nombre textual del identificador en el código fuente (duplicado en el heap mediante `strdup`, por ejemplo `"x"`, `"total"`). Es utilizado por [`lookupSymbol`](file:///home/francisco/compiler/include/symbol_table.h#L112) y [`lookupSymbolInScope`](file:///home/francisco/compiler/include/symbol_table.h#L97) para la resolución de identificadores en expresiones y asignaciones, y para prevenir declaraciones duplicadas dentro del mismo ámbito.
-- **`uid` (`int`):** Identificador numérico único incremental ($\ge 1$) asignado por [`appendSymbol`](file:///home/francisco/compiler/include/symbol_table.h#L83) al registrar la variable en su [`Scope`](file:///home/francisco/compiler/include/symbol_table.h#L65). Permite resolver colisiones por sombreado (*shadowing*) distinguiendo variables con el mismo nombre en distintos bloques. En etapas posteriores (código intermedio TAC y código objeto), el `uid` identifica unívocamente la variable y determina su ubicación en el marco de activación / stack (`FunctionFrame`). Si el símbolo es temporal o no ha sido declarado, se mantiene en `0`.
-- **`type` (`DataType`):** Tipo de dato estático declarado para la variable (`TYPE_INT`, `TYPE_FLOAT` o `TYPE_BOOL`). Es consumido por [`type_checker.c`](file:///home/francisco/compiler/src/type_checker.c) para chequear la validez de operaciones aritméticas/lógicas, verificar asignaciones mediante [`isAssignable`](file:///home/francisco/compiler/include/type_checker.h#L40) y aplicar coerciones de tipo si corresponde.
+- **`id` (`char*`):** Almacena el nombre textual del identificador en el código fuente (duplicado en el heap mediante `strdup`, por ejemplo `"x"`, `"total"`). Es utilizado por [`lookupSymbol`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L112) y [`lookupSymbolInScope`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L97) para la resolución de identificadores en expresiones y asignaciones, y para prevenir declaraciones duplicadas dentro del mismo ámbito.
+- **`uid` (`int`):** Identificador numérico único incremental ($\ge 1$) asignado por [`appendSymbol`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L83) al registrar la variable en su [`Scope`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L65). Permite resolver colisiones por sombreado (*shadowing*) distinguiendo variables con el mismo nombre en distintos bloques. En etapas posteriores (código intermedio TAC y código objeto), el `uid` identifica unívocamente la variable y determina su ubicación en el marco de activación / stack (`FunctionFrame`). Si el símbolo es temporal o no ha sido declarado, se mantiene en `0`.
+- **`type` (`DataType`):** Tipo de dato estático declarado para la variable (`TYPE_INT`, `TYPE_FLOAT` o `TYPE_BOOL`). Es consumido por [`type_checker.c`](https://github.com/julivarea/compiler/blob/main/src/type_checker.c) para chequear la validez de operaciones aritméticas/lógicas, verificar asignaciones mediante [`isAssignable`](https://github.com/julivarea/compiler/blob/main/include/type_checker.h#L40) y aplicar coerciones de tipo si corresponde.
 - **`symbolType`:** Fijo en `VARIABLE_SYMBOL`. Permite al analizador semántico comprobar que el identificador usado en una asignación (`x = ...`) o expresión sea efectivamente una variable y no un método (evita que se use un método como valor o se intente asignar a una función).
 - **`parameters` (`NodeAST*`):** No se utiliza (`NULL`), ya que las variables y parámetros no definen una firma de parámetros.
 - **`value` (`union`):** No se utiliza durante el análisis semántico. Las variables obtienen su valor dinámico en tiempo de ejecución o mediante instrucciones TAC (`TAC_ASSIGN`).
@@ -67,7 +67,7 @@ Representa identificadores de variables locales, variables globales y parámetro
 #### 2. `METHOD_SYMBOL` (Métodos y Funciones)
 Representa la firma y declaración de una función o método en el ámbito global (incluyendo el punto de entrada obligatorio `main`).
 
-- **`id` (`char*`):** Nombre textual de la función (ej. `"factorial"`, `"main"`). Se usa para registrar el método en el ámbito global (`level = 0`) y resolver invocaciones (`METHOD_CALL_NODE`) en cualquier punto del programa mediante [`lookupSymbol`](file:///home/francisco/compiler/include/symbol_table.h#L112).
+- **`id` (`char*`):** Nombre textual de la función (ej. `"factorial"`, `"main"`). Se usa para registrar el método en el ámbito global (`level = 0`) y resolver invocaciones (`METHOD_CALL_NODE`) en cualquier punto del programa mediante [`lookupSymbol`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L112).
 - **`uid` (`int`):** Identificador único asignado al insertar el método en el ámbito global. Sirve de referencia unívoca para rotular etiquetas y saltos en la generación de código intermedio (`TAC_LABEL`, `TAC_CALL`) y en las directivas de ensamblador.
 - **`type` (`DataType`):** Tipo de dato retornado por el método (`TYPE_INT`, `TYPE_FLOAT`, `TYPE_BOOL` o `TYPE_VOID`). Se usa para:
   - Validar que las sentencias `return` dentro de su cuerpo retornen expresiones de tipo compatible (`isAssignable`).
@@ -76,8 +76,8 @@ Representa la firma y declaración de una función o método en el ámbito globa
 - **`symbolType`:** Fijo en `METHOD_SYMBOL`. Permite distinguir llamadas a métodos de usos de variables, impidiendo invocar una variable como función (ej. `mi_variable()`) o asignar a un método.
 - **`parameters` (`NodeAST*`):** Puntero directo al subárbol del AST (`PARAMETERS_NODE`) que contiene la lista de parámetros formales declarados. Se utiliza para:
   - **Validación de aridad:** Comprobar que la cantidad de argumentos provistos en la llamada (`node->childCount`) coincida exactamente con la cantidad de parámetros esperados (`parameters->childCount`).
-  - **Chequeo de tipos en invocación:** Recorrer ordenadamente los argumentos reales e inspeccionar con [`isAssignable`](file:///home/francisco/compiler/include/type_checker.h#L40) que cada uno sea compatible con el tipo del parámetro formal en esa posición (`parameters->children[i]->type`).
-  - **Poblado del ámbito local:** Al abrir el [`Scope`](file:///home/francisco/compiler/include/symbol_table.h#L65) del cuerpo del método, cada parámetro formal de este subárbol se inserta como una variable local (`VARIABLE_SYMBOL`).
+  - **Chequeo de tipos en invocación:** Recorrer ordenadamente los argumentos reales e inspeccionar con [`isAssignable`](https://github.com/julivarea/compiler/blob/main/include/type_checker.h#L40) que cada uno sea compatible con el tipo del parámetro formal en esa posición (`parameters->children[i]->type`).
+  - **Poblado del ámbito local:** Al abrir el [`Scope`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L65) del cuerpo del método, cada parámetro formal de este subárbol se inserta como una variable local (`VARIABLE_SYMBOL`).
 - **`value` (`union`):** No se utiliza en esta variante.
 
 #### 3. `CONSTANT_SYMBOL` (Literales y Constantes Primitivas)
@@ -95,7 +95,7 @@ Representa valores inmediatos o literales numéricos y booleanos presentes en la
 
 ### Resumen de Uso de Campos según la Variante
 
-| Campo en [`Symbol`](file:///home/francisco/compiler/include/symbol_table.h#L25-L35) | `VARIABLE_SYMBOL` | `METHOD_SYMBOL` | `CONSTANT_SYMBOL` |
+| Campo en [`Symbol`](https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L25-L35) | `VARIABLE_SYMBOL` | `METHOD_SYMBOL` | `CONSTANT_SYMBOL` |
 | :--- | :--- | :--- | :--- |
 | **`id`** | Nombre de la variable (`char*`) | Nombre de la función (`char*`) | `NULL` (anónimo) |
 | **`uid`** | Secuencial único ($\ge 1$, $0$ si no declarada) | Secuencial único ($\ge 1$) | `0` (no registrado en `Scope`) |

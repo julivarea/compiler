@@ -76,6 +76,15 @@ nav:
       - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md
       - Explicación Conflicto Bison: lexico-sintactico/notas/explicacion_conflicto_bison.md
       - Notas Definición AST: lexico-sintactico/notas/notes_to_ast_definition.md
+      - Algoritmo de Sethi-Ullman: notas/algoritmo_sethi_ullman.md
+  - Convenciones del Código:
+      - Estilo y Organización: refactor.md
+      - Comentarios y Doxygen: convenciones_comentarios.md
+  - Bugs Resueltos:
+      - Asignación a un método: bugs/asignacion_de_metodo.md
+      - Doble return: bugs/doble_return.md
+      - Redefinición de un parámetro: bugs/redefinicion_parametro_en_metodo.md
+      - Casteos en una comparación: bugs/tipos_casteados_en_op_bin.md
 
 markdown_extensions:
   - admonition

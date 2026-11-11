@@ -1,3 +1,5 @@
+# Bug: doble `return` en un método
+
 Estado: FIXEADO 
 
 Problema: el analisis sintactico no verificaba si habia dos returns

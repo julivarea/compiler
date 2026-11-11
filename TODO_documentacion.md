@@ -323,6 +323,55 @@ avisos y ningún link roto.
 
 ---
 
+## Las 7 páginas invisibles y los 18 links rotos — HECHO (cierra el sitio)
+
+Última limpieza. El código ya estaba cubierto al 100%, pero **levantar el sitio
+no mostraba todo lo escrito**: siete páginas existían en `documentacion/` y no
+estaban en el `nav:` de `mkdocs.yml`, o sea que no aparecían en ningún menú. 584
+líneas invisibles, y tres grupos de ellas eran material de defensa:
+
+| Sección nueva del menú | Páginas | Por qué importa |
+| --- | --- | --- |
+| **Bugs Resueltos** | las 4 de `bugs/` | Cuatro bugs reales con el programa que los disparó, la traza y el fix. Es la respuesta a "contame un problema que tuvieron y cómo lo resolvieron" |
+| **Convenciones del Código** | `refactor.md`, `convenciones_comentarios.md` | La metáfora del periódico, la regla del paso descendente y el formato Doxygen. Varias fichas invocan ese criterio sin que estuviera visible |
+| *Documentación Técnica* (existente) | `notas/algoritmo_sethi_ullman.md` | Teoría de generación óptima de código para expresiones. Un algoritmo que **no** implementamos: candidato a pregunta de extensión |
+
+Ahora el `nav:` tiene **34 entradas y 34 páginas**: no queda ninguna huérfana.
+
+También:
+
+- **Los 18 links `file:///home/francisco/...`** de `analisis-semantico.md` (15) y
+  `convenciones_comentarios.md` (3) ahora apuntan a
+  `https://github.com/julivarea/compiler/blob/main/...`, **conservando los
+  anclajes de línea** (`#L16-L20`). Antes solo funcionaban en la máquina de Fran;
+  ahora funcionan para cualquiera que lea el sitio, incluido el profe.
+- **Título `H1` en tres de las cuatro páginas de `bugs/`.** No lo tenían, así que
+  en el sitio la página arrancaba con "Problema:" y no se sabía de qué bug era.
+
+### Contradicción encontrada entre dos páginas
+
+La portada listaba como problema conocido que **`-target interp` termina con
+código 0 aunque el intérprete reporte un error**, y F19 decía lo contrario: que
+eso se había corregido. Verificado ejecutando un `10 / 0` interpretado:
+
+```
+Error semantico en la linea 0: Division por cero.
+exit = 1
+```
+
+**F19 tenía razón y la portada estaba desactualizada.** El driver cierra el caso
+con `return (semantic_errors > 0) ? 1 : 0;`, así que el fallo se propaga. Lo que
+sigue siendo cierto —y es lo que quedó escrito— es que el mensaje sale como error
+semántico y sin número de línea, porque `evaluateBinaryOperator` no recibe el
+nodo. Dos páginas que se contradicen es justo lo que no puede pasar en una
+defensa.
+
+Verificado: el sitio arma con `--strict` sin un solo aviso, ningún link interno
+roto, y los cinco archivos a los que apuntan los links nuevos de GitHub existen
+en el repo.
+
+---
+
 ## Inventario completo
 
 Los **44 archivos** de `include/` y `src/` están repartidos en 19 fichas, cada

@@ -1,3 +1,5 @@
+# Bug: asignación a un método
+
 Problema: Se estaba aceptando que podiamos hacer asignaciones, sin verificar que el simbolo
 al que estabamos asignando sea una variable
 

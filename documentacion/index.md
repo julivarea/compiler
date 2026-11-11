@@ -125,7 +125,15 @@ podía producir.
   compilador hasta cada fase en el orden en que se ejecutan.
 - La sección **Documentación Técnica** del menú es material de consulta puntual
   (decisiones de diseño del AST, alcance del análisis semántico, el conflicto de
-  Bison), no está pensada para leerse de corrido.
+  Bison, el algoritmo de Sethi-Ullman), no está pensada para leerse de corrido.
+- **Convenciones del Código** explica por qué los archivos están organizados como
+  están: la metáfora del periódico, la regla del paso descendente y el formato de
+  los comentarios. Es la respuesta a "¿por qué este archivo se lee de arriba
+  hacia abajo de lo general a lo particular?", que es un criterio que las fichas
+  invocan seguido.
+- **Bugs Resueltos** son cuatro bugs reales del proyecto, cada uno con el programa
+  que lo disparó, la traza y la corrección. Están ahí porque el *cómo se
+  encontró* es tan parte del proyecto como el código final.
 
 ## Estructura del repositorio
 
@@ -172,8 +180,10 @@ El pipeline está modularizado por fase, y cada módulo tiene su cabecera en
   no está garantizado. La división y el módulo sí están protegidos, tanto contra
   el divisor cero como contra el único desborde posible (`INT_MIN / -1`). Se
   detectó compilando el proyecto con UBSan.
-- **Los errores de ejecución del intérprete se reportan como errores
-  semánticos y sin número de línea**, y `-target interp` termina con código 0
-  aunque los haya reportado. Está asumido: el intérprete no es entregable, el
-  mensaje igual sale por `stderr`, y arreglarlo pedía un contador de errores de
-  ejecución propio que no se justifica.
+- **Los errores de ejecución del intérprete se reportan como errores semánticos
+  y sin número de línea.** Reusan `semanticError`, así que un `10 / 0`
+  interpretado sale como `Error semantico en la linea 0: Division por cero.`: no
+  es semántico y no tiene línea, porque `evaluateBinaryOperator` no recibe el
+  nodo. Está asumido. El **código de salida sí es correcto**: `-target interp`
+  devuelve 1 cuando el intérprete reportó algo, porque el driver consulta
+  `semantic_errors` al terminar.

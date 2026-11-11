@@ -1,3 +1,5 @@
+# Bug: casteos ignorados en una comparación
+
 Problema: para la comparacion booleana se estaba viendo que sean del mismo tipo, ignorando los casteos de int a float
 por lo tanto, estaba marcando error cuando es totalmente valido
 
