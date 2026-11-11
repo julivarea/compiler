@@ -35,7 +35,7 @@ extern NodeAST *astRoot;
 
 %token VOID INT FLOAT BOOLEAN IF ELSE WHILE RETURN
 
-%token EQ AND OR NOT
+%token EQ AND OR NOT 
 
 %token <strval> ID
 %token <intval> NUMBER BOOL_CONST
@@ -49,7 +49,7 @@ extern NodeAST *astRoot;
 %left '*' '/' '%'       /* multiplicación, división, resto */
 %precedence NOT UMINUS  /* negación lógica ! y menos unario */
 
-%type <node> Program Statement Expression MethodCall Block MethodDeclaration ParameterList
+%type <node> Program Statement Expression MethodCall Block MethodDeclaration ParameterList Assignment
 %type <dataType> Type
 %type <array> VariableDeclaration IdentifierList ArgumentList VariableDeclarations Statements Parameters Declarations Declaration
 
@@ -122,7 +122,7 @@ Statements
     ;
 
 Statement
-    : ID '=' Expression ';'                     { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, VARIABLE_SYMBOL, TYPE_VOID, NULL), $3, NULL, NULL); }
+    : Assignment ';'                            { $$ = $1; }
     | MethodCall ';'                            { $$ = $1; }
     | RETURN Expression ';'                     { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); }
     | RETURN ';'                                { $$ = newNode(RETURN_NODE, NULL, NULL, NULL, NULL); }
@@ -131,6 +131,10 @@ Statement
     | IF '(' Expression ')' Block               { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, NULL); }
     | IF '(' Expression ')' Block ELSE Block    { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, $7); }
     | ';'                                       { $$ = NULL; }
+    ;
+
+Assignment
+    : ID '=' Expression                         { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, VARIABLE_SYMBOL, TYPE_VOID, NULL), $3, NULL, NULL); }
     ;
 
 MethodCall
