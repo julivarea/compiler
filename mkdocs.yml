@@ -77,6 +77,7 @@ nav:
       - Explicación Conflicto Bison: lexico-sintactico/notas/explicacion_conflicto_bison.md
       - Notas Definición AST: lexico-sintactico/notas/notes_to_ast_definition.md
       - Algoritmo de Sethi-Ullman: notas/algoritmo_sethi_ullman.md
+      - Cambios a Etapas Anteriores: cambios-etapas-anteriores.md
   - Convenciones del Código:
       - Estilo y Organización: refactor.md
       - Comentarios y Doxygen: convenciones_comentarios.md

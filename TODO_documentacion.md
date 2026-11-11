@@ -372,6 +372,89 @@ en el repo.
 
 ---
 
+## Requisitos del enunciado: auditoría y cierre de 2 de los 3 huecos
+
+Auditados los cinco puntos que el PDF exige para la documentación de cada etapa
+(`spec/00-TDS-proyecto.pdf`, pág. 4). Resultado:
+
+| Requisito | Estado |
+| --- | --- |
+| 1. Cómo fue **dividido el trabajo** en la etapa | **FALTA** — ver abajo |
+| 2. Decisiones de diseño, asunciones, aclaraciones o extensiones | Cubierto: *Extensiones sobre el enunciado* en la portada + cada ficha |
+| 3. Diseño y decisiones clave, alternativas, **cambios a etapas anteriores**, **alternativa para cada deficiencia** | **HECHO en esta ronda** (faltaban las dos últimas partes) |
+| 4. Detalles de implementación interesantes | Cubierto: es el grueso del wiki |
+| 5. Problemas conocidos con cómo se detectaron | Cubierto y ampliado en esta ronda |
+| Documentación **en los archivos fuente** | 21/22 headers con `@file` y Doxygen; la convención está formalizada |
+
+### Hecho: página *Cambios a Etapas Anteriores*
+
+El requisito 3 cierra con *"incluir los cambios realizados en etapas anteriores
+y explicar la necesidad de los mismos"* y no había **ninguna** página que los
+juntara. Reconstruidos desde el historial de git y las fichas: trece cambios,
+agrupados por la etapa que modificaron.
+
+El hallazgo al armarla es que hay **un patrón y conviene enunciarlo**: casi
+todos los cambios al front-end salieron de necesidades del back-end. Hasta que
+no hubo que generar código, varias cosas del análisis parecían correctas.
+
+Los que más se van a preguntar:
+
+- **`hasExecute` se agregó al `NodeAST` y se quitó el mismo día** (`88d6af3` →
+  `e4e3f2c`). Se agregó para que el optimizador marcara nodos a no emitir sin
+  desenganchar el árbol; se quitó porque ninguna optimización terminó trabajando
+  sobre el AST sino sobre el TAC, donde sacar un elemento es trivial. Es la
+  respuesta a "¿por qué no optimizaron el árbol?".
+- **`BINARYOPERATOR_NODE` → `OPERATOR_NODE`** (`abd6c11`): el nombre mentía,
+  porque ese nodo también representa los unarios. En el mismo commit
+  `OP_NEGATIVE`/`OP_NEGATION` pasaron a `OP_UMINUS`/`OP_NOT` —que es el renombre
+  que `CLAUDE.md` todavía no refleja— y las siete macros `GET_*` se unificaron
+  sobre `GET_CHILD`.
+- **Los errores léxicos no abortaban la compilación** (`124e166`, durante la
+  etapa de TAC). Un error léxico imprimía su mensaje y el compilador seguía;
+  con el generador en el medio, un programa con basura léxica llegaba a generar
+  código. De ahí salió la separación en tres contadores de error.
+- **Los constructores `makeIntSymbol` y compañía los pidió el intérprete**
+  (`6b74fba`): un cambio a la tabla de símbolos —etapa 2— hecho durante una
+  extensión, que le sacó 131 líneas a `interpreter.c`.
+- **`paramCount` quedó obsoleto por el soporte de `float`** (`7d7d328`): con dos
+  secuencias de registros, un contador único de parámetros no significa nada.
+
+La página cierra con un apartado de **lo que no cambió** —la gramática, las
+catorce reglas semánticas y el formato del TAC— porque decir qué se mantuvo
+estable es tan informativo como listar los cambios.
+
+### Hecho: alternativa propuesta para cada problema conocido
+
+El mismo requisito 3 pide que *"todas las deficiencias detectadas deben ser
+discutidas y se debe proponer una alternativa de diseño y/o implementación"*. La
+lista de la portada enunciaba tres problemas **sin** decir cómo se arreglarían.
+Ahora son **siete**, y cada uno tiene cómo se detectó y la alternativa concreta:
+
+| Problema | Alternativa propuesta |
+| --- | --- |
+| Sin declaración adelantada de métodos | Pasada previa que registre los `METHOD_DECLARATION_NODE` antes de analizar los cuerpos |
+| Desborde con signo al plegar `+`, `-`, `*` | Verificar antes de operar y devolver `false`, igual que ya hacen `/` y `%` |
+| `-0.0` no se puede producir | `xorps` contra una máscara `0x80000000` en vez de restar `0 - x` |
+| Errores del intérprete reportados como semánticos | Contador propio y propagar el `line` del nodo. Deuda consciente |
+| `emitCondition` es código muerto | Completar la sustitución en `generateOperatorCode` o eliminarla |
+| Símbolos provisorios huérfanos | Liberar antes de reemplazar el puntero, en los dos lugares |
+| Mirilla sobre assembly sin implementar | Trabajar sobre `asm_instruction` antes de imprimir, no sobre el texto |
+
+Los siete están **verificados**, no supuestos: el `-0.0` ejecutando, el del
+intérprete midiendo el código de salida, el de `emitCondition` con `-Wall`, el
+de los símbolos con ASan y el del desborde con UBSan.
+
+### Queda: la división del trabajo (requisito 1)
+
+Es el único punto que **no se puede escribir sin los datos del grupo**. El
+enunciado pide *"una breve descripción de cómo fue dividido el trabajo en la
+presente etapa"*; hoy los tres nombres aparecen como autores y nada más. Con un
+renglón por etapa diciendo quién hizo qué alcanza. Aclara el PDF que **no afecta
+la calificación de los integrantes**: sirve para detectar problemas de
+coordinación.
+
+---
+
 ## Inventario completo
 
 Los **44 archivos** de `include/` y `src/` están repartidos en 19 fichas, cada

@@ -134,6 +134,9 @@ podía producir.
 - **Bugs Resueltos** son cuatro bugs reales del proyecto, cada uno con el programa
   que lo disparó, la traza y la corrección. Están ahí porque el *cómo se
   encontró* es tan parte del proyecto como el código final.
+- [**Cambios a etapas anteriores**](cambios-etapas-anteriores.md) junta todo lo
+  que se tocó de una fase ya entregada mientras se trabajaba en una posterior,
+  con el motivo de cada cambio.
 
 ## Estructura del repositorio
 
@@ -169,21 +172,116 @@ El pipeline está modularizado por fase, y cada módulo tiene su cabecera en
 
 ## Problemas conocidos
 
-- **Un método solo ve a los declarados antes que él.** No hay declaración
-  adelantada en C-TDS, así que `main(){ g(); }` con `g` definido más abajo da
-  `Método no declarado`. Es lo que pide la letra ("todo se declara antes de
-  usarse"), pero conviene tenerlo presente al escribir ejemplos.
-- **El plegado de constantes desborda con signo en `+`, `-` y `*`.** Al plegar
-  una expresión como `2147483647 * 3` el cálculo se hace en `int`, lo que en C es
-  comportamiento indefinido. Hoy no se nota, porque GCC envuelve en silencio y el
-  resultado coincide con el que produciría el assembly generado, pero formalmente
-  no está garantizado. La división y el módulo sí están protegidos, tanto contra
-  el divisor cero como contra el único desborde posible (`INT_MIN / -1`). Se
-  detectó compilando el proyecto con UBSan.
-- **Los errores de ejecución del intérprete se reportan como errores semánticos
-  y sin número de línea.** Reusan `semanticError`, así que un `10 / 0`
-  interpretado sale como `Error semantico en la linea 0: Division por cero.`: no
-  es semántico y no tiene línea, porque `evaluateBinaryOperator` no recibe el
-  nodo. Está asumido. El **código de salida sí es correcto**: `-target interp`
-  devuelve 1 cuando el intérprete reportó algo, porque el driver consulta
-  `semantic_errors` al terminar.
+El enunciado pide que toda deficiencia detectada se discuta **y se proponga una
+alternativa**, así que cada punto lleva cómo se detectó y cómo se arreglaría.
+
+### Un método solo ve a los declarados antes que él
+
+No hay declaración adelantada en C-TDS, así que `main(){ g(); }` con `g`
+definido más abajo da `Método no declarado`.
+
+- **Cómo se detectó:** escribiendo programas de ejemplo con los métodos en otro
+  orden.
+- **Es lo que pide la letra** ("todo se declara antes de usarse"), así que no es
+  un bug; conviene tenerlo presente al escribir casos de test.
+- **Alternativa, si alguna vez se quisiera permitir:** una **pasada previa** que
+  recorra los hijos de la raíz y registre todos los `METHOD_DECLARATION_NODE` en
+  el ámbito global antes de analizar los cuerpos. Son pocas líneas en
+  `analyzeSemantics` y no afecta a ninguna fase posterior, porque el TAC ya se
+  genera recorriendo los métodos en orden y las llamadas se resuelven por
+  nombre.
+
+### El plegado de constantes desborda con signo en `+`, `-` y `*`
+
+Al plegar `2147483647 * 3` el cálculo se hace en `int`, lo que en C es
+comportamiento indefinido.
+
+- **Cómo se detectó:** compilando el proyecto con **UBSan** y corriendo la
+  batería de ejemplos.
+- **Hoy no se nota:** GCC envuelve en silencio y el resultado coincide con el
+  que produciría el assembly generado. Formalmente no está garantizado.
+- **La división y el módulo sí están protegidos**, tanto contra el divisor cero
+  como contra el único desborde posible (`INT_MIN / -1`).
+- **Alternativa:** la misma forma que ya usan `/` y `%`. `evaluateBinary`
+  devuelve `bool`, y devolver `false` significa "no se puede plegar": alcanza
+  con verificar el desborde **antes** de operar —con los built-ins
+  `__builtin_add_overflow` y compañía, o comparando contra `INT_MAX`/`INT_MIN`—
+  y dejar la instrucción sin plegar cuando desbordaría. El programa compilado
+  haría entonces la cuenta en ejecución, que es exactamente lo que haría sin el
+  optimizador.
+
+### `-0.0` no se puede producir
+
+`emitUnaryMinus` niega un real como `0 - x`, y en IEEE-754 `0.0 - 0.0` da
+`+0.0`. Negar el cero devuelve cero positivo.
+
+- **Cómo se detectó:** leyendo la emisión del unario al inventariar las
+  funciones de la ficha F18, y verificado ejecutando: con `z = 0.0` y `n = -z`,
+  la comparación `1.0 / n > 0.0` da verdadero, o sea que quedó `+inf`.
+- **No afecta a ninguna operación aritmética del lenguaje**, porque `+0.0` y
+  `-0.0` son iguales para todas las comparaciones de C-TDS.
+- **Alternativa:** invertir el **bit de signo** en lugar de restar, con un
+  `xorps` contra una máscara `0x80000000` guardada en `.rodata`. Es una
+  instrucción y da el resultado exacto, incluido el cero negativo.
+
+### Los errores de ejecución del intérprete se reportan como semánticos
+
+Un `10 / 0` interpretado sale como
+`Error semantico en la linea 0: Division por cero.`
+
+- **Cómo se detectó:** probando el intérprete contra programas con división por
+  cero, al usarlo como oráculo de testing.
+- **No es un error semántico y no tiene número de línea**, porque
+  `evaluateBinaryOperator` recibe los valores y no el nodo del AST. El **código
+  de salida sí es correcto**: `-target interp` devuelve 1, porque el driver
+  consulta `semantic_errors` al terminar.
+- **Alternativa:** un contador propio de errores de ejecución en el intérprete,
+  con su función de reporte, y pasar el `line` del nodo hasta la evaluación de
+  la operación. Son dos parámetros más en tres funciones.
+- **Por qué no se hizo:** el intérprete es una extensión fuera de la entrega, el
+  mensaje igual sale por `stderr` con el texto correcto y el código de salida ya
+  distingue éxito de fracaso. Queda anotado como deuda consciente.
+
+### `emitCondition` es código muerto
+
+En `intermediate_code.c` hay un emisor declarado, definido y **sin ningún
+llamador**.
+
+- **Cómo se detectó:** GCC con `-Wall` lo avisa
+  (`'emitCondition' defined but not used`) al revisar la capa de emisores del
+  TAC.
+- **Alternativa:** o se completa la sustitución —`generateOperatorCode` hace a
+  mano lo que la función encapsula— o se elimina. Las dos son correctas; lo que
+  no conviene es dejar el aviso del compilador encendido, porque entrena a
+  ignorarlos.
+
+### Los símbolos provisorios del parser quedan huérfanos
+
+El parser crea un `Symbol` provisorio por cada aparición de un identificador, y
+el análisis semántico sobrescribe el puntero al resolverlo contra la tabla **sin
+liberar el provisorio**.
+
+- **Cómo se detectó:** con **ASan**. Medido: `void main(){ }` pierde 6
+  asignaciones; con una asignación en el programa, 8; con cuatro, 14.
+- **Es acotado** —no crece con la ejecución, solo con el tamaño del programa— y
+  el sistema operativo lo recupera al terminar, así que no afecta a la
+  corrección de ninguna compilación.
+- **Alternativa:** liberar el símbolo provisorio antes de reemplazar el puntero,
+  en los dos lugares donde eso pasa: `analyzeAssignmentNode` en
+  `semantic_analyzer.c` y `analyzeIdentifier` en `type_checker.c`. Está
+  explicado en la [ficha F07](wiki/02.7-parser-actions.md).
+
+### Las tres optimizaciones de mirilla sobre assembly
+
+`peephole` hoy actúa sobre el TAC (saltos redundantes); los tres patrones
+pensados sobre el assembly emitido —pares `movl` redundantes, `movl $0`
+acortable a `xorl`— no están implementados.
+
+- **Cómo se detectó:** al cerrar el catálogo de optimizaciones contra la lista
+  acordada.
+- **Alternativa:** trabajar sobre `asm_instruction` **antes** de imprimirlo, no
+  sobre el texto ya emitido. El modelo de instrucciones existe justamente para
+  eso: una pasada sobre la secuencia de `AsmInstruction` puede reconocer los
+  patrones de forma estructural, mientras que hacerlo sobre el texto obligaría a
+  parsear de vuelta lo que se acaba de generar. Está en la
+  [ficha F15](wiki/05.9-optimizer.md).
