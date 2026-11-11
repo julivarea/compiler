@@ -2,7 +2,7 @@
 
 **Ficha F12** · Archivos: `include/tac_operation.h`, `include/tac_operand.h`,
 `src/tac_operand.c`, `include/tac_instruction.h`, `src/tac_instruction.c`,
-`include/tac_list.h`, `src/tac_list.c` (659 líneas)
+`include/tac_list.h`, `src/tac_list.c` (680 líneas)
 
 La estructura de datos del **Código de Tres Direcciones**: el puente entre el
 front-end y el back-end.
@@ -403,9 +403,18 @@ la lista y generar el TAC sería cuadrático.
 | Función | Qué hace |
 | --- | --- |
 | `createTACList()` | Lista vacía |
-| `appendInstruction(list, op, result, first, second)` | Crea la instrucción y la enlaza al final |
+| `createTACInstruction(op, result, first, second)` | Reserva una instrucción **sin enlazarla** |
+| `appendTACInstruction(list, instruction)` | Enlaza al final una instrucción **ya creada**, en O(1) |
+| `appendInstruction(list, op, result, first, second)` | Crea y enlaza: `createTACInstruction` + `appendTACInstruction` |
+| `freeTACInstruction(instruction)` | Libera una instrucción suelta, sin seguir el `next` |
 | `freeTACList(list)` | Recorre liberando cada instrucción y después el contenedor |
 | `formatTACList(list)` | Vuelca la lista entera al `string_builder` |
+
+**La creación y el enlazado están separados**, y `appendInstruction` es la
+composición de los dos. Esa separación permite que un llamador cree la
+instrucción, decida algo mirándola y solo entonces la enlace; es lo que usa el
+`emit` del generador (ver la [ficha F13](05.5-tac-generation.md)) para
+distinguir "no se pudo reservar" de "no se pudo enlazar".
 
 **`appendInstruction` devuelve la instrucción que creó.** Eso lo usa el generador
 cuando necesita retocar una instrucción después de emitirla, que es la técnica

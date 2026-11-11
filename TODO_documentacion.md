@@ -103,6 +103,51 @@ para agregar a `analisis-semantico.md` cuando se toque.
 
 ---
 
+## Al día con el refactor del generador de TAC — HECHO
+
+Después de cerrar el inventario entraron tres commits que dejaron dos fichas
+**contradiciendo el código**, no solo con nombres faltantes:
+
+| Commit | Qué cambió | Ficha afectada |
+| --- | --- | --- |
+| `1d9a143 refactor(ir): semantic emitter helpers` | 17 emisores nuevos en `intermediate_code.c` (24 → 41 funciones), `appendTACInstruction` en `tac_list` | **F13**, **F12** |
+| `88becbe simplify statmnet` | No terminal `Assignment` extraído de `Statement` en `bison.y` | **F06** |
+
+Resuelto así:
+
+- **F13** tiene una sección nueva (§4) sobre **la capa de emisores semánticos**:
+  por qué existen —una cuádrupla tiene cuatro campos y cada opcode usa solo
+  algunos, así que llamar al `emit` genérico obligaba a recordar qué va en cada
+  posición—, la tabla de los diecisiete con qué resuelve cada uno, y el contraste
+  que mejor lo ilustra: `TAC_LABEL` pone la etiqueta en `result` y `TAC_GOTO` en
+  `firstOperand`, asimetría que era fuente de error y que `emitLabel`/`emitGoto`
+  eliminan. Se actualizaron los **seis fragmentos de código** que mostraban la
+  forma vieja.
+- **F12** documenta ahora la separación entre `createTACInstruction` (reserva) y
+  `appendTACInstruction` (enlaza), con `appendInstruction` como composición de las
+  dos, y por qué el `emit` del generador la aprovecha.
+- **F06** refleja el no terminal `Assignment`, y se explicó **para qué sirve**:
+  es una asignación sin el punto y coma, que es exactamente la pieza que la
+  cabecera de un `for` necesita. La sección de extensión del `for` se actualizó
+  para usarla (`FOR '(' Assignment ';' Expression ';' Assignment ')' Block`), que
+  es mejor que la forma que tenía antes.
+
+**Hallazgo del refactor: `emitCondition` es código muerto.** Está declarado,
+definido y **ningún generador lo llama**. GCC lo confirma con `-Wall`:
+`'emitCondition' defined but not used`. Es el segundo aviso del proyecto, junto
+al `debugPrintf` de `debug.h`. Queda documentado en F13 §4 con la intención que
+se le ve —encapsular "evaluar una comparación y quedarse con el temporal"— y la
+nota de que la sustitución no se completó.
+
+**Error propio corregido:** F06 decía "las 15 reglas" y **siempre fueron 16**;
+con `Assignment` son **17**. Contado con un script sobre `bison.y`.
+
+Verificado después del refactor: build sin errores, todas las suites en verde, y
+la batería de 6 programas correcta sin optimizar, con `-opt all` y cruzada contra
+el intérprete.
+
+---
+
 ## Inventario completo
 
 Los **44 archivos** de `include/` y `src/` están repartidos en 19 fichas, cada
