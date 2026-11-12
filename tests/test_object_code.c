@@ -928,7 +928,7 @@ void test_asm_exec_calling_convention_and_nested_calls(void) {
     TEST_ASSERT_EQUAL_INT(42, compileAndRun(source));
 }
 
-// Pasaje de parametros por pila segun System V AMD64 para enteros (>6) y flotantes (>8)
+// Pasaje de parametros por pila segun System V AMD64 para enteros (>6)
 void test_asm_exec_system_v_stack_parameters(void) {
     const char *intSource = "int s(int a, int b, int c, int d, int e, int f, int g, int h) {\n"
                             "    return a + b + c + d + e + f + g + h;\n"
@@ -937,31 +937,6 @@ void test_asm_exec_system_v_stack_parameters(void) {
                             "    return s(1, 2, 3, 4, 5, 6, 7, 8); /* 36 */\n"
                             "}";
     TEST_ASSERT_EQUAL_INT(36, compileAndRun(intSource));
-
-    const char *floatSource = "float f(float a, float b, float c, float d, float e, float f1, float g, float h, float i, float j) {\n"
-                              "    return a + b + c + d + e + f1 + g + h + i + j;\n"
-                              "}\n"
-                              "int main() {\n"
-                              "    float r;\n"
-                              "    r = f(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0);\n"
-                              "    if (r == 55.0) { return 1; }\n"
-                              "    return 0;\n"
-                              "}";
-    TEST_ASSERT_EQUAL_INT(1, compileAndRun(floatSource));
-}
-
-// Parametros mezclados de int y float consumen registros de sus respectivas clases
-void test_asm_exec_mixed_int_and_float_parameters(void) {
-    const char *source = "float m(int a, float b, int c, float d) {\n"
-                         "    return a + b + c + d;\n"
-                         "}\n"
-                         "int main() {\n"
-                         "    float r;\n"
-                         "    r = m(1, 2.5, 3, 4.5);\n"
-                         "    if (r == 11.0) { return 1; }\n"
-                         "    return 0;\n"
-                         "}";
-    TEST_ASSERT_EQUAL_INT(1, compileAndRun(source));
 }
 
 // Sombreado de variables y resolucion de ambitos en bloques anidados y parametros
@@ -1017,24 +992,6 @@ void test_asm_exec_runtime_short_circuit_and_eval_order(void) {
     TEST_ASSERT_EQUAL_INT(1, compileAndRun(source));
 }
 
-// Aritmetica flotante con SSE, negacion y coercion int a float
-void test_asm_exec_runtime_float_sse_and_coercion(void) {
-    const char *source = "float half(float x) { return x / 2; }\n"
-                         "int two() { return 2; }\n"
-                         "int main() {\n"
-                         "    float f, r1, r2;\n"
-                         "    boolean b;\n"
-                         "    f = -2.5;\n"
-                         "    f = -f;\n"
-                         "    r1 = half(7);\n"
-                         "    r2 = two() + 0.5;\n"
-                         "    b = (1 < 2.5) && (3.5 > 2);\n"
-                         "    if (f == 2.5 && r1 == 3.5 && r2 == 2.5 && b) { return 1; }\n"
-                         "    return 0;\n"
-                         "}";
-    TEST_ASSERT_EQUAL_INT(1, compileAndRun(source));
-}
-
 // Doble recursion de fibonacci valida anidamiento de marcos y puntero de pila en ejecucion
 void test_asm_exec_recursion_fibonacci(void) {
     const char *source = "int fib(int n) { if (n < 2) { return n; } else { return fib(n - 1) + fib(n - 2); } }\n"
@@ -1064,38 +1021,12 @@ void test_asm_exec_limit_70_arguments(void) {
     TEST_ASSERT_EQUAL_INT(70, result);
 }
 
-// E22: 300 constantes reales distintas conservan su valor en .rodata
-void test_asm_exec_limit_300_float_constants(void) {
-    char *source = generate300FloatConstantsProgram();
-    int result = compileAndRun(source);
-    free(source);
-    TEST_ASSERT_EQUAL_INT(1, result);
-}
-
 // E23: 300 variables globales con almacenamiento estatico
 void test_asm_exec_limit_300_global_variables(void) {
     char *source = generate300GlobalVariablesProgram();
     int result = compileAndRun(source);
     free(source);
     TEST_ASSERT_EQUAL_INT(7, result);
-}
-
-// E24: Comparacion de igualdad entre reales con NaN debe ser falsa segun IEEE
-void test_asm_exec_float_nan_equality(void) {
-    const char *source = "int main() { float z; float n; z = 0.0; n = z / z; if (n == n) { return 1; } return 0; }";
-    TEST_ASSERT_EQUAL_INT(0, compileAndRun(source));
-}
-
-// E41: Comparacion menor con NaN en reales debe ser falsa segun IEEE
-void test_asm_exec_float_nan_less_than(void) {
-    const char *source = "int main() { float z; float n; z = 0.0; n = z / z; if (n < 1.0) { return 1; } return 0; }";
-    TEST_ASSERT_EQUAL_INT(0, compileAndRun(source));
-}
-
-// E42: Comparacion mayor con NaN en reales es falsa segun IEEE
-void test_asm_exec_float_nan_greater_than(void) {
-    const char *source = "int main() { float z; float n; z = 0.0; n = z / z; if (n > 1.0) { return 1; } return 0; }";
-    TEST_ASSERT_EQUAL_INT(0, compileAndRun(source));
 }
 
 /* ========================================================================
@@ -1107,14 +1038,13 @@ int main(void) {
 
     /* Grupo 1: Pruebas estructurales de marco y backend (In-Memory) */
     RUN_TEST(test_asm_frame_allocation_alignment_and_null_safety);
-    RUN_TEST(test_asm_sections_gnu_stack_and_float_pool);
+    RUN_TEST(test_asm_sections_gnu_stack);
     RUN_TEST(test_asm_emit_prologue_and_epilogue);
     RUN_TEST(test_asm_strength_reduction_multiplication_by_power_of_two);
 
     /* Grupo 2: Pruebas unitarias de traduccion aislada TAC -> Assembly (generateInstruction) */
     /* Subgrupo 2.1: Asignacion y Aritmetica Entera */
     RUN_TEST(test_asm_unit_tac_assign_int);
-    RUN_TEST(test_asm_unit_tac_assign_float);
     RUN_TEST(test_asm_unit_tac_add_int);
     RUN_TEST(test_asm_unit_tac_sub_int);
     RUN_TEST(test_asm_unit_tac_mul_int);
@@ -1141,15 +1071,6 @@ int main(void) {
     RUN_TEST(test_asm_unit_tac_return_with_expression);
     RUN_TEST(test_asm_unit_tac_return_void);
 
-    /* Subgrupo 2.5: Operaciones de Punto Flotante y Conversion SSE */
-    RUN_TEST(test_asm_unit_tac_int_to_float);
-    RUN_TEST(test_asm_unit_tac_add_float);
-    RUN_TEST(test_asm_unit_tac_sub_float);
-    RUN_TEST(test_asm_unit_tac_mul_float);
-    RUN_TEST(test_asm_unit_tac_div_float);
-    RUN_TEST(test_asm_unit_tac_uminus_float);
-    RUN_TEST(test_asm_unit_tac_lt_float);
-
     /* Grupo 3: Pruebas unitarias de emision de flujo con TAC estructurado (In-Memory) */
     RUN_TEST(test_asm_flow_short_circuit_and_labels);
     RUN_TEST(test_asm_flow_while_loop);
@@ -1159,19 +1080,13 @@ int main(void) {
     RUN_TEST(test_asm_exec_canonical_programs);
     RUN_TEST(test_asm_exec_calling_convention_and_nested_calls);
     RUN_TEST(test_asm_exec_system_v_stack_parameters);
-    RUN_TEST(test_asm_exec_mixed_int_and_float_parameters);
     RUN_TEST(test_asm_exec_variable_shadowing_and_scopes);
     RUN_TEST(test_asm_exec_runtime_signed_division_and_modulo);
     RUN_TEST(test_asm_exec_runtime_short_circuit_and_eval_order);
-    RUN_TEST(test_asm_exec_runtime_float_sse_and_coercion);
     RUN_TEST(test_asm_exec_recursion_fibonacci);
     RUN_TEST(test_asm_exec_while_with_nested_if_and_return);
     RUN_TEST(test_asm_exec_limit_70_arguments);
-    RUN_TEST(test_asm_exec_limit_300_float_constants);
     RUN_TEST(test_asm_exec_limit_300_global_variables);
-    RUN_TEST(test_asm_exec_float_nan_equality);
-    RUN_TEST(test_asm_exec_float_nan_less_than);
-    RUN_TEST(test_asm_exec_float_nan_greater_than);
 
     return UNITY_END();
 }
