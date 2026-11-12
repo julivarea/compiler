@@ -33,7 +33,6 @@ leer.
 18. [Instrucciones x86-64](06-asm-instructions.md) — `asm_instruction.c`
 19. [Marco de Pila](06.5-stack-frame.md) — `function_frame.c`
 20. [Generación de Código Objeto](06-object-code.md) — `object_code.c`
-21. [Intérprete](07-interpreter.md) — `interpreter.c`, extensión nuestra
 
 ---
 

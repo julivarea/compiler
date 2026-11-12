@@ -44,8 +44,7 @@ compacta:
 
 El valor de retorno se puede descartar, y `driver.c` lo descarta: los nodos del
 AST ya quedaron anotados y apuntando a los símbolos, así que el árbol es la
-salida real de la fase. El ámbito solo hace falta si alguien quiere recorrer la
-tabla después, que es lo que hace el intérprete.
+salida real de la fase.
 
 **No hay un contador de errores en la interfaz.** La fase comunica el resultado a
 través de la variable global `semantic_errors` de `error_handler`, que `driver.c`
@@ -386,7 +385,6 @@ generador de TAC no revalide nada: si llega a ejecutarse, el programa es válido
 | Va hacia | Qué entrega |
 | --- | --- |
 | `intermediate_code.c` (F13) | El **mismo árbol**, anotado: tipos resueltos, `uid` asignados, símbolos apuntando a la tabla. Más la garantía de que el programa es válido |
-| `interpreter.c` (F19) | Ídem, y además el `Scope` devuelto |
 
 El reparto con F10, que es la confusión más natural:
 

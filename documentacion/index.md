@@ -93,19 +93,6 @@ Dos aclaraciones de alcance que sí quedaron por debajo de la especificación:
   así que rechaza algunos programas que la letra permitiría pero nunca acepta uno
   inválido. Está explicado en [F10](wiki/04.5-type-checker.md).
 
-### Intérprete
-
-La tabla de calificación del enunciado incluye un ítem *Intérprete*, pero no
-figura en el cronograma de entregas, y al consultarlo se confirmó que **no hacía
-falta implementarlo**.
-
-Se implementó igual, accesible con `-target interp`. Más allá del ítem, resultó
-útil por una razón concreta de testing: es una **segunda implementación
-independiente** del mismo lenguaje, así que sirve de oráculo contra el generador
-de código. Si el intérprete y el ejecutable compilado difieren sobre el mismo
-programa, uno de los dos tiene un bug. Lo describe la
-[ficha F19](wiki/07-interpreter.md).
-
 ### El valor `sem` de `-target`
 
 El enunciado enumera `scan`, `parse`, `codinter` y `assembly`, pero también lista
@@ -164,7 +151,6 @@ El pipeline está modularizado por fase, y cada módulo tiene su cabecera en
 | Código intermedio | `tac_operation`, `tac_operand`, `tac_instruction`, `tac_list`, `intermediate_code` |
 | Optimización | `optimizer`, `live_variable_analysis` |
 | Código objeto | `asm_instruction`, `function_frame`, `object_code` |
-| Intérprete | `interpreter` |
 | Infraestructura | `cli`, `driver`, `main`, `error_handler`, `string_builder`, `debug` |
 
 `bison.tab.c`, `lex.yy.c`, el contenido de `build/` y el ejecutable
@@ -223,24 +209,6 @@ comportamiento indefinido.
 - **Alternativa:** invertir el **bit de signo** en lugar de restar, con un
   `xorps` contra una máscara `0x80000000` guardada en `.rodata`. Es una
   instrucción y da el resultado exacto, incluido el cero negativo.
-
-### Los errores de ejecución del intérprete se reportan como semánticos
-
-Un `10 / 0` interpretado sale como
-`Error semantico en la linea 0: Division por cero.`
-
-- **Cómo se detectó:** probando el intérprete contra programas con división por
-  cero, al usarlo como oráculo de testing.
-- **No es un error semántico y no tiene número de línea**, porque
-  `evaluateBinaryOperator` recibe los valores y no el nodo del AST. El **código
-  de salida sí es correcto**: `-target interp` devuelve 1, porque el driver
-  consulta `semantic_errors` al terminar.
-- **Alternativa:** un contador propio de errores de ejecución en el intérprete,
-  con su función de reporte, y pasar el `line` del nodo hasta la evaluación de
-  la operación. Son dos parámetros más en tres funciones.
-- **Por qué no se hizo:** el intérprete es una extensión fuera de la entrega, el
-  mensaje igual sale por `stderr` con el texto correcto y el código de salida ya
-  distingue éxito de fracaso. Queda anotado como deuda consciente.
 
 ### `emitCondition` es código muerto
 

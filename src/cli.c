@@ -35,8 +35,6 @@ static const struct {
     {"sem", TARGET_SEM, ".sem"},
     {"codinter", TARGET_CODINTER, ".ci"},
     {"assembly", TARGET_ASSEMBLY, ".ass"},
-    {"interp", TARGET_INTERP, ".interp"},
-    {"interpret", TARGET_INTERP, ".interp"}, 
 };
 
 static void initDefaultOptions(Options *options);
@@ -352,8 +350,6 @@ static void printUsage(const char *program) {
     fprintf(stderr, "  -target <etapa>  Compila hasta esa etapa: ");
     bool first = true;
     for (size_t i = 0; i < sizeof(STAGES) / sizeof(STAGES[0]); i++) {
-        /* imprime cada etapa una sola vez (omite alias como interpret) */
-        if (i > 0 && STAGES[i].target == STAGES[i - 1].target) continue;
         fprintf(stderr, "%s%s", first ? "" : " | ", STAGES[i].name);
         first = false;
     }

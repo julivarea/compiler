@@ -15,8 +15,8 @@ con el nombre `x` no dice qué `x`. La tabla de símbolos responde esa pregunta
 respetando el **anidamiento de ámbitos** del lenguaje, donde una declaración
 interna puede ocultar a una externa del mismo nombre.
 
-Es una estructura de datos, no una fase: la construyen y consultan el
-[análisis semántico](04-semantic-analysis.md) y el intérprete.
+Es una estructura de datos, no una fase: la construye y consulta el
+[análisis semántico](04-semantic-analysis.md).
 
 ---
 
@@ -74,29 +74,19 @@ typedef struct Symbol {
 | `type` | El tipo de dato. En un método es su **tipo de retorno** |
 | `symbolType` | Qué clase de símbolo es, y por lo tanto qué campos tienen sentido |
 | `parameters` | Puntero al `PARAMETERS_NODE` del AST. Es una **referencia hacia atrás** desde la tabla al árbol, y es lo que permite validar los argumentos de una llamada |
-| `value` | El valor de una constante, o el nodo del método para el intérprete |
+| `value` | El valor de una constante |
 
-**La unión tiene tres miembros para tres usos que no coexisten:** `intValue`
-guarda enteros y booleanos (1/0), `floatValue` los reales, y `function` el
-`METHOD_DECLARATION_NODE` que el intérprete necesita para poder ejecutar el
-cuerpo cuando encuentra una llamada. Un símbolo nunca es constante y método a la
-vez, así que la unión no desperdicia nada.
+**La unión tiene dos miembros para dos usos que no coexisten:** `intValue`
+guarda enteros y booleanos (1/0), y `floatValue` los reales. Un símbolo nunca es
+entero y real a la vez, así que la unión no desperdicia nada.
 
-### Las cuatro variantes de `SymbolType`
+### Las tres variantes de `SymbolType`
 
 | Variante | Quién la crea | Qué campos usa |
 | --- | --- | --- |
 | `VARIABLE_SYMBOL` | El parser y `newParameterDeclaration` | `id`, `uid`, `type` |
 | `METHOD_SYMBOL` | `newMethodDeclaration` | `id`, `uid`, `type` (retorno), `parameters` |
 | `CONSTANT_SYMBOL` | Los `new*LiteralNode` y los `make*Symbol` | `type`, `value`. **Sin `id`** |
-| `FUNCTION_ENTRY_SYMBOL` | **Solo el intérprete** (`interpreter.c`) | `id`, `type`, `parameters`, `value.function` |
-
-La cuarta merece la aclaración, porque el header la comenta apenas con
-`// for interpret`: el intérprete necesita registrar los métodos en su propio
-ámbito global guardando **el nodo del AST** en `value.function`, para poder
-ejecutarlo al encontrar la llamada. El compilador no la usa nunca: su camino es
-`METHOD_SYMBOL`. Es la única parte de este módulo que existe por una extensión
-nuestra y no por el compilador propiamente dicho.
 
 ### Las dos vidas de `Symbol`: heap y valor
 
@@ -109,13 +99,13 @@ para la tabla y la otra para evaluar expresiones.
 | Quién lo libera | `freeSymbol`, o `freeScope` si fue registrado | Nadie: vive en la pila |
 | `id` | El que se le pase | Siempre `NULL` (hacen `memset` a 0) |
 | `uid` | 0 hasta que `appendSymbol` lo registre | Siempre 0 |
-| Para qué | **Declaraciones**: lo que se guarda en la tabla | **Valores intermedios** durante la evaluación en el intérprete |
+| Para qué | **Declaraciones**: lo que se guarda en la tabla | **Valores intermedios** de una expresión |
 
 O sea que `Symbol` cumple dos papeles: entrada de tabla de símbolos y
-*resultado de evaluar una expresión*. Los `make*Symbol` existen porque el
-intérprete necesita devolver "un entero con valor 7" de una función, y reusa la
-misma estructura en lugar de definir un tipo propio. Es economía de código a
-costa de que el nombre `Symbol` signifique dos cosas distintas según el contexto.
+*resultado de evaluar una expresión*. Los `make*Symbol` existen para representar
+el valor de una constante o de una expresión reusando la misma estructura en
+lugar de definir un tipo propio. Es economía de código a costa de que el nombre
+`Symbol` signifique dos cosas distintas según el contexto.
 
 ### `newSymbol` adopta el `id`, no lo copia
 
@@ -380,7 +370,6 @@ declarado". Con este orden, `fact(5)` devuelve 120. Verificado.
 | `type_checker.c` (F10) | `lookupSymbol` para resolver cada identificador y leer su tipo |
 | `semantic_analyzer.c` (F11) | `lookupSymbolInScope` para detectar duplicados, `scope->function` para el tipo de retorno |
 | `intermediate_code.c` (F13) | El `uid` de cada símbolo, que se convierte en el sufijo `@n` de los nombres del TAC |
-| `interpreter.c` (F19) | Toda la estructura, usada en tiempo de ejecución con `FUNCTION_ENTRY_SYMBOL` y los `make*Symbol` |
 
 El punto importante: después del análisis semántico, **los símbolos están
 compartidos**. Todos los nodos del AST que mencionan la misma variable apuntan al
@@ -441,7 +430,7 @@ analizar ningún cuerpo. Es un cambio en F11, no acá: la tabla ya soporta el ca
   declarada", muy lejos de la causa.
 - **`Symbol` significa dos cosas** según venga de `newSymbol` o de `make*Symbol`
   (§3). Un `Symbol` por valor con `id == NULL` y `uid == 0` no es una entrada de
-  tabla rota: es un valor intermedio del intérprete.
+  tabla rota: es el valor intermedio de una expresión.
 - **La tabla de símbolos no se libera al terminar.** `freeScope` existe y es
   correcta, pero el compilador no la llama sobre el ámbito global: es parte de las
   fugas que reporta el detector al salir. Es la misma decisión que con el AST.

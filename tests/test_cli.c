@@ -259,22 +259,6 @@ void test_cli_explicit_target_assembly(void) {
     TEST_ASSERT_FALSE(BUILDS_EXECUTABLE(&testOptions));
 }
 
-// -target interp o interpret produce extension .interp
-void test_cli_explicit_target_interp(void) {
-    const char *args1[] = { "mi_compilador", "-target", "interp", "ejemplo.ctds" };
-    int rc1 = parseArgv(4, args1, &testOptions);
-    TEST_ASSERT_EQUAL_INT(0, rc1);
-    TEST_ASSERT_EQUAL_INT(TARGET_INTERP, testOptions.target);
-    TEST_ASSERT_EQUAL_STRING("ejemplo.interp", testOptions.output);
-    freeOptions(&testOptions);
-
-    const char *args2[] = { "mi_compilador", "-target", "interpret", "ejemplo.ctds" };
-    int rc2 = parseArgv(4, args2, &testOptions);
-    TEST_ASSERT_EQUAL_INT(0, rc2);
-    TEST_ASSERT_EQUAL_INT(TARGET_INTERP, testOptions.target);
-    TEST_ASSERT_EQUAL_STRING("ejemplo.interp", testOptions.output);
-}
-
 // -o personaliza el nombre del archivo de salida
 void test_cli_custom_output_flag(void) {
     const char *args[] = { "mi_compilador", "-o", "mi_salida.bin", "ejemplo.ctds" };
@@ -394,7 +378,6 @@ void test_cli_get_target_name(void) {
     TEST_ASSERT_EQUAL_STRING("sem", getTargetName(TARGET_SEM));
     TEST_ASSERT_EQUAL_STRING("codinter", getTargetName(TARGET_CODINTER));
     TEST_ASSERT_EQUAL_STRING("assembly", getTargetName(TARGET_ASSEMBLY));
-    TEST_ASSERT_EQUAL_STRING("interp", getTargetName(TARGET_INTERP));
     TEST_ASSERT_EQUAL_STRING("?", getTargetName((Target)999));
 }
 
@@ -717,7 +700,6 @@ int main(void) {
     RUN_TEST(test_cli_explicit_target_sem);
     RUN_TEST(test_cli_explicit_target_codinter);
     RUN_TEST(test_cli_explicit_target_assembly);
-    RUN_TEST(test_cli_explicit_target_interp);
     RUN_TEST(test_cli_custom_output_flag);
     RUN_TEST(test_cli_debug_flag);
     RUN_TEST(test_cli_opt_all_and_default);

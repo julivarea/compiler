@@ -90,9 +90,9 @@ conviene poder explicar por qué.
 El punto decisivo es el **optimizador**: propagar una constante significa
 reemplazar un operando por otro, y eliminar código muerto significa quitar una
 instrucción. Las dos cosas son triviales sobre una estructura y requieren volver
-a parsear sobre texto. El 45% de la nota del proyecto (intérprete, código
-objeto y optimizador) consume esta representación, así que cualquier cosa escrita
-sobre texto habría habido que reescribirla.
+a parsear sobre texto. El código objeto y el optimizador consumen esta
+representación, así que cualquier cosa escrita sobre texto habría habido que
+reescribirla.
 
 El beneficio secundario fue de memoria: la versión textual usaba un `static char
 buffer[32]` para los temporales —que se sobreescribía entre llamadas anidadas— y

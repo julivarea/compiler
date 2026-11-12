@@ -146,16 +146,6 @@ static char *generate70ParamsProgram(void) {
     return buffer;
 }
 
-static char *generate300FloatConstantsProgram(void) {
-    char *buffer = malloc(16384);
-    int offset = snprintf(buffer, 16384, "int main() {\n  float f;\n");
-    for (int i = 0; i < 300; i++) {
-        offset += snprintf(buffer + offset, 16384 - offset, "  f = %d.5;\n", i);
-    }
-    snprintf(buffer + offset, 16384 - offset, "  f = 299.5;\n  if (f > 299.0) { return 1; }\n  return 0;\n}\n");
-    return buffer;
-}
-
 static char *generate300GlobalVariablesProgram(void) {
     char *buffer = malloc(16384);
     int offset = 0;
@@ -215,14 +205,12 @@ void test_asm_frame_allocation_alignment_and_null_safety(void) {
     TEST_ASSERT_EQUAL_INT(0, addAnonymousSlot(NULL));
 }
 
-// Emision de secciones .note.GNU-stack y tabla de literales reales en .rodata
-void test_asm_sections_gnu_stack_and_float_pool(void) {
-    const char *source = "int main() { float f; f = 3.14; return 0; }";
+// Emision de seccion .note.GNU-stack
+void test_asm_sections_gnu_stack(void) {
+    const char *source = "int main() { return 0; }";
     const char *assembly = compileToAssembly(source, OPTIMIZATION_NONE);
     TEST_ASSERT_NOT_NULL(assembly);
     TEST_ASSERT_NOT_NULL(strstr(assembly, ".section .note.GNU-stack,\"\",@progbits"));
-    TEST_ASSERT_NOT_NULL(strstr(assembly, ".section .rodata"));
-    TEST_ASSERT_NOT_NULL(strstr(assembly, ".long "));
 
     /* Lista TAC nula produce cadena vacia de forma segura */
     resetBuildString();
@@ -292,31 +280,6 @@ void test_asm_unit_tac_assign_int(void) {
 
     TEST_ASSERT_NOT_NULL(strstr(asmOutput, "movl $42, %eax"));
     TEST_ASSERT_NOT_NULL(strstr(asmOutput, "movl %eax, -4(%rbp)"));
-    freeFrame(frame);
-}
-
-// TAC_ASSIGN float emite movss entre ranuras de memoria XMM
-void test_asm_unit_tac_assign_float(void) {
-    FunctionFrame *frame = createFrame("test_func");
-    TACOperand res = tacTemp("f0", TYPE_FLOAT);
-    TACOperand op1 = tacTemp("f1", TYPE_FLOAT);
-    addSlot(frame, &res);
-    addSlot(frame, &op1);
-
-    TACInstruction inst = {
-        .operation = TAC_ASSIGN,
-        .result = res,
-        .firstOperand = op1,
-        .secondOperand = tacNone(),
-        .next = NULL
-    };
-
-    resetBuildString();
-    generateInstruction(&inst, frame);
-    const char *asmOutput = getBuiltString();
-
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "movss -8(%rbp), %xmm0"));
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "movss %xmm0, -4(%rbp)"));
     freeFrame(frame);
 }
 
@@ -822,193 +785,6 @@ void test_asm_unit_tac_return_void(void) {
     const char *asmOutput = getBuiltString();
 
     TEST_ASSERT_NOT_NULL(strstr(asmOutput, "jmp .L_void_func_epilogue"));
-    freeFrame(frame);
-}
-
-/* --- Subgrupo 2.5: Operaciones de Punto Flotante y Conversion SSE --- */
-
-// TAC_INT_TO_FLOAT emite cvtsi2ss %eax, %xmm0 y almacena en slot flotante
-void test_asm_unit_tac_int_to_float(void) {
-    FunctionFrame *frame = createFrame("test_func");
-    TACOperand res = tacTemp("f0", TYPE_FLOAT);
-    TACOperand op1 = tacTemp("t0", TYPE_INT);
-    addSlot(frame, &res);
-    addSlot(frame, &op1);
-
-    TACInstruction inst = {
-        .operation = TAC_INT_TO_FLOAT,
-        .result = res,
-        .firstOperand = op1,
-        .secondOperand = tacNone(),
-        .next = NULL
-    };
-
-    resetBuildString();
-    generateInstruction(&inst, frame);
-    const char *asmOutput = getBuiltString();
-
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "cvtsi2ss %eax, %xmm0"));
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "movss %xmm0, -4(%rbp)"));
-    freeFrame(frame);
-}
-
-// TAC_ADD float emite addss sobre registros XMM
-void test_asm_unit_tac_add_float(void) {
-    FunctionFrame *frame = createFrame("test_func");
-    TACOperand res = tacTemp("f0", TYPE_FLOAT);
-    TACOperand op1 = tacTemp("f1", TYPE_FLOAT);
-    TACOperand op2 = tacTemp("f2", TYPE_FLOAT);
-    addSlot(frame, &res);
-    addSlot(frame, &op1);
-    addSlot(frame, &op2);
-
-    TACInstruction inst = {
-        .operation = TAC_ADD,
-        .result = res,
-        .firstOperand = op1,
-        .secondOperand = op2,
-        .next = NULL
-    };
-
-    resetBuildString();
-    generateInstruction(&inst, frame);
-    const char *asmOutput = getBuiltString();
-
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "movss -8(%rbp), %xmm0"));
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "movss -12(%rbp), %xmm1"));
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "addss %xmm1, %xmm0"));
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "movss %xmm0, -4(%rbp)"));
-    freeFrame(frame);
-}
-
-// TAC_SUB float emite subss sobre registros XMM
-void test_asm_unit_tac_sub_float(void) {
-    FunctionFrame *frame = createFrame("test_func");
-    TACOperand res = tacTemp("f0", TYPE_FLOAT);
-    TACOperand op1 = tacTemp("f1", TYPE_FLOAT);
-    TACOperand op2 = tacTemp("f2", TYPE_FLOAT);
-    addSlot(frame, &res);
-    addSlot(frame, &op1);
-    addSlot(frame, &op2);
-
-    TACInstruction inst = {
-        .operation = TAC_SUB,
-        .result = res,
-        .firstOperand = op1,
-        .secondOperand = op2,
-        .next = NULL
-    };
-
-    resetBuildString();
-    generateInstruction(&inst, frame);
-    const char *asmOutput = getBuiltString();
-
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "subss %xmm1, %xmm0"));
-    freeFrame(frame);
-}
-
-// TAC_MUL float emite mulss sobre registros XMM
-void test_asm_unit_tac_mul_float(void) {
-    FunctionFrame *frame = createFrame("test_func");
-    TACOperand res = tacTemp("f0", TYPE_FLOAT);
-    TACOperand op1 = tacTemp("f1", TYPE_FLOAT);
-    TACOperand op2 = tacTemp("f2", TYPE_FLOAT);
-    addSlot(frame, &res);
-    addSlot(frame, &op1);
-    addSlot(frame, &op2);
-
-    TACInstruction inst = {
-        .operation = TAC_MUL,
-        .result = res,
-        .firstOperand = op1,
-        .secondOperand = op2,
-        .next = NULL
-    };
-
-    resetBuildString();
-    generateInstruction(&inst, frame);
-    const char *asmOutput = getBuiltString();
-
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "mulss %xmm1, %xmm0"));
-    freeFrame(frame);
-}
-
-// TAC_DIV float emite divss sobre registros XMM
-void test_asm_unit_tac_div_float(void) {
-    FunctionFrame *frame = createFrame("test_func");
-    TACOperand res = tacTemp("f0", TYPE_FLOAT);
-    TACOperand op1 = tacTemp("f1", TYPE_FLOAT);
-    TACOperand op2 = tacTemp("f2", TYPE_FLOAT);
-    addSlot(frame, &res);
-    addSlot(frame, &op1);
-    addSlot(frame, &op2);
-
-    TACInstruction inst = {
-        .operation = TAC_DIV,
-        .result = res,
-        .firstOperand = op1,
-        .secondOperand = op2,
-        .next = NULL
-    };
-
-    resetBuildString();
-    generateInstruction(&inst, frame);
-    const char *asmOutput = getBuiltString();
-
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "divss %xmm1, %xmm0"));
-    freeFrame(frame);
-}
-
-// TAC_UMINUS float emite pxor y subss
-void test_asm_unit_tac_uminus_float(void) {
-    FunctionFrame *frame = createFrame("test_func");
-    TACOperand res = tacTemp("f0", TYPE_FLOAT);
-    TACOperand op1 = tacTemp("f1", TYPE_FLOAT);
-    addSlot(frame, &res);
-    addSlot(frame, &op1);
-
-    TACInstruction inst = {
-        .operation = TAC_UMINUS,
-        .result = res,
-        .firstOperand = op1,
-        .secondOperand = tacNone(),
-        .next = NULL
-    };
-
-    resetBuildString();
-    generateInstruction(&inst, frame);
-    const char *asmOutput = getBuiltString();
-
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "pxor %xmm0, %xmm0"));
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "subss %xmm1, %xmm0"));
-    freeFrame(frame);
-}
-
-// TAC_LT float emite comiss con condicion setb sin signo
-void test_asm_unit_tac_lt_float(void) {
-    FunctionFrame *frame = createFrame("test_func");
-    TACOperand res = tacTemp("b0", TYPE_BOOL);
-    TACOperand op1 = tacTemp("f1", TYPE_FLOAT);
-    TACOperand op2 = tacTemp("f2", TYPE_FLOAT);
-    addSlot(frame, &res);
-    addSlot(frame, &op1);
-    addSlot(frame, &op2);
-
-    TACInstruction inst = {
-        .operation = TAC_LT,
-        .result = res,
-        .firstOperand = op1,
-        .secondOperand = op2,
-        .next = NULL
-    };
-
-    resetBuildString();
-    generateInstruction(&inst, frame);
-    const char *asmOutput = getBuiltString();
-
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "comiss %xmm1, %xmm0"));
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "setb %al"));
-    TEST_ASSERT_NOT_NULL(strstr(asmOutput, "movzbl %al, %eax"));
     freeFrame(frame);
 }
 

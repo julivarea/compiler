@@ -13,7 +13,6 @@
 #include "debug.h"
 #include "error_handler.h"
 #include "intermediate_code.h"
-#include "interpreter.h"
 #include "live_variable_analysis.h"
 #include "object_code.h"
 #include "optimizer.h"
@@ -107,14 +106,6 @@ int compile(const Options *options) {
             const TACList *tacList = buildIntermediateCode(options);
             if (tacList == NULL) { return 1; }
             return runAssembly(options, tacList);
-        }
-
-        case TARGET_INTERP: {
-            if (runParse() != 0) { return 1; }
-            if (runSemantic() != 0) { return 1; }
-            Scope *globalScope = interpreteSemantics(astRoot, options->debug);
-            freeScope(globalScope);
-            return (semantic_errors > 0) ? 1 : 0;
         }
 
         default:

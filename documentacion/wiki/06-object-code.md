@@ -798,4 +798,4 @@ exactamente lo que el diseño actual evita a propósito.
 
 ---
 
-**Siguiente:** [Intérprete](07-interpreter.md) · extensión nuestra, fuera de la entrega
+**Fin del recorrido de las etapas del compilador.**

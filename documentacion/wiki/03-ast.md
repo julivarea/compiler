@@ -12,8 +12,8 @@ todas las fases siguientes.
 Representar el programa como un árbol donde cada nodo es una construcción del
 lenguaje y sus hijos son sus partes, descartando todo lo que era solo sintaxis
 (paréntesis, llaves, comas, palabras clave). Es **la interfaz entre el front-end
-y el resto del compilador**: el semántico lo anota, el generador de TAC lo
-recorre, el intérprete lo ejecuta.
+y el resto del compilador**: el semántico lo anota y el generador de TAC lo
+recorre.
 
 Si hay una estructura que conviene conocer de memoria para la defensa, es esta.
 
@@ -37,8 +37,7 @@ Más el enum `NodeType`, la estructura `NodeAST` y ocho macros de acceso (§7).
 
 **Quién lo usa:** `bison.y` y `parser_helpers.c` para construirlo;
 `semantic_analyzer.c` y `type_checker.c` para anotarlo; `intermediate_code.c`
-para generar el TAC; `interpreter.c` para ejecutarlo; `driver.c` para imprimirlo
-en `-target parse` y `-target sem`.
+para generar el TAC; `driver.c` para imprimirlo en `-target parse` y `-target sem`.
 
 ---
 
@@ -443,7 +442,6 @@ línea de inicio de cada token y que cada acción de la gramática la propagara.
 | --- | --- |
 | Análisis semántico (F09–F11) | `type` en `TYPE_VOID`, `uid` en 0, símbolos provisorios. **El semántico anota el árbol en el lugar** |
 | Generación de TAC (F13) | Árbol ya anotado: `type` resuelto en cada expresión, símbolos apuntando a la tabla |
-| Intérprete (F19) | Lo mismo, pero ejecutándolo en vez de traducirlo |
 
 El punto importante: **el AST no se copia ni se transforma entre fases**. Es la
 misma estructura, que el semántico enriquece. Comparar el `.sint` con el `.sem`
@@ -473,7 +471,7 @@ del mismo programa muestra exactamente qué agrega:
 4. Si la aridad es fija y algún hijo puede ser `NULL`, **no usar `newNode`**:
    construir el arreglo a mano como hace `newMethodDeclaration`, porque la
    compactación correría las posiciones.
-5. Agregar el caso en el semántico, el generador de TAC y el intérprete. El
+5. Agregar el caso en el semántico y el generador de TAC. El
    `switch` de cada uno tiene un `default`, así que **olvidarse de uno no da error
    de compilación**: la construcción simplemente no hace nada.
 

@@ -20,7 +20,7 @@ cuando una fase posterior las consumió se vio qué faltaba.
 | Etapa modificada | Cambios | Cuándo |
 | --- | :---: | --- |
 | Léxico y sintáctico (entregada 23/09) | 4 | Durante código intermedio, optimizador y entrega final |
-| AST y tabla de símbolos (entregada 30/09) | 4 | Durante el optimizador y el intérprete |
+| AST y tabla de símbolos (entregada 30/09) | 4 | Durante el optimizador |
 | Análisis semántico (entregado 07/10) | 3 | Durante código objeto y optimizador |
 | Código objeto (entregado 26/10) | 2 | Durante el optimizador |
 
@@ -121,13 +121,13 @@ que es lo que vuelve clara la pregunta de quién libera.
 `makeBoolSymbol` y `makeVoidSymbol`: constructores que devuelven un `Symbol`
 **por valor**, sin reservar nada.
 
-**Por qué hizo falta.** Lo pidió el intérprete. Cada expresión evaluada produce
-un valor, y armarlo a mano eran cuatro líneas de inicialización repetidas por
-todos lados. Con los constructores, `interpreter.c` perdió **131 líneas**.
+**Por qué hizo falta.** Cada expresión evaluada produce un valor, y armarlo a
+mano eran cuatro líneas de inicialización repetidas por todos lados. Con los
+constructores, esa inicialización quedó centralizada en `symbol_table`.
 
 Es el cambio que mejor muestra la **doble naturaleza de `Symbol`**: entrada de
 la tabla de símbolos cuando tiene `id` y `uid`, y valor de una expresión cuando
-no. Está explicado en la [ficha F19](wiki/07-interpreter.md).
+no.
 
 ### 2.4 El campo `hasExecute`: se agregó y se quitó
 

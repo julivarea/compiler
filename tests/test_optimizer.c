@@ -958,24 +958,6 @@ void test_opt_all_fixed_point_reduction(void) {
     assertSemanticEquivalence(source, OPTIMIZATION_ALL, 12);
 }
 
-// Computos con floats y coerciones int a float conservan semantica exacta
-void test_opt_all_float_computations_and_coercions(void) {
-    const char *source =
-        "int main() {\n"
-        "    float x;\n"
-        "    float y;\n"
-        "    int intVal;\n"
-        "    x = 10.5;\n"
-        "    y = x + 4.5;\n"
-        "    intVal = 5;\n"
-        "    if (y > intVal) {\n"
-        "        return 1;\n"
-        "    }\n"
-        "    return 0;\n"
-        "}\n";
-    assertSemanticEquivalence(source, OPTIMIZATION_ALL, 1);
-}
-
 // Multiples variables globales y locales conservan su estado exacto tras optimizaciones
 void test_opt_all_multi_variable_state_and_side_effects(void) {
     const char *source =
@@ -1055,7 +1037,6 @@ int main(void) {
     RUN_TEST(test_opt_all_fibonacci_recursive);
     RUN_TEST(test_opt_all_nested_loops_and_conditionals);
     RUN_TEST(test_opt_all_fixed_point_reduction);
-    RUN_TEST(test_opt_all_float_computations_and_coercions);
     RUN_TEST(test_opt_all_multi_variable_state_and_side_effects);
 
     return UNITY_END();

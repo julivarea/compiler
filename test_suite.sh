@@ -40,7 +40,7 @@ step "compilacion de tests de codigo objeto" \
 step "compilacion de tests del optimizador" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_optimizer.c src/optimizer.c src/live_variable_analysis.c src/object_code.c src/function_frame.c src/asm_instruction.c src/string_builder.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_optimizer_tests
 step "compilacion del compilador" \
-    gcc -Iinclude -Isrc -Ibuild build/bison.tab.c build/lex.yy.c src/main.c src/driver.c src/ast.c src/parser_helpers.c src/symbol_table.c src/type_checker.c src/semantic_analyzer.c src/error_handler.c src/string_builder.c src/tac_operand.c src/tac_instruction.c src/tac_list.c src/live_variable_analysis.c src/intermediate_code.c src/optimizer.c src/asm_instruction.c src/function_frame.c src/object_code.c src/cli.c src/interpreter.c -o mi_compilador
+    gcc -Iinclude -Isrc -Ibuild build/bison.tab.c build/lex.yy.c src/main.c src/driver.c src/ast.c src/parser_helpers.c src/symbol_table.c src/type_checker.c src/semantic_analyzer.c src/error_handler.c src/string_builder.c src/tac_operand.c src/tac_instruction.c src/tac_list.c src/live_variable_analysis.c src/intermediate_code.c src/optimizer.c src/asm_instruction.c src/function_frame.c src/object_code.c src/cli.c -o mi_compilador
 step "compilacion de tests de la linea de comandos" \
     gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_cli.c src/cli.c -o build/run_cli_tests
 

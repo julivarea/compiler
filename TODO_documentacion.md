@@ -80,8 +80,8 @@ F13) sin aclararlo en ninguna.
 Resuelto así:
 
 - **`documentacion/index.md`** tiene ahora una sección *Extensiones sobre el
-  enunciado* con el argumento completo de los tres ítems (`float`, intérprete,
-  `-target sem`), espejando la del README. Es el lugar canónico dentro del sitio.
+  enunciado* con el argumento completo de los dos ítems (`float` y `-target
+  sem`), espejando la del README. Es el lugar canónico dentro del sitio.
 - **F10, F12, F13, F17 y F18** llevan una nota al principio que remite ahí.
 
 **Precisión que hubo que corregir sobre la marcha:** la primera versión de la
@@ -143,8 +143,7 @@ nota de que la sustitución no se completó.
 con `Assignment` son **17**. Contado con un script sobre `bison.y`.
 
 Verificado después del refactor: build sin errores, todas las suites en verde, y
-la batería de 6 programas correcta sin optimizar, con `-opt all` y cruzada contra
-el intérprete.
+la batería de 6 programas correcta sin optimizar y con `-opt all`.
 
 ---
 
@@ -232,23 +231,22 @@ Verificado después de los cambios: build sin warnings nuevos, las suites en
 verde, los 6 programas correctos de `examples/` con el mismo código de salida sin
 optimizar y con `-opt all`, y ningún link roto en el sitio.
 
-**Queda para el último prompt:** los inventarios de **F14** (análisis de
-variables vivas, 9 de 29 sin nombrar) y **F19** (intérprete, 8 de 27).
+**Queda para el último prompt:** el inventario de **F14** (análisis de
+variables vivas, 9 de 29 sin nombrar).
 
 ---
 
-## Inventarios de método de F14 y F19 — HECHO (cierra la cobertura)
+## Inventario de método de F14 — HECHO (cierra la cobertura)
 
-Las dos últimas fichas con funciones sin nombrar: F14 tenía 20 de 29 y F19 16 de
-27. Las dos cerraron en **29/29** y **27/27**, y con eso
+La última ficha con funciones sin nombrar: F14 tenía 20 de 29. Cerró en
+**29/29**, y con eso
 
 > **no queda ninguna función de `src/` ni de `include/` sin nombrar en la
-> documentación.** Medido con un script sobre los 44 archivos: 422/422.
+> documentación.** Medido con un script sobre los archivos restantes.
 
 | Ficha | Sección nueva | Agrupada por |
 | --- | --- | --- |
 | F14 | §9 Inventario de funciones | públicas · las cinco etapas de la construcción · el índice de variables · los predicados sobre instrucciones · la impresión |
-| F19 | §9 Inventario de funciones | la única pública · el registro de declaraciones · la llamada · las sentencias · las expresiones · los tres auxiliares |
 
 Renumeradas las secciones siguientes (las dos fichas: 9→10 … 13→14) y
 corregidas las tres referencias internas que apuntaban a esos números.
@@ -281,34 +279,6 @@ corregidas las tres referencias internas que apuntaban a esos números.
   más si la etiqueta quedó sin referencias. Es inofensivo —más bloques dan el
   mismo punto fijo— y quedó documentado.
 
-### Hallazgos de F19
-
-- **La asimetría entre leer y asignar es el pasaje por valor.**
-  `evaluateIdentifier` devuelve `*symbol`, o sea **una copia**; `executeAssignment`
-  busca el `Symbol *` y escribe ahí. Por eso asignarle a un parámetro cambia solo
-  la copia local. Es la pregunta de parcial sobre pasaje por valor contestada en
-  dos líneas de código.
-- **El corto circuito vive en dos ramas que se evalúan antes del caso general**
-  de `evaluateOperator`. El caso general evalúa los dos operandos y después opera,
-  que es justo lo que `&&` y `||` no pueden hacer; las dos ramas lo saltean. Es la
-  misma semántica que el TAC consigue con etiquetas, y la razón de que el
-  intérprete sirva de oráculo para probarla.
-- **`createFunctionScope` tiene una línea y es la decisión más importante del
-  módulo.** `createScope(1, globalScope, NULL)`: el padre es el **global**, no el
-  llamador. Cambiarlo por `callerScope` convertiría el lenguaje a alcance
-  dinámico y los programas seguirían corriendo, dando otros resultados.
-- **El orden de `executeFunctionBody` importa:** los argumentos se evalúan
-  **antes** de crear el ámbito de la función, en el ámbito del llamador. Al revés,
-  un argumento que nombra una local del llamador no se encontraría.
-- **`registerVariableDeclaration` sirve para globales y locales**, y en el segundo
-  caso agrega el símbolo al ámbito **del bloque**: eso es todo lo que hace falta
-  para que el ocultamiento de nombres funcione.
-- **`evaluateArguments` devuelve `NULL` para cero argumentos y eso no es un
-  error**, de ahí el `bool *outOfMemory` aparte: `NULL` ya significa otra cosa.
-- **`ExecResult.hasReturned` reemplaza al `goto` al epílogo** del código objeto:
-  cada nivel del recorrido mira la bandera y corta. Un `return` dentro de tres
-  `while` anidados sale de los tres porque los tres consultan lo mismo.
-
 ### Nota para `CLAUDE.md`
 
 El archivo lista el enumerado `OperationType` con `OP_NEGATIVE` y `OP_NEGATION`.
@@ -318,8 +288,7 @@ mande a buscar identificadores que no existen.
 
 Verificado: build limpio, las tres suites en verde (51 + 35 + 45 tests), los seis
 programas correctos con el mismo código de salida sin optimizar y con `-opt all`,
-el intérprete terminando en 0 en los seis, el sitio armando con `--strict` sin
-avisos y ningún link roto.
+el sitio armando con `--strict` sin avisos y ningún link roto.
 
 ---
 
@@ -347,24 +316,6 @@ También:
   ahora funcionan para cualquiera que lea el sitio, incluido el profe.
 - **Título `H1` en tres de las cuatro páginas de `bugs/`.** No lo tenían, así que
   en el sitio la página arrancaba con "Problema:" y no se sabía de qué bug era.
-
-### Contradicción encontrada entre dos páginas
-
-La portada listaba como problema conocido que **`-target interp` termina con
-código 0 aunque el intérprete reporte un error**, y F19 decía lo contrario: que
-eso se había corregido. Verificado ejecutando un `10 / 0` interpretado:
-
-```
-Error semantico en la linea 0: Division por cero.
-exit = 1
-```
-
-**F19 tenía razón y la portada estaba desactualizada.** El driver cierra el caso
-con `return (semantic_errors > 0) ? 1 : 0;`, así que el fallo se propaga. Lo que
-sigue siendo cierto —y es lo que quedó escrito— es que el mensaje sale como error
-semántico y sin número de línea, porque `evaluateBinaryOperator` no recibe el
-nodo. Dos páginas que se contradicen es justo lo que no puede pasar en una
-defensa.
 
 Verificado: el sitio arma con `--strict` sin un solo aviso, ningún link interno
 roto, y los cinco archivos a los que apuntan los links nuevos de GitHub existen
@@ -413,9 +364,6 @@ Los que más se van a preguntar:
   etapa de TAC). Un error léxico imprimía su mensaje y el compilador seguía;
   con el generador en el medio, un programa con basura léxica llegaba a generar
   código. De ahí salió la separación en tres contadores de error.
-- **Los constructores `makeIntSymbol` y compañía los pidió el intérprete**
-  (`6b74fba`): un cambio a la tabla de símbolos —etapa 2— hecho durante una
-  extensión, que le sacó 131 líneas a `interpreter.c`.
 - **`paramCount` quedó obsoleto por el soporte de `float`** (`7d7d328`): con dos
   secuencias de registros, un contador único de parámetros no significa nada.
 
@@ -428,21 +376,20 @@ estable es tan informativo como listar los cambios.
 El mismo requisito 3 pide que *"todas las deficiencias detectadas deben ser
 discutidas y se debe proponer una alternativa de diseño y/o implementación"*. La
 lista de la portada enunciaba tres problemas **sin** decir cómo se arreglarían.
-Ahora son **siete**, y cada uno tiene cómo se detectó y la alternativa concreta:
+Ahora son **seis**, y cada uno tiene cómo se detectó y la alternativa concreta:
 
 | Problema | Alternativa propuesta |
 | --- | --- |
 | Sin declaración adelantada de métodos | Pasada previa que registre los `METHOD_DECLARATION_NODE` antes de analizar los cuerpos |
 | Desborde con signo al plegar `+`, `-`, `*` | Verificar antes de operar y devolver `false`, igual que ya hacen `/` y `%` |
 | `-0.0` no se puede producir | `xorps` contra una máscara `0x80000000` en vez de restar `0 - x` |
-| Errores del intérprete reportados como semánticos | Contador propio y propagar el `line` del nodo. Deuda consciente |
 | `emitCondition` es código muerto | Completar la sustitución en `generateOperatorCode` o eliminarla |
 | Símbolos provisorios huérfanos | Liberar antes de reemplazar el puntero, en los dos lugares |
 | Mirilla sobre assembly sin implementar | Trabajar sobre `asm_instruction` antes de imprimir, no sobre el texto |
 
-Los siete están **verificados**, no supuestos: el `-0.0` ejecutando, el del
-intérprete midiendo el código de salida, el de `emitCondition` con `-Wall`, el
-de los símbolos con ASan y el del desborde con UBSan.
+Los seis están **verificados**, no supuestos: el `-0.0` ejecutando, el de
+`emitCondition` con `-Wall`, el de los símbolos con ASan y el del desborde con
+UBSan.
 
 ### Queda: la división del trabajo (requisito 1)
 
@@ -481,9 +428,9 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
   - **Cómo se resolvió la ambigüedad del enunciado**: `BUILDS_EXECUTABLE` es
     `!explicitTarget`, y de ahí sale por qué `explicitTarget` no es redundante con
     `target` (los dos valen `TARGET_ASSEMBLY` sin `-target`).
-  - **Verificado:** `interpret` es alias de `interp` y el usage lo imprime una
-    sola vez; la heurística del argumento opcional de `-opt` (`-opt programa.ctds`
-    se entiende como `all`); y la protección contra sobrescribir el fuente, que
+  - **Verificado:** la heurística del argumento opcional de `-opt` (`-opt
+    programa.ctds` se entiende como `all`); y la protección contra sobrescribir
+    el fuente, que
     compara **dispositivo e inodo** y por eso atrapa también `./p.ctds` y la ruta
     absoluta. Los ocho casos de error de la CLI, cada uno con su mensaje.
 - [x] **F02 — Orquestación de las etapas** · `driver.h`, `driver.c` · 325 líneas
@@ -599,12 +546,11 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
 - [x] **F09 — Tabla de símbolos y ámbitos** · `symbol_table.h`, `symbol_table.c` · 358 líneas
   - **Hecha:** `documentacion/wiki/04-symbol-table.md`, página nueva. Se extrajo
     de `04-semantic-analysis.md` el material de `Symbol` y `Scope` (que mezclaba
-    F09, F10 y F11) y se reescribió completo: las cuatro variantes de
-    `SymbolType` —la anterior documentaba solo tres y faltaba
-    `FUNCTION_ENTRY_SYMBOL`, que usa únicamente el intérprete—, las **dos vidas
-    de `Symbol`** (`newSymbol` en heap para la tabla contra `make*Symbol` por
-    valor para evaluar en el intérprete), por qué `parent` y `children` no son
-    redundantes, la herencia de `scope->function` que permite que un `return`
+    F09, F10 y F11) y se reescribió completo: las tres variantes de
+    `SymbolType`, las **dos vidas de `Symbol`** (`newSymbol` en heap para la
+    tabla contra `make*Symbol` por valor para evaluar expresiones), por qué
+    `parent` y `children` no son redundantes, la herencia de `scope->function`
+    que permite que un `return`
     anidado sepa qué tipo devolver, y el `uid` como contador global.
   - Verificado con un programa de tres `x` anidados: `uid` 1/3/4, el TAC los
     nombra `x@1`/`x@3`/`x@4` y el `return x` resuelve al del método. También que
@@ -889,48 +835,6 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
     AMD64**, el caso de `idivl` con `cltd`, el camino SSE para `float` y la
     semántica de NaN en las comparaciones. El archivo más grande del proyecto.
 
-### Bloque 7 — Intérprete
-
-- [x] **F19 — Intérprete sobre el AST** · `interpreter.h`, `interpreter.c` · 590 líneas
-  - **Hecha:** `documentacion/wiki/07-interpreter.md`, página nueva. Era el otro
-    hueco completo: el intérprete no tenía ni una página, solo una mención en la
-    portada. Los dos recorridos, `ExecResult`, el ámbito de una llamada, las
-    coerciones, lo que asume y lo que cuesta.
-  - **`ExecResult` como respuesta a "¿cómo se implementa un `return` en un
-    intérprete de árbol?"**: cada sentencia devuelve si retornó, y cada bloque y
-    cada ciclo lo chequean y lo propagan. Es la alternativa explícita a
-    `setjmp`/`longjmp` o a una excepción que C no tiene.
-  - **El hallazgo conceptual: `createFunctionScope` usa el ámbito global como
-    padre, no el del llamador.** Esa única línea es la que hace que el lenguaje
-    tenga **alcance léxico y no dinámico**. Los argumentos se evalúan en el
-    ámbito del llamador y sus valores se copian, que es el pasaje por valor
-    materializado en el arreglo `argumentValues` intermedio.
-  - **Lo medido: la memoria crece lineal con las iteraciones, no con el
-    programa.** `executeBlock` crea un ámbito por cada ejecución de un bloque y lo
-    cuelga del árbol sin liberarlo, y el cuerpo de un `while` **es** un bloque.
-    Medido: 10 000 iteraciones → 4224 KB, 20 000 → 7040 KB, 40 000 → 12 416 KB,
-    contra 1664 KB del mismo programa compilado. Unos 280 bytes por iteración. Es
-    correcto pero no escalable, y la corrección —liberar el ámbito al salir— es
-    viable porque los valores ya viajan por copia.
-  - **Lo que asume sin verificar:** `isTruthy` acepta cualquier valor distinto de
-    cero, que es más permisivo que el lenguaje; funciona porque el semántico ya
-    filtró. Y reimplementa las reglas de tipos, que es lo que lo hace útil como
-    oráculo y lo que duplica el mantenimiento.
-  - **Reverificado en esta sesión:** `-target interp` sobre `INT_MIN / -1` reporta
-    el desborde y **termina con código 1** (la propagación del error que
-    agregaron los compañeros está en su lugar), y el cruce intérprete/ejecutable
-    da 5/5 sobre recursión, corto circuito, ocultamiento de scopes, 8 argumentos
-    y reales. El corpus completo de 20 ya se había cruzado antes con 20/20.
-  - Dejado explícito el argumento a favor de haberlo hecho: es **testing
-    diferencial**: dos implementaciones independientes de la misma semántica
-    comparadas entre sí encuentran bugs sin escribir los resultados esperados a
-    mano. Y que el guard de `INT_MIN` fue un bug **del intérprete**, encontrado
-    con UBSan, no del back-end.
-  - Evaluación directa del árbol, el manejo de ámbitos en tiempo de ejecución y
-    por qué sirve como oráculo contra el backend. Es una extensión nuestra.
-
----
-
 ## Catálogo de extensiones
 
 La otra mitad de la defensa. Para cada extensión, los archivos que se tocan **en
@@ -964,7 +868,7 @@ Lo que ya hay, para no reescribir de cero:
 
 | Página | Líneas | Qué le falta para servir de estudio |
 | --- | --- | --- |
-| `wiki/01-overview.md` | 619 | Es la más completa. Revisar que el pipeline incluya optimizador e intérprete |
+| `wiki/01-overview.md` | 619 | Es la más completa. Revisar que el pipeline incluya el optimizador |
 | `wiki/06-asm-instructions.md` | 438 | **F16, hecha.** |
 | `wiki/06.5-stack-frame.md` | 528 | **F17, hecha.** |
 | `wiki/06-object-code.md` | 625 | **F18, hecha.** |
@@ -979,7 +883,6 @@ Lo que ya hay, para no reescribir de cero:
 | `wiki/02.5-syntax-analysis.md` | 480 | **F06, hecha.** |
 | `wiki/02.7-parser-actions.md` | 40 | F07, esqueleto con la lista de lo que falta |
 | `wiki/05.9-optimizer.md` | 827 | **F15, hecha.** Movida al sitio desde la raíz |
-| `wiki/07-interpreter.md` | 437 | **F19, hecha.** |
 | `wiki/01.2-cli.md` | 454 | **F01, hecha.** |
 | `wiki/01.4-driver.md` | 499 | **F02, hecha.** |
 | `wiki/01.6-errors.md` | 385 | **F03, hecha.** |

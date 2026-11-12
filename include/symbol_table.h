@@ -20,7 +20,6 @@ typedef enum SymbolType {
     VARIABLE_SYMBOL,
     METHOD_SYMBOL,
     CONSTANT_SYMBOL,
-    FUNCTION_ENTRY_SYMBOL, // for interpret
 } SymbolType;
 
 /**
@@ -35,7 +34,6 @@ typedef struct Symbol {
     union {
         int intValue;
         float floatValue;
-        NodeAST* function;
     } value;
 } Symbol;
 

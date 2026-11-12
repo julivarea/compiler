@@ -40,10 +40,6 @@ intermedio, optimización sobre el código intermedio y emisión de código obje
   traduce el TAC a assembly de GNU Assembler (sintaxis AT&T) y lo ensambla con
   `gcc` para producir el ejecutable. Respeta la convención de llamada
   System V AMD64.
-- **Intérprete**:
-  ejecuta el programa recorriendo el AST, sin pasar por el backend. Es una
-  extensión nuestra, ver [Extensiones sobre el enunciado](#extensiones-sobre-el-enunciado).
-
 Las optimizaciones disponibles son:
 
 | Flag | Qué hace |
@@ -84,7 +80,6 @@ sitio que como archivos sueltos: ver [Documentación](#documentación).
 │   ├── asm_instruction.h                            # instrucciones de ensamblador x86-64
 │   ├── function_frame.h                             # gestión del marco de pila (stack frame)
 │   ├── object_code.h                                # generación de código objeto
-│   ├── interpreter.h                                # intérprete sobre el AST
 │   ├── string_builder.h                             # buffer dinámico de cadenas
 │   └── error_handler.h                              # reporte de errores
 ├── src/                                             # implementaciones (.c, .l, .y)
@@ -107,7 +102,6 @@ sitio que como archivos sueltos: ver [Documentación](#documentación).
 │   ├── asm_instruction.c
 │   ├── function_frame.c
 │   ├── object_code.c
-│   ├── interpreter.c
 │   ├── string_builder.c
 │   └── error_handler.c
 ├── tests/                                           # diez suites de tests unitarios con Unity
@@ -165,7 +159,6 @@ El script `build.sh` ejecuta las siguientes operaciones en orden:
    - `src/live_variable_analysis.c` (CFG y análisis de variables vivas)
    - `src/asm_instruction.c` (Instrucciones x86-64) y `src/function_frame.c` (Marco de pila)
    - `src/object_code.c` (Generador de código objeto)
-   - `src/interpreter.c` (Intérprete sobre el AST)
 5. **Genera el binario final:** Produce el ejecutable `./mi_compilador` en la raíz del repositorio.
 
 ### Consideraciones y mantenimiento
@@ -185,7 +178,7 @@ El script `build.sh` ejecuta las siguientes operaciones en orden:
 | Opción | Acción |
 | --- | --- |
 | `-o <salida>` | Nombre del archivo de salida, en vez del que se deduce de la etapa |
-| `-target <etapa>` | Compila hasta esa etapa: `scan`, `parse`, `sem`, `codinter`, `assembly`, `interp` |
+| `-target <etapa>` | Compila hasta esa etapa: `scan`, `parse`, `sem`, `codinter`, `assembly` |
 | `-opt [nombre]` | Aplica optimizaciones; `all` son todas. Por defecto ninguna |
 | `-debug` | Imprime información de debugging por `stdout` |
 
@@ -208,8 +201,7 @@ el que se haya pasado con `-o`:
 | `codinter` | `.ci` | El código de tres direcciones |
 | `assembly` | `.ass` | Assembly x86-64 (GNU Assembler, sintaxis AT&T) |
 
-Con `-opt` la extensión pasa a ser `.opt`. El valor `interp` no escribe archivo:
-interpreta el programa y, con `-debug`, informa el valor que devolvió `main`.
+Con `-opt` la extensión pasa a ser `.opt`.
 
 Las optimizaciones se piden por nombre, separadas por coma o repitiendo el flag;
 las tres formas que siguen son equivalentes:
@@ -422,7 +414,7 @@ devuelven `int`.
 
 ## Extensiones sobre el enunciado
 
-Tres cosas del compilador no las pedía el enunciado y se implementaron igual. Se
+Dos cosas del compilador no las pedía el enunciado y se implementaron igual. Se
 dejan documentadas acá porque cambian el alcance respecto de lo exigido.
 
 ### Soporte de `float` y coerción `int`/`float`
@@ -451,20 +443,6 @@ código incorrecto más abajo.
 Los `float` son de **precisión simple** (4 bytes, IEEE-754). No hay doble
 precisión.
 
-### Intérprete
-
-La tabla de calificación del enunciado incluye un ítem *Intérprete*, pero no
-figura en el cronograma de entregas, y al consultarlo se confirmó que **no hacía
-falta implementarlo**.
-
-Se implementó igual, en `src/interpreter.c`, accesible con `-target interp`.
-Ejecuta el programa recorriendo el AST directamente, sin pasar por el TAC ni por
-el backend. Más allá del ítem de la tabla, resultó útil por una razón concreta
-de testing: es una **segunda implementación independiente** del mismo lenguaje,
-así que sirve de oráculo para el generador de código. Si el intérprete y el
-ejecutable compilado difieren sobre el mismo programa, uno de los dos tiene un
-bug, y eso se detecta sin tener que calcular a mano el resultado esperado.
-
 ### El valor `sem` de `-target`
 
 El enunciado enumera `scan`, `parse`, `codinter` y `assembly`, pero también
@@ -485,8 +463,3 @@ extensión no se podía producir.
   no está garantizado. La división y el módulo sí están protegidos, tanto contra
   el divisor cero como contra el único desborde posible (`INT_MIN / -1`). Se
   detectó compilando el proyecto con UBSan.
-- **Los errores de ejecución del intérprete se reportan como errores semánticos
-  y sin número de línea**, y `-target interp` termina con código 0 aunque los
-  haya reportado. Está asumido: el intérprete no es entregable, el mensaje igual
-  sale por `stderr`, y arreglarlo pedía un contador de errores de ejecución
-  propio que no se justificaba.
