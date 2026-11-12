@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "asm_instruction.h"
 #include "string_builder.h"
 
 #define MAX_ARG_REGISTERS 6
@@ -62,7 +61,7 @@ static void emitCallRegisterArguments(const FunctionFrame *frame, int base, int 
                                       const int *registerIndex, const int *goesToStack);
 static void emitCallResult(const TACInstruction *instruction, const FunctionFrame *frame);
 
-static void emitBinaryOp(const TACInstruction *instruction, AsmOpcode opcode, const FunctionFrame *frame);
+static void emitBinaryOp(const TACInstruction *instruction, const char *opMnemonic, const FunctionFrame *frame);
 static bool emitStrengthReducedMultiplication(const TACInstruction *instruction, const FunctionFrame *frame);
 static int powerOfTwoExponent(int value);
 static void emitDivisionOp(const TACInstruction *instruction, const FunctionFrame *frame, const char *resultRegisterName);
@@ -247,8 +246,7 @@ void emitEpilogue(const FunctionFrame *frame) {
     bool isVoidMain = (frame != NULL && frame->returnType == TYPE_VOID
                        && strcmp(frame->functionName, "main") == 0);
     if (isVoidMain) {
-        AsmInstruction zero = asmLoadImm(ASM_RAX, 0);
-        emitAsm(&zero);
+        buildStringf("    movl $0, %%eax\n");
     }
 
     buildStringf("    leave\n");
@@ -375,17 +373,17 @@ static void emitAssignment(const TACInstruction *instruction, const FunctionFram
 }
 
 static void emitAddition(const TACInstruction *instruction, const FunctionFrame *frame) {
-    emitBinaryOp(instruction, ASM_ADD, frame);
+    emitBinaryOp(instruction, "addl", frame);
 }
 
 static void emitSubtraction(const TACInstruction *instruction, const FunctionFrame *frame) {
-    emitBinaryOp(instruction, ASM_SUB, frame);
+    emitBinaryOp(instruction, "subl", frame);
 }
 
 static void emitMultiplication(const TACInstruction *instruction, const FunctionFrame *frame) {
     bool wasReduced = emitStrengthReducedMultiplication(instruction, frame);
     if (!wasReduced) {
-        emitBinaryOp(instruction, ASM_IMUL, frame);
+        emitBinaryOp(instruction, "imull", frame);
     }
 }
 
@@ -399,15 +397,13 @@ static void emitModulo(const TACInstruction *instruction, const FunctionFrame *f
 
 static void emitUnaryMinus(const TACInstruction *instruction, const FunctionFrame *frame) {
     loadOperand(&instruction->firstOperand, "%eax", frame);
-    AsmInstruction negate = asmOpUnary(ASM_NEG, ASM_RAX);
-    emitAsm(&negate);
+    buildStringf("    negl %%eax\n");
     storeOperand(&instruction->result, "%eax", frame);
 }
 
 static void emitNot(const TACInstruction *instruction, const FunctionFrame *frame) {
     loadOperand(&instruction->firstOperand, "%eax", frame);
-    AsmInstruction instructionAsm = asmOpImm(ASM_XOR, ASM_RAX, 1);
-    emitAsm(&instructionAsm);
+    buildStringf("    xorl $1, %%eax\n");
     storeOperand(&instruction->result, "%eax", frame);
 }
 
@@ -455,8 +451,7 @@ static void emitParam(const TACInstruction *instruction, FunctionFrame *frame) {
     int slot = frame->pendingParamSlots[frame->pendingParamCount];
 
     loadOperand(&instruction->firstOperand, "%eax", frame);
-    AsmInstruction store = asmStore(opMem(slot), opReg(ASM_RAX));
-    emitAsm(&store);
+    buildStringf("    movl %%eax, %d(%%rbp)\n", slot);
 
     frame->pendingParamTypes[frame->pendingParamCount] = instruction->firstOperand.type;
     frame->pendingParamCount++;
@@ -547,8 +542,7 @@ static void emitCallStackArguments(const FunctionFrame *frame, int base, int arg
     for (int i = argumentCount - 1; i >= 0; i--) {
         if (!goesToStack[i]) continue;
 
-        AsmInstruction load = asmLoad(opReg(ASM_RAX), opMem(frame->pendingParamSlots[base + i]));
-        emitAsm(&load);
+        buildStringf("    movl %d(%%rbp), %%eax\n", frame->pendingParamSlots[base + i]);
         buildStringf("    pushq %%rax\n");
     }
 }
@@ -561,8 +555,7 @@ static void emitCallRegisterArguments(const FunctionFrame *frame, int base, int 
         if (goesToStack[i]) continue;
 
         int slot = frame->pendingParamSlots[base + i];
-        AsmInstruction load = asmLoad(opRegStr(ARG_REGISTERS_32[registerIndex[i]]), opMem(slot));
-        emitAsm(&load);
+        buildStringf("    movl %d(%%rbp), %s\n", slot, ARG_REGISTERS_32[registerIndex[i]]);
     }
 }
 
@@ -573,11 +566,10 @@ static void emitCallResult(const TACInstruction *instruction, const FunctionFram
     storeOperand(&instruction->result, "%eax", frame);
 }
 
-static void emitBinaryOp(const TACInstruction *instruction, AsmOpcode opcode, const FunctionFrame *frame) {
+static void emitBinaryOp(const TACInstruction *instruction, const char *opMnemonic, const FunctionFrame *frame) {
     loadOperand(&instruction->firstOperand, "%eax", frame);
     loadOperand(&instruction->secondOperand, "%edx", frame);
-    AsmInstruction asmInstruction = asmOpReg(opcode, ASM_RAX, ASM_RDX);
-    emitAsm(&asmInstruction);
+    buildStringf("    %s %%edx, %%eax\n", opMnemonic);
     storeOperand(&instruction->result, "%eax", frame);
 }
 
@@ -604,8 +596,7 @@ static bool emitStrengthReducedMultiplication(const TACInstruction *instruction,
     int multiplier = constantOperand->value.intValue;
 
     if (multiplier == 0) {
-        AsmInstruction clear = asmOpReg(ASM_XOR, ASM_RAX, ASM_RAX);
-        emitAsm(&clear);
+        buildStringf("    xorl %%eax, %%eax\n");
         storeOperand(&instruction->result, "%eax", frame);
         return true;
     }
@@ -642,11 +633,8 @@ static void emitDivisionOp(const TACInstruction *instruction, const FunctionFram
     loadOperand(&instruction->firstOperand, "%eax", frame);
     loadOperand(&instruction->secondOperand, "%ecx", frame);
 
-    AsmInstruction signExtend = asmCltd();
-    emitAsm(&signExtend);
-
-    AsmInstruction divide = asmOpUnary(ASM_IDIV, ASM_RCX);
-    emitAsm(&divide);
+    buildStringf("    cltd\n");
+    buildStringf("    idivl %%ecx\n");
 
     storeOperand(&instruction->result, resultRegisterName, frame);
 }
@@ -654,8 +642,7 @@ static void emitDivisionOp(const TACInstruction *instruction, const FunctionFram
 static void emitRelationalOp(const TACInstruction *instruction, const char *conditionMnemonic, const FunctionFrame *frame) {
     loadOperand(&instruction->firstOperand, "%eax", frame);
     loadOperand(&instruction->secondOperand, "%edx", frame);
-    AsmInstruction cmpInstruction = asmOpReg(ASM_CMP, ASM_RAX, ASM_RDX);
-    emitAsm(&cmpInstruction);
+    buildStringf("    cmpl %%edx, %%eax\n");
     buildStringf("    %s %%al\n", conditionMnemonic);
     buildStringf("    movzbl %%al, %%eax\n");
     storeOperand(&instruction->result, "%eax", frame);
@@ -666,8 +653,7 @@ static void loadOperand(const TACOperand *operand, const char *registerName, con
 
     bool isImmediate = (operand->kind == OPERAND_CONSTANT);
     if (isImmediate) {
-        AsmInstruction immediate = asmLoad(opRegStr(registerName), opImm(operand->value.intValue));
-        emitAsm(&immediate);
+        buildStringf("    movl $%d, %s\n", operand->value.intValue, registerName);
         return;
     }
 
@@ -675,10 +661,11 @@ static void loadOperand(const TACOperand *operand, const char *registerName, con
     OperandLocation location = resolveOperandLocation(operand, frame, &offset);
     if (location == LOCATION_UNRESOLVED) return;
 
-    AsmInstruction instruction = (location == LOCATION_STACK)
-        ? asmLoad(opRegStr(registerName), opMem(offset))
-        : asmLoad(opRegStr(registerName), opGlobal(getGlobalName(operand)));
-    emitAsm(&instruction);
+    if (location == LOCATION_STACK) {
+        buildStringf("    movl %d(%%rbp), %s\n", offset, registerName);
+    } else {
+        buildStringf("    movl %s(%%rip), %s\n", getGlobalName(operand), registerName);
+    }
 }
 
 static void storeOperand(const TACOperand *operand, const char *registerName, const FunctionFrame *frame) {
@@ -688,10 +675,11 @@ static void storeOperand(const TACOperand *operand, const char *registerName, co
     OperandLocation location = resolveOperandLocation(operand, frame, &offset);
     if (location == LOCATION_UNRESOLVED) return;
 
-    AsmInstruction instruction = (location == LOCATION_STACK)
-        ? asmStore(opMem(offset), opRegStr(registerName))
-        : asmStore(opGlobal(getGlobalName(operand)), opRegStr(registerName));
-    emitAsm(&instruction);
+    if (location == LOCATION_STACK) {
+        buildStringf("    movl %s, %d(%%rbp)\n", registerName, offset);
+    } else {
+        buildStringf("    movl %s, %s(%%rip)\n", registerName, getGlobalName(operand));
+    }
 }
 
 static OperandLocation resolveOperandLocation(const TACOperand *operand, const FunctionFrame *frame, int *offset) {
