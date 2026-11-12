@@ -55,7 +55,6 @@ typedef struct FunctionFrame {
     int maxPendingParams;        /**< Pico de la pila, calculado antes de emitir. */
 
     int integerParamCount; /**< Parámetros formales enteros ya ubicados en el prólogo. */
-    int floatParamCount;   /**< Parámetros formales reales ya ubicados en el prólogo. */
     int stackParamCount;   /**< Parámetros formales que llegaron por la pila. */
 } FunctionFrame;
 

@@ -412,38 +412,40 @@ Como C-TDS no tiene salida por pantalla, el código de salida de `main` es la
 única forma de observar lo que hizo un programa, y solo sirve con los `main` que
 devuelven `int`.
 
-## Extensiones sobre el enunciado
+## Alcance de `float`
 
-Dos cosas del compilador no las pedía el enunciado y se implementaron igual. Se
-dejan documentadas acá porque cambian el alcance respecto de lo exigido.
+La especificación del lenguaje incluye `float` entre los tipos de C-TDS y su
+regla 14 permite las conversiones entre `int` y `float`. El enunciado del
+proyecto, en cambio, acota las etapas de **código intermedio y código objeto** a
+**tipos enteros y lógicos**, y la descripción de las asignaciones menciona solo
+`int` y `boolean`.
 
-### Soporte de `float` y coerción `int`/`float`
+El compilador respeta las dos cosas, y el corte está exactamente en la frontera
+entre ellas:
 
-La especificación del lenguaje incluye `float` como tipo y su regla 14 permite
-las conversiones entre `int` y `float`. Sin embargo, el alcance de las etapas de
-código intermedio y código objeto estaba acotado a **tipos enteros y lógicos**,
-y la descripción de las asignaciones menciona solo `int` y `boolean`. Es decir
-que generar código para `float` no era necesario.
+| Fase | `float` |
+| --- | --- |
+| Léxico, sintáctico, AST, tabla de símbolos | **Sí.** Es un tipo del lenguaje: se reconoce y se representa |
+| Chequeo de tipos | **Sí.** La regla 14 es una de las catorce que el análisis semántico debe verificar |
+| Código intermedio, optimizador, código objeto | **No.** Un programa que usa `float` se rechaza acá, con su línea |
 
-Conviene separar qué parte era obligatoria. El **front-end** tenía que entender
-`float` de todas formas: reconocer el tipo, representarlo en el AST y en la tabla
-de símbolos, y verificar la regla 14, que es una de las catorce del análisis
-semántico. Lo **voluntario** fue que ese entendimiento llegara a producir un
-ejecutable: operandos `float` en el TAC con el opcode `TAC_INT_TO_FLOAT`, los dos
-contadores de parámetros por clase de registro en el marco de pila, y el camino
-SSE completo en el generador de código objeto (registros `%xmm`, instrucciones
-`movss`/`addss`/`comiss`, constantes en `.rodata`, y la clase de registros
-separada que impone la convención de llamada para argumentos reales).
+```
+$ ./mi_compilador programa.ctds
+Error en la linea 2: la generacion de codigo para el tipo 'float' no esta
+soportada: esta etapa cubre tipos enteros y logicos.
+```
 
-La decisión fue mantener el lenguaje coherente con su propia especificación, en
-vez de aceptar `float` en el front-end y abandonarlo en el back-end: un programa
-que declara un `float` habría pasado el análisis semántico y fallado o generado
-código incorrecto más abajo.
+Hasta `-target sem` el programa se acepta: el front-end lo entiende entero,
+incluida la coerción de la regla 14. Lo que no está en alcance es generarle
+código, y el rechazo ocurre en la primera fase que lo haría.
 
-Los `float` son de **precisión simple** (4 bytes, IEEE-754). No hay doble
-precisión.
+**Por qué rechazar y no ignorar.** Si el generador emitiera las operaciones de
+todos modos, el código objeto trataría el patrón de bits IEEE-754 como si fuera
+un entero: `1.0 + 1.0` se compilaría a una suma entera de dos patrones de bits y
+no daría `2.0`, **sin una sola queja**. Un error explícito con su línea es
+siempre mejor que un ejecutable que calcula mal.
 
-### El valor `sem` de `-target`
+## Extensión sobre el enunciado: el valor `sem` de `-target`
 
 El enunciado enumera `scan`, `parse`, `codinter` y `assembly`, pero también
 lista la extensión `.sem` entre las salidas posibles. Se agregó `-target sem`

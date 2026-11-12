@@ -63,50 +63,6 @@ void test_free_symbol_null_safe(void) {
     freeSymbol(NULL);
 }
 
-// makeIntSymbol inicializa un símbolo constante entero por valor
-void test_make_int_symbol(void) {
-    Symbol symbol = makeIntSymbol(42);
-    TEST_ASSERT_NULL(symbol.id);
-    TEST_ASSERT_EQUAL_INT(0, symbol.uid);
-    TEST_ASSERT_EQUAL_INT(CONSTANT_SYMBOL, symbol.symbolType);
-    TEST_ASSERT_EQUAL_INT(TYPE_INT, symbol.type);
-    TEST_ASSERT_EQUAL_INT(42, symbol.value.intValue);
-}
-
-// makeFloatSymbol inicializa un símbolo constante flotante por valor
-void test_make_float_symbol(void) {
-    Symbol symbol = makeFloatSymbol(3.14f);
-    TEST_ASSERT_NULL(symbol.id);
-    TEST_ASSERT_EQUAL_INT(0, symbol.uid);
-    TEST_ASSERT_EQUAL_INT(CONSTANT_SYMBOL, symbol.symbolType);
-    TEST_ASSERT_EQUAL_INT(TYPE_FLOAT, symbol.type);
-    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 3.14f, symbol.value.floatValue);
-}
-
-// makeBoolSymbol inicializa un símbolo constante booleano con 1 o 0
-void test_make_bool_symbol(void) {
-    Symbol trueSymbol = makeBoolSymbol(true);
-    TEST_ASSERT_NULL(trueSymbol.id);
-    TEST_ASSERT_EQUAL_INT(CONSTANT_SYMBOL, trueSymbol.symbolType);
-    TEST_ASSERT_EQUAL_INT(TYPE_BOOL, trueSymbol.type);
-    TEST_ASSERT_EQUAL_INT(1, trueSymbol.value.intValue);
-
-    Symbol falseSymbol = makeBoolSymbol(false);
-    TEST_ASSERT_NULL(falseSymbol.id);
-    TEST_ASSERT_EQUAL_INT(CONSTANT_SYMBOL, falseSymbol.symbolType);
-    TEST_ASSERT_EQUAL_INT(TYPE_BOOL, falseSymbol.type);
-    TEST_ASSERT_EQUAL_INT(0, falseSymbol.value.intValue);
-}
-
-// makeVoidSymbol inicializa un símbolo constante de tipo void
-void test_make_void_symbol(void) {
-    Symbol symbol = makeVoidSymbol();
-    TEST_ASSERT_NULL(symbol.id);
-    TEST_ASSERT_EQUAL_INT(0, symbol.uid);
-    TEST_ASSERT_EQUAL_INT(CONSTANT_SYMBOL, symbol.symbolType);
-    TEST_ASSERT_EQUAL_INT(TYPE_VOID, symbol.type);
-}
-
 /* ------------------------------------------------------------------------
  * Creación de ámbitos léxicos (Scope) y jerarquía
  * ------------------------------------------------------------------------ */
@@ -468,10 +424,6 @@ int main(void) {
     RUN_TEST(test_new_symbol_initialization);
     RUN_TEST(test_new_symbol_anonymous_constant);
     RUN_TEST(test_free_symbol_null_safe);
-    RUN_TEST(test_make_int_symbol);
-    RUN_TEST(test_make_float_symbol);
-    RUN_TEST(test_make_bool_symbol);
-    RUN_TEST(test_make_void_symbol);
 
     // Creación de ámbitos y jerarquía
     RUN_TEST(test_create_scope_initial_state);

@@ -42,7 +42,6 @@ queda afuera:
 
 | Qué | Mnemónicos emitidos como texto |
 | --- | --- |
-| Reales (SSE) | `movss`, `subss`, `cvtsi2ss`, `comiss`, `pxor` |
 | Control de flujo | `jmp`, `je`, `jne`, `call`, `ret` |
 | Marco de pila | `pushq`, `subq`, `addq`, `movq`, `leave` |
 | Resultado de comparaciones | `movzbl`, `setnp`, `andb`, los `setCC` |
@@ -50,7 +49,7 @@ queda afuera:
 | Directivas | `.data`, `.text`, `.globl`, `.type`, `.align`, `.section` |
 
 **Es una limitación real, no una decisión elegante.** El módulo se diseñó para la
-primera entrega, que era solo enteros, y cuando se agregaron los reales, las
+primera entrega, y cuando crecieron las
 llamadas y el marco, esas partes se escribieron directo. La consecuencia práctica
 es que **la sintaxis AT&T está centralizada solo para una parte del back-end**:
 en el resto, el orden de los operandos depende de que cada `buildStringf` esté
@@ -170,7 +169,7 @@ cinco tipos (`ASM_OP_NONE` no lleva valor).
 ## 4. La válvula de escape: `customReg`
 
 El enum tiene tres registros, pero el generador necesita emitir `%edi`, `%esi`,
-`%r8d`, `%xmm0`… Para eso existe un segundo constructor de operandos de registro:
+`%r8d`… Para eso existe un segundo constructor de operandos de registro:
 
 ```c
 opReg(ASM_RAX)      /* por enum   -> %eax */
@@ -341,13 +340,6 @@ Agregar los valores a `AsmRegister` y sus nombres a `getRegisterName`, y despué
 reemplazar las llamadas a `opRegStr` por `opReg`. Es lo que permitiría eliminar
 `customReg` y que un registro tenga una sola representación.
 
-### Cubrir los reales
-
-Hace falta más que opcodes: los mnemónicos SSE operan sobre `%xmm0`–`%xmm15`, que
-son una **clase de registros distinta**, y varias instrucciones tienen formas que
-`emitAsm` no contempla. Es el trabajo grande que haría que todo el assembly
-saliera por el módulo.
-
 ### Habilitar la mirilla sobre el assembly
 
 Requiere el cambio estructural de §3: acumular las `AsmInstruction` en una lista
@@ -360,7 +352,7 @@ instrucciones contiguas, exactamente como `removeRedundantJumps` sobre el TAC.
 
 ## 9. Trampas y límites conocidos
 
-- **El módulo cubre solo la aritmética entera** (§2). Reales, saltos, llamadas,
+- **El módulo cubre solo la aritmética entera** (§2). Saltos, llamadas,
   marco y directivas se emiten como texto desde `object_code.c`.
 - **Los dos `default` silenciosos** de `getRegisterName` y `getOpcodeMnemonic`
   (§6).

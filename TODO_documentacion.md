@@ -402,6 +402,92 @@ coordinación.
 
 ---
 
+## Recorte de alcance: fuera el intérprete y el `float` del back-end — HECHO
+
+Decisión del grupo para la entrega final: **que no haya nada que el enunciado no
+pida**. El intérprete y sus páginas ya los había sacado el grupo; esta ronda
+cerró lo que quedaba.
+
+### El bug que había quedado en el medio
+
+Al sacar el punto flotante de `object_code.c` pero dejarlo en el TAC, el
+optimizador y el chequeo de tipos, **el compilador quedó miscompilando en
+silencio**: un `float` llegaba al back-end y se traducía como entero, o sea
+sumas enteras sobre patrones de bits IEEE-754.
+
+```
+int main() { float a; float b; a = 1.0; b = a + 1.0; if (b == 2.0) { return 1; } return 99; }
+```
+
+Devolvía **99**. Y varias comparaciones acertaban **por casualidad** —el orden de
+los bits IEEE coincide con el de los enteros con signo— lo que lo hacía parecer
+funcional. La documentación lo había predicho textualmente meses antes: *"un
+programa que declara un float habría pasado el análisis semántico y generado
+código incorrecto más abajo"*.
+
+### Dónde quedó el corte
+
+| Fase | `float` |
+| --- | --- |
+| Léxico, sintáctico, AST, tabla de símbolos | **Sí**: es un tipo del lenguaje |
+| Chequeo de tipos | **Sí**: la regla 14 es una de las catorce que se califican |
+| TAC, optimizador, código objeto | **No**: se rechaza con su línea |
+
+El rechazo vive en `generateIntermediateCode`: `findUnsupportedType` recorre el
+AST y devuelve el primer nodo cuyo tipo —o el de su símbolo— sea `TYPE_FLOAT`.
+Mirar las dos cosas alcanza para cubrir expresiones, declaraciones, parámetros y
+tipo de retorno en un solo recorrido. `hasUnsupportedTypeError()` deja que el
+driver distinga este rechazo de una falla interna.
+
+**Por qué el corte va en el TAC y no en el semántico:** `float` es un tipo
+legítimo de C-TDS y la regla 14 es obligatoria, así que el front-end lo acepta
+entero y `-target sem` no da error. Lo que no está en alcance es *generarle
+código*, y esa es la primera fase que lo haría.
+
+### Código quitado
+
+| Qué | Dónde |
+| --- | --- |
+| `coerceToFloat`, `coerceBinaryOperands` | `intermediate_code.c` |
+| `emitCondition` | `intermediate_code.c` — era el código muerto que ya estaba anotado |
+| `TAC_INT_TO_FLOAT` | `tac_operation.h`, `tac_instruction.c`, `optimizer.c` |
+| `tacConstantFloat` y el campo `floatValue` | `tac_operand.c/h` |
+| `asFloat` y las ramas `TYPE_FLOAT` del plegado | `optimizer.c` |
+| `makeIntSymbol`, `makeFloatSymbol`, `makeBoolSymbol`, `makeVoidSymbol` | `symbol_table.c/h` — los pedía el intérprete y quedaron sin usuarios |
+| `floatParamCount` | `function_frame.c/h` |
+| El prefijo `[INTERPRETE]` | `debug.h` |
+
+El opcode bajó de **24 a 23** y `object_code.c` de 1048 a 794 líneas.
+
+### Tests y ejemplos
+
+- Los cinco tests de coerción del grupo 7 de `test_tac.c` se fueron, y entraron
+  **tres nuevos**: que un programa con `float` se rechace, que el rechazo alcance
+  al tipo de retorno de un método, y que uno de enteros no active la bandera.
+- Los cuatro tests de los `make*Symbol` se fueron con los constructores.
+- La instantánea canónica del factorial perdió la global real, así que los `uid`
+  corrieron uno: se recalcularon contra la salida real del compilador.
+- `examples/programa.ctds` —el que recorre todas las construcciones— usaba
+  `float` y por lo tanto ya no compilaba: se pasó a `int`.
+  `examples/if_not_equals_type.ctds` se dejó como está: es el ejemplo de un
+  programa que el front-end acepta y el back-end rechaza.
+
+### Documentación
+
+Nueve páginas tocadas. Las del back-end (F16, F17, F18) perdieron todo el camino
+SSE; F12 y F13 perdieron el opcode y las coerciones, y F13 ganó una sección
+nueva (§9) sobre el rechazo. La portada y el README cambiaron *"Extensiones
+sobre el enunciado"* por *"Alcance de `float`"*, que es lo que ahora corresponde.
+*Cambios a Etapas Anteriores* ganó la sección §5 con el recorte completo,
+incluido el bug como advertencia.
+
+Verificado: build sin warnings, las diez suites en verde, los seis programas de
+`examples/` con el mismo código de salida sin optimizar y con `-opt all`, el
+sitio con `--strict` sin avisos, ningún link roto, y **cero referencias a
+funciones que ya no existen** en toda la documentación.
+
+---
+
 ## Inventario completo
 
 Los **44 archivos** de `include/` y `src/` están repartidos en 19 fichas, cada

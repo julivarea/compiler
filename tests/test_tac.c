@@ -12,7 +12,7 @@
  *  - Sombreado de variables diferenciado por uids calificados (@uid).
  *  - Definición de métodos, lista de parámetros formales y retorno implícito/explícito.
  *  - Llamadas a métodos con pasaje ordenado de argumentos (param y call).
- *  - Coerciones de tipos implícitas (int -> float) en asignaciones, retornos, expresiones y llamadas.
+ *  - Rechazo de los tipos fuera del alcance de la etapa (`float`).
  *  - Instantáneas canónicas exactas de programas completos (.ci).
  */
 
@@ -511,41 +511,35 @@ void test_tac_nested_while_loops(void) {
 
 // Variables globales emiten instrucciones TAC_GLOBAL_DECL con sus tipos respectivos
 void test_tac_global_variable_declarations(void) {
-    const char *source = "int g; float h; boolean b; void main() { }";
+    const char *source = "int g; boolean b; void main() { }";
     const TACList *list = compileToTAC(source);
     TEST_ASSERT_NOT_NULL(list);
 
-    TEST_ASSERT_EQUAL_INT(3, countInstructions(list, TAC_GLOBAL_DECL));
+    TEST_ASSERT_EQUAL_INT(2, countInstructions(list, TAC_GLOBAL_DECL));
 
     const TACInstruction *g1 = findInstruction(list, TAC_GLOBAL_DECL, 0);
     const TACInstruction *g2 = findInstruction(list, TAC_GLOBAL_DECL, 1);
-    const TACInstruction *g3 = findInstruction(list, TAC_GLOBAL_DECL, 2);
 
     TEST_ASSERT_EQUAL_STRING("g@1", g1->firstOperand.name);
     TEST_ASSERT_EQUAL(TYPE_INT, g1->firstOperand.type);
 
-    TEST_ASSERT_EQUAL_STRING("h@2", g2->firstOperand.name);
-    TEST_ASSERT_EQUAL(TYPE_FLOAT, g2->firstOperand.type);
-
-    TEST_ASSERT_EQUAL_STRING("b@3", g3->firstOperand.name);
-    TEST_ASSERT_EQUAL(TYPE_BOOL, g3->firstOperand.type);
+    TEST_ASSERT_EQUAL_STRING("b@2", g2->firstOperand.name);
+    TEST_ASSERT_EQUAL(TYPE_BOOL, g2->firstOperand.type);
 }
 
 // Variables locales dentro del cuerpo de un método emiten instrucciones TAC_LOCAL_DECL
 void test_tac_local_variable_declarations(void) {
-    const char *source = "void main() { int x; float y; boolean z; }";
+    const char *source = "void main() { int x; boolean z; }";
     const TACList *list = compileToTAC(source);
     TEST_ASSERT_NOT_NULL(list);
 
-    TEST_ASSERT_EQUAL_INT(3, countInstructions(list, TAC_LOCAL_DECL));
+    TEST_ASSERT_EQUAL_INT(2, countInstructions(list, TAC_LOCAL_DECL));
 
     const TACInstruction *l1 = findInstruction(list, TAC_LOCAL_DECL, 0);
     const TACInstruction *l2 = findInstruction(list, TAC_LOCAL_DECL, 1);
-    const TACInstruction *l3 = findInstruction(list, TAC_LOCAL_DECL, 2);
 
     TEST_ASSERT_EQUAL(TYPE_INT, l1->firstOperand.type);
-    TEST_ASSERT_EQUAL(TYPE_FLOAT, l2->firstOperand.type);
-    TEST_ASSERT_EQUAL(TYPE_BOOL, l3->firstOperand.type);
+    TEST_ASSERT_EQUAL(TYPE_BOOL, l2->firstOperand.type);
 }
 
 // Sombreado de variable local sobre global genera uids calificados distintos (@1 vs @3)
@@ -696,87 +690,6 @@ void test_tac_method_call_arguments_left_to_right(void) {
 }
 
 /* ------------------------------------------------------------------------
- * Grupo 7: Coerciones de Tipos (int -> float)
- * ------------------------------------------------------------------------ */
-
-// Asignación de entero a variable real emite instrucción explícita int_to_float
-void test_tac_coercion_on_assignment(void) {
-    const char *source = "void main() { float f; f = 1; }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *coerceInst = findInstruction(list, TAC_INT_TO_FLOAT, 0);
-    TEST_ASSERT_NOT_NULL(coerceInst);
-    TEST_ASSERT_EQUAL_STRING("t0", coerceInst->result.name);
-    TEST_ASSERT_EQUAL_STRING("1", coerceInst->firstOperand.name);
-
-    const TACInstruction *assignInst = findInstruction(list, TAC_ASSIGN, 0);
-    TEST_ASSERT_NOT_NULL(assignInst);
-    TEST_ASSERT_EQUAL_STRING("f@2", assignInst->result.name);
-    TEST_ASSERT_EQUAL_STRING("t0", assignInst->firstOperand.name);
-}
-
-// Expresión binaria mixta con entero a la izquierda promociona dicho operando a real con int_to_float
-void test_tac_coercion_in_binary_op_left(void) {
-    const char *source = "void main() { float f; f = 1 + 2.5; }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *coerceInst = findInstruction(list, TAC_INT_TO_FLOAT, 0);
-    TEST_ASSERT_NOT_NULL(coerceInst);
-    TEST_ASSERT_EQUAL_STRING("1", coerceInst->firstOperand.name);
-
-    const TACInstruction *addInst = findInstruction(list, TAC_ADD, 0);
-    TEST_ASSERT_NOT_NULL(addInst);
-    TEST_ASSERT_EQUAL(TYPE_FLOAT, addInst->result.type);
-}
-
-// Expresión binaria mixta con entero a la derecha promociona dicho operando a real con int_to_float
-void test_tac_coercion_in_binary_op_right(void) {
-    const char *source = "void main() { float f; f = 2.5 + 1; }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *coerceInst = findInstruction(list, TAC_INT_TO_FLOAT, 0);
-    TEST_ASSERT_NOT_NULL(coerceInst);
-    TEST_ASSERT_EQUAL_STRING("1", coerceInst->firstOperand.name);
-
-    const TACInstruction *addInst = findInstruction(list, TAC_ADD, 0);
-    TEST_ASSERT_NOT_NULL(addInst);
-    TEST_ASSERT_EQUAL(TYPE_FLOAT, addInst->result.type);
-}
-
-// Retorno de valor entero en método con tipo de retorno float emite coerción int_to_float
-void test_tac_coercion_on_return(void) {
-    const char *source = "float f() { return 1; } void main() { }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *coerceInst = findInstruction(list, TAC_INT_TO_FLOAT, 0);
-    TEST_ASSERT_NOT_NULL(coerceInst);
-    TEST_ASSERT_EQUAL_STRING("1", coerceInst->firstOperand.name);
-
-    const TACInstruction *retInst = findInstruction(list, TAC_RETURN, 0);
-    TEST_ASSERT_NOT_NULL(retInst);
-    TEST_ASSERT_EQUAL_STRING(coerceInst->result.name, retInst->firstOperand.name);
-}
-
-// Paso de argumento entero en parámetro formal de tipo float genera coerción int_to_float previa
-void test_tac_coercion_in_call_argument(void) {
-    const char *source = "void show(float val) { } void main() { show(42); }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *coerceInst = findInstruction(list, TAC_INT_TO_FLOAT, 0);
-    TEST_ASSERT_NOT_NULL(coerceInst);
-    TEST_ASSERT_EQUAL_STRING("42", coerceInst->firstOperand.name);
-
-    const TACInstruction *paramInst = findInstruction(list, TAC_PARAM, 0);
-    TEST_ASSERT_NOT_NULL(paramInst);
-    TEST_ASSERT_EQUAL_STRING(coerceInst->result.name, paramInst->firstOperand.name);
-}
-
-/* ------------------------------------------------------------------------
  * Grupo 8: Instantáneas Canónicas de Programas Completos y Colisión de Nombres
  * ------------------------------------------------------------------------ */
 
@@ -784,7 +697,6 @@ void test_tac_coercion_in_call_argument(void) {
 void test_tac_canonical_factorial_program(void) {
     const char *source =
         "int g;\n"
-        "float h;\n"
         "int fact(int n) {\n"
         "  if (n < 2) { return 1; } else { return n * fact(n - 1); }\n"
         "}\n"
@@ -797,32 +709,31 @@ void test_tac_canonical_factorial_program(void) {
 
     const char *expected =
         "global g@1, INT\n"
-        "global h@2, FLOAT\n"
         "begin_func fact, 1\n"
-        "param_decl n@4\n"
-        "t0 = n@4 < 2\n"
+        "param_decl n@3\n"
+        "t0 = n@3 < 2\n"
         "if t0 false goto L0\n"
         "ret 1\n"
         "goto L1\n"
         "L0:\n"
-        "t2 = n@4 - 1\n"
+        "t2 = n@3 - 1\n"
         "param t2\n"
         "t3 = call fact, 1\n"
-        "t1 = n@4 * t3\n"
+        "t1 = n@3 * t3\n"
         "ret t1\n"
         "L1:\n"
         "end_func fact\n"
         "begin_func main, 0\n"
-        "local i@6, INT\n"
-        "i@6 = 0\n"
+        "local i@5, INT\n"
+        "i@5 = 0\n"
         "L2:\n"
-        "t4 = i@6 < 3\n"
+        "t4 = i@5 < 3\n"
         "if t4 false goto L3\n"
-        "t5 = i@6 + 1\n"
-        "i@6 = t5\n"
+        "t5 = i@5 + 1\n"
+        "i@5 = t5\n"
         "goto L2\n"
         "L3:\n"
-        "param i@6\n"
+        "param i@5\n"
         "t6 = call fact, 1\n"
         "g@1 = t6\n"
         "ret\n"
@@ -833,12 +744,12 @@ void test_tac_canonical_factorial_program(void) {
     TEST_ASSERT_EQUAL_STRING(expected, actual);
 }
 
-// Coerción en retorno y operaciones aritméticas mixtas valida salida .ci exacta
+// Programa con operadores mixtos, llamada y aritmética valida salida .ci exacta
 void test_tac_canonical_half_and_mixed_operators(void) {
     const char *source =
-        "float half(int x) { return x / 2; }\n"
+        "int half(int x) { return x / 2; }\n"
         "void main() {\n"
-        "  float r;\n"
+        "  int r;\n"
         "  r = half(7) + 1;\n"
         "}\n";
 
@@ -846,22 +757,40 @@ void test_tac_canonical_half_and_mixed_operators(void) {
         "begin_func half, 1\n"
         "param_decl x@2\n"
         "t0 = x@2 / 2\n"
-        "t1 = int_to_float t0\n"
-        "ret t1\n"
+        "ret t0\n"
         "end_func half\n"
         "begin_func main, 0\n"
-        "local r@4, FLOAT\n"
+        "local r@4, INT\n"
         "param 7\n"
-        "t2 = call half, 1\n"
-        "t4 = int_to_float 1\n"
-        "t3 = t2 + t4\n"
-        "r@4 = t3\n"
+        "t1 = call half, 1\n"
+        "t2 = t1 + 1\n"
+        "r@4 = t2\n"
         "ret\n"
         "end_func main\n";
 
     const char *actual = compileToTACText(source);
     TEST_ASSERT_NOT_NULL(actual);
     TEST_ASSERT_EQUAL_STRING(expected, actual);
+}
+
+// El enunciado acota la etapa a tipos enteros y logicos: un programa con float se rechaza
+void test_tac_rejects_float_program(void) {
+    const char *source = "void main() { float f; f = 1.5; }";
+    TEST_ASSERT_NULL(compileToTAC(source));
+    TEST_ASSERT_TRUE(hasUnsupportedTypeError());
+}
+
+// El rechazo alcanza al tipo de retorno de un metodo, no solo a las variables
+void test_tac_rejects_float_return_type(void) {
+    const char *source = "float f() { return 1; } void main() { }";
+    TEST_ASSERT_NULL(compileToTAC(source));
+    TEST_ASSERT_TRUE(hasUnsupportedTypeError());
+}
+
+// Un programa sin float no activa la bandera de tipo no soportado
+void test_tac_integer_program_is_supported(void) {
+    TEST_ASSERT_NOT_NULL(compileToTAC("void main() { int x; x = 1; }"));
+    TEST_ASSERT_FALSE(hasUnsupportedTypeError());
 }
 
 // Cadena booleana con cortocircuito a && f() || false valida salida .ci exacta
@@ -1024,15 +953,13 @@ int main(void) {
     RUN_TEST(test_tac_method_call_arguments_left_to_right);
 
     /* Grupo 7: Coerciones de Tipos */
-    RUN_TEST(test_tac_coercion_on_assignment);
-    RUN_TEST(test_tac_coercion_in_binary_op_left);
-    RUN_TEST(test_tac_coercion_in_binary_op_right);
-    RUN_TEST(test_tac_coercion_on_return);
-    RUN_TEST(test_tac_coercion_in_call_argument);
 
     /* Grupo 8: Instantáneas Canónicas de Programas Completos */
     RUN_TEST(test_tac_canonical_factorial_program);
     RUN_TEST(test_tac_canonical_half_and_mixed_operators);
+    RUN_TEST(test_tac_rejects_float_program);
+    RUN_TEST(test_tac_rejects_float_return_type);
+    RUN_TEST(test_tac_integer_program_is_supported);
     RUN_TEST(test_tac_canonical_short_circuit_boolean_chain);
     RUN_TEST(test_tac_long_variable_name_collision);
     RUN_TEST(test_tac_null_ast_root_returns_null);

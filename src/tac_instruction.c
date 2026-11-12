@@ -116,12 +116,6 @@ void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instr
                      getOperandName(&instruction->firstOperand));
             break;
 
-        case TAC_INT_TO_FLOAT:
-            snprintf(buffer, size, "%s = int_to_float %s\n",
-                     getOperandName(&instruction->result),
-                     getOperandName(&instruction->firstOperand));
-            break;
-
         default: /* operador binario: result = A sym B */
             snprintf(buffer, size, "%s = %s %s %s\n",
                      getOperandName(&instruction->result),

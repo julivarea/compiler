@@ -28,10 +28,6 @@ Es una estructura de datos, no una fase: la construye y consulta el
 | --- | --- |
 | `newSymbol(id, symbolType, type, parameters)` | Crea un símbolo en el heap |
 | `freeSymbol(symbol)` | Lo libera junto con su `id` |
-| `makeIntSymbol(int)` | Símbolo constante entero **por valor** |
-| `makeFloatSymbol(float)` | Ídem real |
-| `makeBoolSymbol(bool)` | Ídem booleano |
-| `makeVoidSymbol()` | Ídem void |
 
 ### Ámbitos
 
@@ -86,26 +82,23 @@ entero y real a la vez, así que la unión no desperdicia nada.
 | --- | --- | --- |
 | `VARIABLE_SYMBOL` | El parser y `newParameterDeclaration` | `id`, `uid`, `type` |
 | `METHOD_SYMBOL` | `newMethodDeclaration` | `id`, `uid`, `type` (retorno), `parameters` |
-| `CONSTANT_SYMBOL` | Los `new*LiteralNode` y los `make*Symbol` | `type`, `value`. **Sin `id`** |
+| `CONSTANT_SYMBOL` | Los `new*LiteralNode` | `type`, `value`. **Sin `id`** |
 
-### Las dos vidas de `Symbol`: heap y valor
+### Un `Symbol` sin `id` es una constante, no una entrada rota
 
-Hay dos formas de obtener un `Symbol` y conviene no confundirlas, porque una es
-para la tabla y la otra para evaluar expresiones.
+La misma estructura sirve para dos cosas, y conviene no confundirlas:
 
-| | `newSymbol` | `makeIntSymbol` y compañía |
+| | Declaración | Literal |
 | --- | --- | --- |
-| Devuelve | `Symbol *` en el heap | `Symbol` **por valor** |
-| Quién lo libera | `freeSymbol`, o `freeScope` si fue registrado | Nadie: vive en la pila |
-| `id` | El que se le pase | Siempre `NULL` (hacen `memset` a 0) |
-| `uid` | 0 hasta que `appendSymbol` lo registre | Siempre 0 |
-| Para qué | **Declaraciones**: lo que se guarda en la tabla | **Valores intermedios** de una expresión |
+| Quién lo crea | `newSymbol`, desde el parser | Los `new*LiteralNode` de `ast.c` |
+| `id` | El nombre del identificador | **`NULL`** |
+| `uid` | Lo asigna `appendSymbol` al registrarlo | Siempre 0 |
+| Dónde vive | En la tabla de símbolos del ámbito | Colgado del nodo `CONSTANT_NODE` |
 
-O sea que `Symbol` cumple dos papeles: entrada de tabla de símbolos y
-*resultado de evaluar una expresión*. Los `make*Symbol` existen para representar
-el valor de una constante o de una expresión reusando la misma estructura en
-lugar de definir un tipo propio. Es economía de código a costa de que el nombre
-`Symbol` signifique dos cosas distintas según el contexto.
+Un símbolo con `id == NULL` y `uid == 0` **no está mal formado**: es un literal,
+que no tiene nombre ni ámbito porque no se declara en ninguna parte. Es economía
+de código —una sola estructura para las dos cosas— a costa de que `Symbol`
+signifique dos cosas según el contexto.
 
 ### `newSymbol` adopta el `id`, no lo copia
 
@@ -428,9 +421,9 @@ analizar ningún cuerpo. Es un cambio en F11, no acá: la tabla ya soporta el ca
   registrar el símbolo y sin avisar, así que en un escenario de falta de memoria
   una declaración desaparecería y el error que se vería sería "variable no
   declarada", muy lejos de la causa.
-- **`Symbol` significa dos cosas** según venga de `newSymbol` o de `make*Symbol`
-  (§3). Un `Symbol` por valor con `id == NULL` y `uid == 0` no es una entrada de
-  tabla rota: es el valor intermedio de una expresión.
+- **`Symbol` significa dos cosas** (§3): entrada de tabla cuando tiene `id` y
+  `uid`, y literal cuando no. Un símbolo con `id == NULL` y `uid == 0` no es una
+  entrada rota: es una constante.
 - **La tabla de símbolos no se libera al terminar.** `freeScope` existe y es
   correcta, pero el compilador no la llama sobre el ámbito global: es parte de las
   fugas que reporta el detector al salir. Es la misma decisión que con el AST.

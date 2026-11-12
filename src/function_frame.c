@@ -30,7 +30,6 @@ FunctionFrame *createFrame(const char *functionName) {
     frame->pendingParamCount = 0;
     frame->maxPendingParams = 0;
     frame->integerParamCount = 0;
-    frame->floatParamCount = 0;
     frame->stackParamCount = 0;
 
     bool allocationFailed = (frame->slots == NULL ||

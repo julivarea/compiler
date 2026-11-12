@@ -51,7 +51,10 @@ static const TACList *buildIntermediateCode(const Options *options) {
 
     const TACList *tacList = generateIntermediateCode(astRoot);
     if (tacList == NULL) {
-        fprintf(stderr, "Error interno: no se pudo generar el codigo intermedio.\n");
+        // Un tipo fuera de alcance ya se reporto con su linea; no es una falla interna.
+        if (!hasUnsupportedTypeError()) {
+            fprintf(stderr, "Error interno: no se pudo generar el codigo intermedio.\n");
+        }
         return NULL;
     }
 

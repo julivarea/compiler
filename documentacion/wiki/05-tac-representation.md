@@ -7,12 +7,11 @@
 La estructura de datos del **Código de Tres Direcciones**: el puente entre el
 front-end y el back-end.
 
-!!! note "El soporte de `float` es una extensión nuestra"
-    El enunciado acotaba el alcance de esta etapa a **tipos enteros y lógicos**:
-    generar código para `float` **no era necesario**. Se implementó igual, para
-    que el compilador no quedara incoherente con la especificación de su propio
-    lenguaje. El argumento completo está en la sección *Extensiones sobre el
-    enunciado* de [la página inicial](../index.md).
+!!! note "El TAC cubre tipos enteros y lógicos"
+    El enunciado acota esta etapa a **tipos enteros y lógicos**. El operando
+    constante guarda un `int` y nada más, y un programa que use `float` se
+    rechaza al empezar a generar, con su línea. Ver la
+    [ficha F13](05.5-tac-generation.md).
 
 ---
 
@@ -114,7 +113,6 @@ typedef struct TACOperand {
     Symbol *symbol;                /* solo en OPERAND_VARIABLE */
     union {
         int intValue;
-        float floatValue;
     } value;                       /* solo en OPERAND_CONSTANT */
 } TACOperand;
 ```
@@ -122,7 +120,7 @@ typedef struct TACOperand {
 | Campo | Por qué existe |
 | --- | --- |
 | `kind` | **La razón de ser de la estructura.** Dice qué es el operando sin tener que deducirlo de la cadena |
-| `type` | El tipo de dato, que el generador de código necesita para elegir instrucción (`addl` contra `addss`) |
+| `type` | El tipo de dato del operando (`INT` o `BOOL`), que viaja hasta el generador de código |
 | `name` | Buffer de tamaño fijo, 256 bytes. Es lo que se imprime en el `.ci` |
 | `symbol` | Referencia al símbolo de la tabla, para resolver la ubicación de la variable |
 | `value` | El valor inmediato de una constante, para que el optimizador pueda plegarla |
@@ -162,7 +160,6 @@ antes de llenar los campos.
 | `tacVariable(symbol)` | Una variable, con el nombre calificado. Ver §4 |
 | `tacConstantInt(value)` | Constante entera; el `name` es el número |
 | `tacConstantBool(value)` | Constante booleana; el `name` es `"true"` o `"false"` |
-| `tacConstantFloat(value)` | Constante real |
 | `tacMethod(name, returnType)` | Un método |
 | `tacLabel(name)` | Una etiqueta |
 
@@ -231,7 +228,7 @@ un programa incorrecto. Con el chequeo, se reporta como error interno.
 
 ## 5. El catálogo de operaciones
 
-24 opcodes en `TACOperation`, en seis familias. **Los 24 se emiten**: no hay
+23 opcodes en `TACOperation`, en seis familias. **Los 23 se emiten**: no hay
 opcodes muertos, verificado contra el generador.
 
 ### Métodos y funciones
@@ -284,7 +281,6 @@ intermedia antes de cada salto.
 | `TAC_LT` `TAC_GT` `TAC_EQ` | `t4 = x@8 > 5` |
 | `TAC_UMINUS` | `t0 = -x@2` |
 | `TAC_NOT` | `t8 = !b@10` |
-| `TAC_INT_TO_FLOAT` | `t3 = int_to_float x@8` |
 
 ### Lo que no está: `TAC_AND` y `TAC_OR`
 
@@ -324,22 +320,6 @@ L0:
 El detalle de cómo se generan estas secuencias es la
 [ficha F13](05.5-tac-generation.md). Lo que importa acá es que **la ausencia de
 esos dos opcodes es lo que garantiza la semántica del lenguaje**.
-
-### `TAC_INT_TO_FLOAT` como instrucción explícita
-
-La coerción que decidió el [chequeo de tipos](04.5-type-checker.md) no queda
-implícita: se materializa en una instrucción. `f = x + 1.5` con `x` entero
-produce:
-
-```
-t3 = int_to_float x@8
-t2 = t3 + 1.500000
-```
-
-Así el generador de código objeto no tiene que inferir conversiones: cada una
-está escrita, y le corresponde una instrucción SSE concreta (`cvtsi2ss`). Es la
-diferencia entre una representación donde las conversiones son un comentario y
-una donde son código.
 
 ---
 
@@ -559,20 +539,19 @@ instrucción por tres, porque hay tres operandos.
 ./mi_compilador -target codinter examples/programa.ctds
 ```
 
-- Un programa que recorre **los 24 opcodes** de una pasada, útil como referencia
+- Un programa que recorre **los 23 opcodes** de una pasada, útil como referencia
   del formato y como prueba de humo del generador:
 
 ```c
 int g;
-float gf;
 int suma(int a, int b){ return a + b; }
 void nada(){ return; }
 int main(){
-    int x; float f; boolean b; boolean c;
+    int x; boolean b; boolean c;
     g = 10;                        // global, assign
     x = suma(g, 2);                // param, call con destino
     nada();                        // call sin destino
-    f = x + 1.5;                   // int_to_float, add
+    x = x + 1;                     // add
     b = (x > 5) && (x < 100);      // gt, lt, if_false, label
     c = (x == 0) || (x > 1);       // eq, if_true
     if (b) { x = -x; } else { c = !b; }   // uminus, not, goto

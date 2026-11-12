@@ -23,6 +23,7 @@ cuando una fase posterior las consumió se vio qué faltaba.
 | AST y tabla de símbolos (entregada 30/09) | 4 | Durante el optimizador |
 | Análisis semántico (entregado 07/10) | 3 | Durante código objeto y optimizador |
 | Código objeto (entregado 26/10) | 2 | Durante el optimizador |
+| **Cuatro a la vez** (§5) | 1 | Recorte de alcance en la entrega final |
 
 ---
 
@@ -115,19 +116,19 @@ el nombre se duplicaba dos veces: una en el parser y otra en la tabla, y la
 primera copia quedaba huérfana. Transferir la propiedad deja **un solo dueño**,
 que es lo que vuelve clara la pregunta de quién libera.
 
-### 2.3 Constructores de `Symbol` por valor
+### 2.3 Constructores de `Symbol` por valor: se agregaron y se quitaron
 
 **Qué cambió.** `symbol_table` ganó `makeIntSymbol`, `makeFloatSymbol`,
-`makeBoolSymbol` y `makeVoidSymbol`: constructores que devuelven un `Symbol`
-**por valor**, sin reservar nada.
+`makeBoolSymbol` y `makeVoidSymbol` —constructores que devuelven un `Symbol`
+**por valor**— y después se eliminaron. Hoy no existen.
 
-**Por qué hizo falta.** Cada expresión evaluada produce un valor, y armarlo a
-mano eran cuatro líneas de inicialización repetidas por todos lados. Con los
-constructores, esa inicialización quedó centralizada en `symbol_table`.
+**Por qué se agregaron.** Los pidió el intérprete: cada expresión evaluada
+produce un valor, y armarlo a mano eran cuatro líneas de inicialización
+repetidas por todos lados.
 
-Es el cambio que mejor muestra la **doble naturaleza de `Symbol`**: entrada de
-la tabla de símbolos cuando tiene `id` y `uid`, y valor de una expresión cuando
-no.
+**Por qué se quitaron.** Al sacar el intérprete del proyecto (§5) quedaron sin
+un solo usuario fuera de sus propios tests. Es el mismo criterio que con
+`hasExecute`: código que ya no sostiene nada se va.
 
 ### 2.4 El campo `hasExecute`: se agregó y se quitó
 
@@ -196,11 +197,13 @@ optimizador.
 **Qué cambió.** Se eliminó el campo `paramCount` del `FunctionFrame` y los
 envoltorios de registros que ya no se usaban.
 
-**Por qué hizo falta.** El soporte de `float` obligó a llevar **dos contadores
-independientes** —uno para los argumentos enteros y otro para los de punto
-flotante, porque System V AMD64 los reparte en dos secuencias de registros
-distintas— y el contador único quedó sin sentido. Mantenerlo era invitar a que
-alguien lo leyera creyendo que decía cuántos argumentos tiene la función.
+**Por qué hizo falta.** Mientras existió el camino de punto flotante hubo
+**dos contadores independientes** —uno por cada secuencia de registros que
+define System V AMD64— y el contador único quedó sin sentido. Mantenerlo era
+invitar a que alguien lo leyera creyendo que decía cuántos argumentos tiene la
+función. Al recortar el alcance a enteros (§5) quedó un solo contador, pero la
+distinción entre *cuántos entraron por registro* y *cuántos por la pila* sigue
+haciendo falta.
 
 ### 4.2 Emisión modularizada por la regla de descenso
 
@@ -212,6 +215,60 @@ traducción adentro, de varios cientos de líneas. Con una función por caso, ca
 traducción se lee y se testea sola, y el `switch` queda como índice. El criterio
 es el de *Convenciones del Código*; el resultado está inventariado en la
 [ficha F18](wiki/06-object-code.md).
+
+---
+
+## 5. El recorte de alcance: fuera el intérprete y el `float` del back-end
+
+Es el cambio más grande de la lista y toca **cuatro etapas a la vez**, así que
+va aparte. La decisión fue ajustar el proyecto a lo que el enunciado pide y
+nada más.
+
+### Qué se sacó
+
+| Qué | Dónde |
+| --- | --- |
+| El intérprete completo | `interpreter.c/h`, su suite, su página del sitio, el valor `interp` de `-target` |
+| Los constructores `make*Symbol` | `symbol_table`, que solo los usaba el intérprete (§2.3) |
+| El camino de punto flotante del generador de objeto | `object_code.c`: registros `%xmm`, `movss`, `comiss`, el pool de `.rodata` |
+| Las coerciones `int`→`float` del TAC | `intermediate_code.c`: `coerceToFloat`, `coerceBinaryOperands` y el opcode `TAC_INT_TO_FLOAT` |
+| El plegado de constantes reales | `optimizer.c`: `asFloat` y las ramas de `TYPE_FLOAT` |
+| El operando constante real | `tac_operand`: `tacConstantFloat` y el campo `floatValue` |
+| `floatParamCount` | `function_frame`, sin usuarios tras lo anterior |
+
+### El bug que apareció en el medio, y por qué importa
+
+El recorte se hizo en dos pasos, y **entre uno y otro el compilador quedó
+miscompilando en silencio**. Al sacar el punto flotante del generador de código
+objeto pero dejarlo en el TAC y en el chequeo de tipos, un `float` llegaba al
+back-end y se traducía **como si fuera un entero**:
+
+```asm
+movl $1065353216, %eax     # los bits de 1.0f, cargados como entero
+movl $1065353216, %edx
+addl %edx, %eax            # suma ENTERA de dos patrones de bits
+```
+
+`1.0 + 1.0` no daba `2.0`, y el programa compilaba sin una sola queja. Las
+comparaciones acertaban **por casualidad** en varios casos, porque el orden de
+los patrones de bits IEEE-754 coincide con el de los enteros con signo, lo que
+lo hacía todavía más difícil de notar.
+
+La lección es la que ya estaba escrita en la documentación antes de que pasara:
+**un tipo que el front-end acepta y el back-end no entiende es la peor
+combinación posible**. Por eso el recorte terminó con un rechazo explícito en el
+generador de TAC en lugar de con un hueco. Está en §9 de la
+[ficha F13](wiki/05.5-tac-generation.md).
+
+### Qué se mantuvo, y por qué
+
+`float` **sigue siendo un tipo de C-TDS**: el lexer lo reconoce, la gramática lo
+acepta, el AST y la tabla de símbolos lo representan y el chequeo de tipos
+verifica la regla 14, que es una de las catorce que el análisis semántico debe
+implementar. Sacarlo del front-end habría sido violar la especificación del
+lenguaje para cumplir el alcance de una etapa. El corte quedó justo en la
+frontera: **el lenguaje tiene reales, esta implementación no les genera
+código**.
 
 ---
 

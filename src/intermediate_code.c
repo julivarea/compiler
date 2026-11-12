@@ -8,10 +8,12 @@
 static TACList *currentCode = NULL;
 static DataType currentMethodType = TYPE_VOID;
 static bool tacMemoryError = false;
+static bool tacUnsupportedType = false;
 
 static int temporaryCount = 0;
 static int labelCount = 0;
 
+static NodeAST *findUnsupportedType(NodeAST *node);
 static void generateGlobalDeclarationCode(NodeAST *node);
 static void generateStatementCode(NodeAST *node);
 static void generateMethodDeclarationCode(NodeAST *node);
@@ -30,8 +32,6 @@ static TACOperand generateCallExpressionCode(NodeAST *node);
 static TACOperand generateConstantOperand(NodeAST *node);
 static void generateCallArguments(NodeAST *node);
 
-static void coerceBinaryOperands(TACOperand *left, TACOperand *right);
-static TACOperand coerceToFloat(TACOperand operand);
 static TACOperation getTACOperation(OperationType operation);
 static bool lastInstructionIsReturn(void);
 static void emit(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand);
@@ -51,7 +51,6 @@ static void emitIfTrue(TACOperand condition, TACOperand label);
 static void emitAssign(TACOperand destination, TACOperand source);
 static void emitBinary(TACOperation operation, TACOperand result, TACOperand left, TACOperand right);
 static void emitUnary(TACOperation operation, TACOperand result, TACOperand operand);
-static TACOperand emitCondition(TACOperation operation, TACOperand left, TACOperand right);
 static TACOperand newTemporary(DataType type);
 static TACOperand newLabel(void);
 
@@ -63,6 +62,20 @@ const TACList *generateIntermediateCode(NodeAST *root) {
     freeTACList(currentCode);
     currentCode = NULL;
     tacMemoryError = false;
+    tacUnsupportedType = false;
+
+    // El enunciado acota esta etapa a tipos enteros y logicos: un 'float' se
+    // rechaza con su linea en vez de generarle codigo que no sabriamos traducir.
+    NodeAST *unsupported = findUnsupportedType(root);
+    if (unsupported != NULL) {
+        fprintf(stderr,
+                "\033[1;31mError en la linea %d:\033[0m la generacion de codigo para el tipo"
+                " 'float' no esta soportada: esta etapa cubre tipos enteros y logicos.\n",
+                unsupported->line);
+        tacUnsupportedType = true;
+        return NULL;
+    }
+
     currentCode = createTACList();
     if (currentCode == NULL) {
         fprintf(stderr,
@@ -90,6 +103,31 @@ const TACList *generateIntermediateCode(NodeAST *root) {
     }
 
     return currentCode;
+}
+
+bool hasUnsupportedTypeError(void) {
+    return tacUnsupportedType;
+}
+
+// Primer nodo del arbol cuyo tipo, o el de su simbolo, sea real. NULL si no hay.
+static NodeAST *findUnsupportedType(NodeAST *node) {
+    if (node == NULL) {
+        return NULL;
+    }
+
+    bool isFloatNode = (node->type == TYPE_FLOAT);
+    bool hasFloatSymbol = (node->symbol != NULL && node->symbol->type == TYPE_FLOAT);
+    if (isFloatNode || hasFloatSymbol) {
+        return node;
+    }
+
+    for (int i = 0; i < node->childCount; i++) {
+        NodeAST *found = findUnsupportedType(node->children[i]);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
 }
 
 static void generateGlobalDeclarationCode(NodeAST *node) {
@@ -173,10 +211,6 @@ static void generateVariableDeclarationCode(NodeAST *node) {
 
 static void generateAssignmentCode(NodeAST *node) {
     TACOperand value = generateExpressionCode(GET_EXPRESSION(node));
-    bool needsFloatCoercion = (node->symbol->type == TYPE_FLOAT);
-    if (needsFloatCoercion) {
-        value = coerceToFloat(value);
-    }
     emitAssign(tacVariable(node->symbol), value);
 }
 
@@ -189,11 +223,6 @@ static void generateReturnCode(NodeAST *node) {
     NodeAST *expression = GET_EXPRESSION(node);
     bool hasExpression = (expression != NULL);
     TACOperand value = hasExpression ? generateExpressionCode(expression) : tacNone();
-
-    bool needsFloatCoercion = (hasExpression && currentMethodType == TYPE_FLOAT);
-    if (needsFloatCoercion) {
-        value = coerceToFloat(value);
-    }
 
     if (hasExpression) {
         emitReturn(value);
@@ -275,7 +304,6 @@ static TACOperand generateOperatorCode(NodeAST *node) {
         emitUnary(getTACOperation(node->operationType), result, left);
     } else {
         TACOperand right = generateExpressionCode(GET_RIGHT(node));
-        coerceBinaryOperands(&left, &right);
         emitBinary(getTACOperation(node->operationType), result, left, right);
     }
 
@@ -317,48 +345,16 @@ static TACOperand generateConstantOperand(NodeAST *node) {
             return tacConstantInt(node->symbol->value.intValue);
         case TYPE_BOOL:
             return tacConstantBool(node->symbol->value.intValue);
-        case TYPE_FLOAT:
-            return tacConstantFloat(node->symbol->value.floatValue);
         default:
             return tacNone();
     }
 }
 
 static void generateCallArguments(NodeAST *node) {
-    NodeAST *formals = node->symbol->parameters;
-
     for (int i = 0; i < node->childCount; i++) {
         TACOperand argument = generateExpressionCode(node->children[i]);
-        bool needsFloatCoercion = (formals->children[i]->type == TYPE_FLOAT);
-
-        if (needsFloatCoercion) {
-            argument = coerceToFloat(argument);
-        }
-
         emitParam(argument);
     }
-}
-
-static void coerceBinaryOperands(TACOperand *left, TACOperand *right) {
-    bool leftFloatRightInt = (left->type == TYPE_FLOAT && right->type == TYPE_INT);
-    bool leftIntRightFloat = (left->type == TYPE_INT && right->type == TYPE_FLOAT);
-
-    if (leftFloatRightInt) {
-        *right = coerceToFloat(*right);
-    } else if (leftIntRightFloat) {
-        *left = coerceToFloat(*left);
-    }
-}
-
-static TACOperand coerceToFloat(TACOperand operand) {
-    bool isInt = (operand.type == TYPE_INT);
-    if (!isInt) {
-        return operand;
-    }
-
-    TACOperand result = newTemporary(TYPE_FLOAT);
-    emitUnary(TAC_INT_TO_FLOAT, result, operand);
-    return result;
 }
 
 // OP_AND y OP_OR no se mapean aqui porque se traducen a saltos de corto circuito antes de esta funcion.
@@ -458,13 +454,6 @@ static void emitBinary(TACOperation operation, TACOperand result, TACOperand lef
 
 static void emitUnary(TACOperation operation, TACOperand result, TACOperand operand) {
     emit(operation, result, operand, tacNone());
-}
-
-static TACOperand emitCondition(TACOperation operation, TACOperand left, TACOperand right) {
-    coerceBinaryOperands(&left, &right);
-    TACOperand condition = newTemporary(TYPE_BOOL);
-    emitBinary(operation, condition, left, right);
-    return condition;
 }
 
 static TACOperand newTemporary(DataType type) {

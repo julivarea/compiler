@@ -6,6 +6,8 @@
  * @brief Pase de generación de código intermedio (TAC) sobre el Árbol de Sintaxis Abstracta (AST).
  */
 
+#include <stdbool.h>
+
 #include "ast.h"
 #include "tac_list.h"
 
@@ -20,5 +22,17 @@
  * @return Puntero constante a la lista de instrucciones TAC generadas, o NULL si root es NULL.
  */
 const TACList *generateIntermediateCode(NodeAST *root);
+
+/**
+ * @brief Indica si la generación se abortó por un tipo fuera del alcance de la etapa.
+ *
+ * El enunciado acota el código intermedio y el código objeto a tipos enteros y
+ * lógicos, así que un programa que usa `float` se rechaza en lugar de generarle
+ * código. Permite al llamador distinguir ese rechazo —ya reportado con su línea—
+ * de una falla interna del generador.
+ *
+ * @return true si la última generación se abortó por un tipo no soportado.
+ */
+bool hasUnsupportedTypeError(void);
 
 #endif // INTERMEDIATE_CODE_H

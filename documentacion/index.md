@@ -48,59 +48,48 @@ hasta un ejecutable x86-64, con un optimizador sobre el código intermedio.
 
 ---
 
-## Extensiones sobre el enunciado
-
-Tres partes del compilador **no las pedía el enunciado** y se implementaron
-igual. Conviene saberlo antes de leer las fichas, porque cambian el alcance
-respecto de lo exigido y aparecen mencionadas en varias de ellas.
-
-### Soporte de `float` y coerción `int`/`float`
+## Alcance de `float`
 
 La **especificación del lenguaje** (`spec/01-TDS-spec-lenguaje.pdf`) incluye
-`float` entre los tipos, y su regla 14 permite las conversiones entre `int` y
-`float`. Pero el **alcance de las etapas** definido en
-`spec/00-TDS-proyecto.pdf` acotaba la generación de código intermedio y de
-código objeto a **tipos enteros y lógicos**, y la descripción de las
-asignaciones menciona solo `int` y `boolean`.
+`float` entre los tipos de C-TDS, y su regla 14 permite las conversiones entre
+`int` y `float`. El **enunciado del proyecto** (`spec/00-TDS-proyecto.pdf`), en
+cambio, acota las etapas de **código intermedio y código objeto** a **tipos
+enteros y lógicos**, y la descripción de las asignaciones menciona solo `int` y
+`boolean`.
 
-O sea que **generar código para `float` no era necesario**: alcanzaba con que el
-front-end aceptara el tipo y el back-end lo ignorara.
+El compilador respeta las dos cosas, y el corte está exactamente en la frontera
+entre ellas:
 
-Conviene separar qué parte era obligatoria y qué parte no:
+| Fase | ¿Cubre `float`? |
+| --- | --- |
+| Léxico, sintáctico, [AST](wiki/03-ast.md), [tabla de símbolos](wiki/04-symbol-table.md) | **Sí.** Es un tipo del lenguaje: se reconoce y se representa |
+| [Chequeo de tipos (F10)](wiki/04.5-type-checker.md) | **Sí.** La regla 14 es una de las catorce que el análisis semántico debe verificar |
+| [Código intermedio (F13)](wiki/05.5-tac-generation.md), optimizador, [código objeto](wiki/06-object-code.md) | **No.** Un programa con `float` se rechaza acá, con su línea |
 
-| Fase | ¿Estaba en el alcance? | Qué hay implementado |
-| --- | --- | --- |
-| Léxico, AST, tabla de símbolos | **Sí** | `float` es un tipo del lenguaje: reconocerlo y representarlo era obligatorio |
-| [Chequeo de tipos (F10)](wiki/04.5-type-checker.md) | **Sí** | La regla 14 de la especificación es una de las catorce que el semántico debe verificar |
-| [Código intermedio (F12, F13)](wiki/05-tac-representation.md) | **No** | Operandos `float`, el opcode `TAC_INT_TO_FLOAT` y las cuatro coerciones materializadas |
-| [Marco de pila (F17)](wiki/06.5-stack-frame.md) | **No** | Los dos contadores de parámetros por clase de registro |
-| [Código objeto (F18)](wiki/06-object-code.md) | **No** | El camino SSE completo: `%xmm`, `movss`, `comiss`, pool de constantes en `.rodata` |
+```
+$ ./mi_compilador programa.ctds
+Error en la linea 2: la generacion de codigo para el tipo 'float' no esta
+soportada: esta etapa cubre tipos enteros y logicos.
+```
 
-Dicho de otro modo: el front-end tenía que entender `float` de todas formas, y lo
-voluntario fue **que ese entendimiento llegara a producir un ejecutable**.
+Hasta `-target sem` el programa se acepta sin errores: el front-end lo entiende
+entero, incluida la coerción de la regla 14. Lo que no está en alcance es
+**generarle código**, y el rechazo ocurre en la primera fase que lo haría. El
+detalle de cómo se implementa está en §9 de la
+[ficha F13](wiki/05.5-tac-generation.md).
 
-**El argumento de la decisión:** aceptar `float` en el front-end y abandonarlo en
-el back-end habría dejado al compilador incoherente con la especificación de su
-propio lenguaje. Un programa que declara un `float` habría pasado el análisis
-semántico y fallado o generado código incorrecto más abajo.
+**Por qué rechazar y no ignorar.** Si el generador emitiera las operaciones de
+todos modos, el código objeto trataría el patrón de bits IEEE-754 como si fuera
+un entero: `1.0 + 1.0` se compilaría a una suma entera de dos patrones de bits y
+no daría `2.0`, **sin una sola queja**. Un error explícito con su línea es
+siempre mejor que un ejecutable que calcula mal.
 
-Dos aclaraciones de alcance que sí quedaron por debajo de la especificación:
+## Extensión sobre el enunciado: el valor `sem` de `-target`
 
-- Los reales son de **precisión simple** (4 bytes, IEEE-754). No hay doble
-  precisión.
-- La implementación **solo ensancha** (`int` → `float`), nunca trunca. La
-  especificación habla de coerciones *y truncamientos*; esto es más restrictivo,
-  así que rechaza algunos programas que la letra permitiría pero nunca acepta uno
-  inválido. Está explicado en [F10](wiki/04.5-type-checker.md).
-
-### El valor `sem` de `-target`
-
-El enunciado enumera `scan`, `parse`, `codinter` y `assembly`, pero también lista
-la extensión `.sem` entre las salidas posibles. Se agregó `-target sem` porque de
-otro modo la etapa de análisis semántico no era alcanzable y esa extensión no se
-podía producir.
-
----
+El enunciado enumera `scan`, `parse`, `codinter` y `assembly`, pero también
+lista la extensión `.sem` entre las salidas posibles. Se agregó `-target sem`
+porque de otro modo la etapa de análisis semántico no era alcanzable y esa
+extensión no se podía producir.
 
 ## Por dónde empezar
 
@@ -195,33 +184,6 @@ comportamiento indefinido.
   y dejar la instrucción sin plegar cuando desbordaría. El programa compilado
   haría entonces la cuenta en ejecución, que es exactamente lo que haría sin el
   optimizador.
-
-### `-0.0` no se puede producir
-
-`emitUnaryMinus` niega un real como `0 - x`, y en IEEE-754 `0.0 - 0.0` da
-`+0.0`. Negar el cero devuelve cero positivo.
-
-- **Cómo se detectó:** leyendo la emisión del unario al inventariar las
-  funciones de la ficha F18, y verificado ejecutando: con `z = 0.0` y `n = -z`,
-  la comparación `1.0 / n > 0.0` da verdadero, o sea que quedó `+inf`.
-- **No afecta a ninguna operación aritmética del lenguaje**, porque `+0.0` y
-  `-0.0` son iguales para todas las comparaciones de C-TDS.
-- **Alternativa:** invertir el **bit de signo** en lugar de restar, con un
-  `xorps` contra una máscara `0x80000000` guardada en `.rodata`. Es una
-  instrucción y da el resultado exacto, incluido el cero negativo.
-
-### `emitCondition` es código muerto
-
-En `intermediate_code.c` hay un emisor declarado, definido y **sin ningún
-llamador**.
-
-- **Cómo se detectó:** GCC con `-Wall` lo avisa
-  (`'emitCondition' defined but not used`) al revisar la capa de emisores del
-  TAC.
-- **Alternativa:** o se completa la sustitución —`generateOperatorCode` hace a
-  mano lo que la función encapsula— o se elimina. Las dos son correctas; lo que
-  no conviene es dejar el aviso del compilador encendido, porque entrena a
-  ignorarlos.
 
 ### Los símbolos provisorios del parser quedan huérfanos
 

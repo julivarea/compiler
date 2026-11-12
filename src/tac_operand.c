@@ -87,15 +87,6 @@ TACOperand tacConstantBool(int value) {
     return operand;
 }
 
-TACOperand tacConstantFloat(float value) {
-    char str[TAC_NAME_LENGTH];
-    snprintf(str, sizeof(str), "%f", value);
-    TACOperand operand = makeOperand(OPERAND_CONSTANT, TYPE_FLOAT, str);
-    operand.value.floatValue = value;
-
-    return operand;
-}
-
 TACOperand tacLabel(const char *name) {
     return makeOperand(OPERAND_LABEL, TYPE_VOID, name);
 }

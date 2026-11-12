@@ -129,9 +129,9 @@ Solo si el mapeo no fuera evidente se añadiría un `//` de una línea explicand
 3. **Intenciones con variables booleanas en lugar de bloques de comentarios:**
    En vez de preceder un `if` con un bloque de comentario explicativo, se extrae la condición a una o más variables booleanas bien nombradas:
    ```c
-   bool needsFloatCoercion = (node->symbol->type == TYPE_FLOAT);
-   if (needsFloatCoercion) {
-       value = coerceToFloat(value);
+   bool isTemporary = (current->result.kind == OPERAND_TEMP);
+   if (isTemporary) {
+       addSlot(frame, &current->result);
    }
    ```
 

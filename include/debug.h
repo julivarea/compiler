@@ -10,7 +10,7 @@
  *  - La salida de debug va a stdout, y solo si el usuario paso -debug.
  *    Los errores van a stderr aparte (error_handler.h), nunca por aqui.
  *  - Toda impresion de debug pasa por debugPrintf con el bool de la opcion.
- *  - Cada mensaje lleva prefijo de etapa: [SCAN], [TAC], [OPT], [ASM], [INTERPRETE]...
+ *  - Cada mensaje lleva prefijo de etapa: [SCAN], [TAC], [OPT], [ASM]...
  *  - Texto plano, sin colores ni separadores ANSI.
  */
 static void debugPrintf(bool debugEnabled, const char *format, ...) {

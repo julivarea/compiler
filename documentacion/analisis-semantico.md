@@ -91,7 +91,7 @@ Representa valores inmediatos o literales numéricos y booleanos presentes en la
 - **`value` (`union`):** Almacena el valor evaluado directamente en memoria binaria nativa:
   - `value.intValue`: Almacena el valor numérico entero para `TYPE_INT`, o `1`/`0` para constantes booleanas `true`/`false` (`TYPE_BOOL`).
   - `value.floatValue`: Almacena el número en punto flotante para `TYPE_FLOAT`.
-  - **Uso posterior:** Este campo evita repetir conversiones de texto a número a lo largo del pipeline. En la etapa de código intermedio se mapea directamente a operandos inmediatos TAC (`tacConstantInt`, `tacConstantBool`, `tacConstantFloat`) y en la generación de código objeto se convierte en valores inmediatos de ensamblador (`asmLoad(..., opImm(...))`).
+  - **Uso posterior:** Este campo evita repetir conversiones de texto a número a lo largo del pipeline. En la etapa de código intermedio se mapea directamente a operandos inmediatos TAC (`tacConstantInt`, `tacConstantBool`) y en la generación de código objeto se convierte en valores inmediatos de ensamblador (`asmLoad(..., opImm(...))`).
 
 ### Resumen de Uso de Campos según la Variante
 

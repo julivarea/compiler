@@ -35,12 +35,10 @@ static int removeSelfAssignments(TACList *tacList);
 static int removeRedundantJumps(TACList *tacList);
 
 static bool isConstant(const TACOperand *operand);
-static float asFloat(const TACOperand *operand);
 static int asInt(const TACOperand *operand);
 static bool evaluateBinary(TACOperation operation, const TACOperand *firstOperand,
-                           const TACOperand *secondOperand, DataType resultType, TACOperand *folded);
-static bool evaluateUnary(TACOperation operation, const TACOperand *operand,
-                          DataType resultType, TACOperand *folded);
+                           const TACOperand *secondOperand, TACOperand *folded);
+static bool evaluateUnary(TACOperation operation, const TACOperand *operand, TACOperand *folded);
 
 static const TACOperand *lookupKnownConstant(const KnownConstantTable *table, const TACOperand *operand);
 static void forgetConstant(KnownConstantTable *table, const TACOperand *operand);
@@ -178,10 +176,9 @@ static int foldConstants(TACList *tacList) {
 
         if (isBinaryCandidate) {
             wasFolded = evaluateBinary(instruction->operation, &instruction->firstOperand,
-                                       &instruction->secondOperand, instruction->result.type, &folded);
+                                       &instruction->secondOperand, &folded);
         } else if (isUnaryCandidate) {
-            wasFolded = evaluateUnary(instruction->operation, &instruction->firstOperand,
-                                      instruction->result.type, &folded);
+            wasFolded = evaluateUnary(instruction->operation, &instruction->firstOperand, &folded);
         }
 
         if (wasFolded) {
@@ -427,58 +424,36 @@ static bool isConstant(const TACOperand *operand) {
     return operand->kind == OPERAND_CONSTANT;
 }
 
-static float asFloat(const TACOperand *operand) {
-    return operand->value.floatValue;
-}
-
 static int asInt(const TACOperand *operand) {
     return operand->value.intValue;
 }
 
 static bool evaluateBinary(TACOperation operation, const TACOperand *firstOperand,
-                           const TACOperand *secondOperand, DataType resultType, TACOperand *folded) {
-    bool isFloatOperation = (firstOperand->type == TYPE_FLOAT);
-
+                           const TACOperand *secondOperand, TACOperand *folded) {
     switch (operation) {
         case TAC_ADD:
         case TAC_SUB:
-        case TAC_MUL:
-            if (resultType == TYPE_FLOAT) {
-                float leftValue = asFloat(firstOperand);
-                float rightValue = asFloat(secondOperand);
-                float resultValue = (operation == TAC_ADD) ? leftValue + rightValue
-                                  : (operation == TAC_SUB) ? leftValue - rightValue
-                                                           : leftValue * rightValue;
-                *folded = tacConstantFloat(resultValue);
-            } else {
-                int leftValue = asInt(firstOperand);
-                int rightValue = asInt(secondOperand);
-                int resultValue = (operation == TAC_ADD) ? leftValue + rightValue
-                                : (operation == TAC_SUB) ? leftValue - rightValue
-                                                         : leftValue * rightValue;
-                *folded = tacConstantInt(resultValue);
-            }
+        case TAC_MUL: {
+            int leftValue = asInt(firstOperand);
+            int rightValue = asInt(secondOperand);
+            int resultValue = (operation == TAC_ADD) ? leftValue + rightValue
+                            : (operation == TAC_SUB) ? leftValue - rightValue
+                                                     : leftValue * rightValue;
+            *folded = tacConstantInt(resultValue);
             return true;
+        }
 
-        case TAC_DIV:
-            if (resultType == TYPE_FLOAT) {
-                float rightValue = asFloat(secondOperand);
-                bool isZeroDivisor = (rightValue == 0.0f);
-                if (isZeroDivisor) {
-                    return false;
-                }
-                *folded = tacConstantFloat(asFloat(firstOperand) / rightValue);
-            } else {
-                int leftValue = asInt(firstOperand);
-                int rightValue = asInt(secondOperand);
-                bool isZeroDivisor = (rightValue == 0);
-                bool isSignedOverflow = (leftValue == INT_MIN && rightValue == -1);
-                if (isZeroDivisor || isSignedOverflow) {
-                    return false;
-                }
-                *folded = tacConstantInt(leftValue / rightValue);
+        case TAC_DIV: {
+            int leftValue = asInt(firstOperand);
+            int rightValue = asInt(secondOperand);
+            bool isZeroDivisor = (rightValue == 0);
+            bool isSignedOverflow = (leftValue == INT_MIN && rightValue == -1);
+            if (isZeroDivisor || isSignedOverflow) {
+                return false;
             }
+            *folded = tacConstantInt(leftValue / rightValue);
             return true;
+        }
 
         case TAC_MOD: {
             int leftValue = asInt(firstOperand);
@@ -493,18 +468,15 @@ static bool evaluateBinary(TACOperation operation, const TACOperand *firstOperan
         }
 
         case TAC_LT:
-            *folded = tacConstantBool(isFloatOperation ? (asFloat(firstOperand) < asFloat(secondOperand))
-                                                       : (asInt(firstOperand) < asInt(secondOperand)));
+            *folded = tacConstantBool(asInt(firstOperand) < asInt(secondOperand));
             return true;
 
         case TAC_GT:
-            *folded = tacConstantBool(isFloatOperation ? (asFloat(firstOperand) > asFloat(secondOperand))
-                                                       : (asInt(firstOperand) > asInt(secondOperand)));
+            *folded = tacConstantBool(asInt(firstOperand) > asInt(secondOperand));
             return true;
 
         case TAC_EQ:
-            *folded = tacConstantBool(isFloatOperation ? (asFloat(firstOperand) == asFloat(secondOperand))
-                                                       : (asInt(firstOperand) == asInt(secondOperand)));
+            *folded = tacConstantBool(asInt(firstOperand) == asInt(secondOperand));
             return true;
 
         default:
@@ -512,23 +484,14 @@ static bool evaluateBinary(TACOperation operation, const TACOperand *firstOperan
     }
 }
 
-static bool evaluateUnary(TACOperation operation, const TACOperand *operand,
-                          DataType resultType, TACOperand *folded) {
+static bool evaluateUnary(TACOperation operation, const TACOperand *operand, TACOperand *folded) {
     switch (operation) {
         case TAC_UMINUS:
-            if (resultType == TYPE_FLOAT) {
-                *folded = tacConstantFloat(-asFloat(operand));
-            } else {
-                *folded = tacConstantInt(-asInt(operand));
-            }
+            *folded = tacConstantInt(-asInt(operand));
             return true;
 
         case TAC_NOT:
             *folded = tacConstantBool(!asInt(operand));
-            return true;
-
-        case TAC_INT_TO_FLOAT:
-            *folded = tacConstantFloat((float)asInt(operand));
             return true;
 
         default:

@@ -15,7 +15,7 @@ Con la entrega de código objeto (enteros) el **lunes 26 de Octubre**, el orden 
 5. ~~**Desambiguación de variables por alcance (sección 2.3).**~~ **HECHO.**
 6. ~~**Declaraciones de variables, globales y locales (sección 3.4).**~~ **HECHO.**
 7. ~~**La CLI (sección 4).**~~ **HECHO.**
-8. ~~**Coerción `int`/`float` (sección 2.4).**~~ **HECHO.** El enunciado solo exige TAC para enteros y lógicos, así que el soporte de `float` es una extensión nuestra; se implementó igual para que sea coherente.
+8. ~~**Coerción `int`/`float` (sección 2.4).**~~ **REVERTIDO.** Se implementó y después se quitó: el enunciado acota el TAC a enteros y lógicos, y la decisión final fue no salirse de ahí. Hoy el generador **rechaza** un programa con `float` en vez de generarle código. Ver la sección 2.4 y la página *Cambios a Etapas Anteriores* del sitio.
 9. ~~**Pruebas unitarias (sección 5).**~~ **HECHO (`tests/test_tac.c`).**
 
 Queda abierto, en orden de urgencia: el **desborde con signo en `+`, `-` y `*` del plegado de constantes (3.7, punto 3)**, que toca código entregable, y el **alcance de los contadores de temporales (3.6)**, que solo importa si se decide redimensionar los stack frames por función.
@@ -165,6 +165,17 @@ Queda abierto, en orden de urgencia: el **desborde con signo en `+`, `-` y `*` d
     y ningún operando de variable quedó sin calificar.
 
 ### 2.4
+> **REVERTIDO en la entrega final.** Todo lo que sigue describe una
+> funcionalidad que **se implementó y después se quitó**, cuando se decidió
+> ajustar el proyecto a lo que el enunciado pide y nada más. Se deja el registro
+> porque explica por qué el opcode `TAC_INT_TO_FLOAT` aparece en el historial de
+> git y porque el *cambio a una etapa anterior* que menciona al final
+> (`node->symbol = method;` en `analyzeMethodCall`) **sigue vigente**: el
+> `TAC_CALL` lo necesita para el nombre y el tipo de retorno.
+>
+> Lo que hay hoy: `findUnsupportedType` recorre el AST antes de emitir nada y, si
+> encuentra un `float`, aborta la generación con el número de línea.
+
 - [x] **Conversión / Coerción de tipos entre `int` y `float`**
   - **Referencia:** Regla semántica 14 de la especificación: *"Se permiten coerciones o truncamientos entre int y float"*.
   - **Acción:** Analizar si el TAC requiere instrucciones explícitas de conversión de tipo (ej. `t0 = int_to_float x`) para facilitar la posterior traducción a instrucciones de punto flotante SSE/AVX en x86-64.
