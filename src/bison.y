@@ -43,8 +43,8 @@ extern NodeAST *astRoot;
 
 %left OR                /* disyunción lógica || */
 %left AND               /* conjunción lógica && */
-%left EQ                /* igualdad == */
-%left '<' '>'           /* relacionales (menor, mayor) */
+%left EQ NEQ            /* igualdad == y desigualdad != */
+%left '<' '>' LE GE     /* relacionales (menor, mayor, menor o igual, mayor o igual) */
 %left '+' '-'           /* suma y resta */
 %left '*' '/' '%'       /* multiplicación, división, resto */
 %precedence NOT UMINUS  /* negación lógica ! y menos unario */
@@ -167,7 +167,10 @@ Expression
     | Expression '%' Expression                 { $$ = newOperatorNode(OP_MOD, $1, $3); }
     | Expression '<' Expression                 { $$ = newOperatorNode(OP_LT, $1, $3); }
     | Expression '>' Expression                 { $$ = newOperatorNode(OP_GT, $1, $3); }
+    | Expression LE Expression                  { $$ = newOperatorNode(OP_LE, $1, $3); }
+    | Expression GE Expression                  { $$ = newOperatorNode(OP_GE, $1, $3); }
     | Expression EQ Expression                  { $$ = newOperatorNode(OP_EQ, $1, $3); }
+    | Expression NEQ Expression                 { $$ = newOperatorNode(OP_NEQ, $1, $3); }
     | Expression AND Expression                 { $$ = newOperatorNode(OP_AND, $1, $3); }
     | Expression OR Expression                  { $$ = newOperatorNode(OP_OR, $1, $3); }
     ;

@@ -48,6 +48,9 @@ FLOAT       {DIGIT}+"."{DIGIT}+
 
     /* RELACIONALES */
 "=="                            { return EQ; }
+"!="                            { return NEQ; }
+"<="                            { return LE; }
+">="                            { return GE; }
 "<"|">"                         { return yytext[0]; }
 
     /* LOGICOS */
