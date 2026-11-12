@@ -41,7 +41,6 @@ typedef struct NodeAST {
     int line;                    /**< Línea del código fuente donde inicia la construcción. */
     struct NodeAST **children;   /**< Arreglo dinámico de punteros a nodos hijos. */
     int childCount;              /**< Cantidad de nodos hijos almacenados. */
-
 } NodeAST;
 
 /**
