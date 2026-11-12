@@ -19,7 +19,7 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   - ✅ **Stack frame, prólogo y epílogo (punto 1.5):** alineación a 16 bytes auditada, copia de registros de entrada verificada y código de salida de `main` corregido. Cierra el bug 1.7.
   - ✅ **Fase 1 completa.** Las seis secciones del núcleo de enteros y booleanos están implementadas y verificadas ejecutando los binarios generados.
   - ✅ **Fase 2 completa:** el generador está conectado a la CLI. `./mi_compilador archivo.ctds` produce el ejecutable `.out` y `-target assembly` produce el `.ass`.
-  - ✅ **Fase 3 completa:** soporte de `float` con SSE, constantes en `.rodata`, y pasaje de parámetros con las dos clases de registros de la convención. Cierra el hallazgo 1.13.
+  - ↩️ **Fase 3 revertida:** el soporte de `float` con SSE se implementó y después se quitó, al ajustar el proyecto a lo que el enunciado pide (tipos enteros y lógicos). El hallazgo 1.13 quedó cerrado por el rechazo explícito, que es la acción que el propio hallazgo proponía. Ver la sección de la Fase 3.
   - ✅ **Auditoría cerrada:** los 15 hallazgos de la sección 1 están corregidos o auditados.
   - ✅ **Fase 4 completa (testing):** suite exhaustiva en `tests/test_object_code.c` (82 tests) con pruebas unitarias aisladas de traducción de cada cuádrupla TAC a Assembly, verificación estructural de `FunctionFrame`, pruebas de integración con archivos en disco (`examples/factorial.ctds`, `examples/programa_sin_error.ctds`, llamadas anidadas, pasaje >6 argumentos, shadowing) y suite de ejecución con 42 programas límite (E01 a E42) integrada en `test_suite.sh`.
 
@@ -100,10 +100,12 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
 - **Problema:** C-TDS permite métodos `void main()`. Si `main` finaliza sin valor de retorno explícito, el registro `%eax` contendrá el residuo de la última operación ejecutada. Al enlazar con `gcc`, el sistema operativo tomará `%eax` como código de salida del proceso, haciendo que pruebas válidas reporten un exit code distinto de 0.
 - **Acción requerida:** Asegurar que si la función es `main`, se emita `movl $0, %eax` antes del epílogo si no hubo un retorno con valor.
 
-### 1.8 Conversión `int` a `float` Incompleta (`TAC_INT_TO_FLOAT`) — CORREGIDO EN LA FASE 3
+### 1.8 Conversión `int` a `float` Incompleta (`TAC_INT_TO_FLOAT`) — SIN OBJETO
 - **Ubicación:** `src/object_code.c` (caso `TAC_INT_TO_FLOAT`).
-- **Problema:** Emite `cvtsi2ss %eax, %xmm0`, pero no almacena el contenido de `%xmm0` en el slot de destino ni gestiona registros SSE2 en `storeOperand`.
-- **Acción requerida:** Diseñar el soporte de flotantes de forma aislada en la Fase 3, completando primero el 100% de enteros y booleanos exigido para la entrega.
+- **Problema:** Emitía `cvtsi2ss %eax, %xmm0` sin almacenar `%xmm0` en el slot de destino.
+- **Estado:** el opcode `TAC_INT_TO_FLOAT` **ya no existe**. Se corrigió en la Fase 3 y después
+  la Fase 3 se revirtió entera: hoy un programa con `float` se rechaza al generar el código
+  intermedio, así que no hay conversión que emitir.
 
 
 ### 1.9 `build.sh` no compilaba `src/asm_instruction.c` (CORREGIDO)
@@ -176,8 +178,19 @@ Este documento detalla el estado actual del generador de código objeto (`src/ob
   error de compilación ni caída en ejecución, solo números equivocados.
 - **Acción requerida:** mientras la Fase 3 no esté, hacer que el generador **rechace** con un
   error explícito cualquier operando de tipo `TYPE_FLOAT`, en vez de emitir código entero.
-- **Estado: corregido por la Fase 3**, que implementó el soporte real en vez del rechazo
-  provisorio. `examples/programa.ctds` compila y su aritmética real ahora es correcta.
+- **Estado: CERRADO, por la acción requerida de arriba.** Vale la pena seguir la historia
+  completa porque es la mejor lección del proyecto:
+  1. Se detectó el bug y se propuso el rechazo explícito como solución provisoria.
+  2. La Fase 3 lo cerró por el otro lado: implementando el soporte real con SSE.
+  3. Al recortar el alcance a lo que pide el enunciado se quitó el camino SSE **pero el
+     `float` seguía llegando al back-end**, así que el bug **volvió, idéntico**, con los
+     mismos patrones de bits (`1075838976`, `1069547520`) que documenta la evidencia de acá
+     arriba. Medido: `1.0 + 1.0 == 2.0` devolvía falso.
+  4. Se cerró definitivamente con la solución original: **el generador de TAC rechaza** el
+     programa con su línea, y el `float` ya no llega al código objeto.
+- **La moraleja, para el oral:** un tipo que el front-end acepta y el back-end no entiende es
+  la peor combinación posible, porque el modo de falla es *resultados incorrectos en silencio*.
+  O se soporta completo, o se rechaza explícito; lo que no puede quedar es el hueco.
 
 ---
 
@@ -386,15 +399,23 @@ finalmente `param t0` pisa `%edi` con 6. Resultado: `sumar(6, 2) = 8`.
 
 ---
 
-### Fase 3: Soporte de Tipos Flotantes — COMPLETA
-- [X] Representación en memoria de variables `float` (4 bytes, precisión simple IEEE-754).
-- [X] Emisión de constantes flotantes en sección `.rodata` o `.data`.
-- [X] Registro y uso de registros SSE2 (`%xmm0` a `%xmm7`) para pasaje de parámetros y evaluación.
-- [X] Implementación de `TAC_INT_TO_FLOAT` con almacenamiento efectivo en slot destino.
-- [X] Operaciones flotantes: `movss`, `addss`, `subss`, `mulss`, `divss`, `comiss`.
+### Fase 3: Soporte de Tipos Flotantes — IMPLEMENTADA Y REVERTIDA
 
-**Cierra el hallazgo 1.13.** Todo el camino de los reales está implementado en
-`src/object_code.c`, en un bloque propio separado del camino entero.
+> **Nada de lo que sigue está hoy en el código.** La Fase 3 se implementó entera
+> y después se quitó, al decidir que el proyecto no tuviera nada que el enunciado
+> no pida: el alcance del código objeto son **tipos enteros y lógicos**. Hoy un
+> programa con `float` se rechaza al generar el código intermedio, con su número
+> de línea, que es la acción que proponía el hallazgo 1.13.
+>
+> Se deja el registro porque explica el historial de git, porque es la respuesta
+> a *"¿y los reales?"*, y porque el razonamiento de la convención de llamada que
+> está más abajo sigue siendo válido como teoría.
+
+- [x] ~~Representación en memoria de variables `float` (4 bytes, precisión simple IEEE-754).~~
+- [x] ~~Emisión de constantes flotantes en sección `.rodata` o `.data`.~~
+- [x] ~~Registro y uso de registros SSE2 (`%xmm0` a `%xmm7`) para pasaje de parámetros y evaluación.~~
+- [x] ~~Implementación de `TAC_INT_TO_FLOAT` con almacenamiento efectivo en slot destino.~~
+- [x] ~~Operaciones flotantes: `movss`, `addss`, `subss`, `mulss`, `divss`, `comiss`.~~
 
 - **Constantes en `.rodata`.** `movss` no acepta inmediatos, así que todo literal real vive en
   memoria. Una pasada previa sobre el TAC recoge las constantes, las deduplica por patrón de
