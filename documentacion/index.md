@@ -129,18 +129,17 @@ extensión no se podía producir.
 └── mkdocs.yml            # configuración de este sitio
 ```
 
-El pipeline está modularizado por fase, y cada módulo tiene su cabecera en
-`include/` y su implementación en `src/`:
+El pipeline está modularizado por fase, con cabeceras en `include/` e
+implementaciones en subdirectorios de `src/`:
 
-| Fase | Módulos |
-| --- | --- |
-| Léxico y sintáctico | `lexer.l`, `bison.y`, `parser_helpers` |
-| AST | `ast`, `types` |
-| Semántico | `symbol_table`, `type_checker`, `semantic_analyzer` |
-| Código intermedio | `tac_operation`, `tac_operand`, `tac_instruction`, `tac_list`, `intermediate_code` |
-| Optimización | `optimizer`, `live_variable_analysis` |
-| Código objeto | `asm_instruction`, `function_frame`, `object_code` |
-| Infraestructura | `cli`, `driver`, `main`, `error_handler`, `string_builder`, `debug` |
+| Fase | Carpeta en `src/` | Módulos |
+| --- | --- | --- |
+| Léxico, sintáctico y AST | `src/parser/` | `lexer.l`, `bison.y`, `parser_helpers`, `ast` (`types.h` en `include/`) |
+| Semántico | `src/semantic/` | `symbol_table`, `type_checker`, `semantic_analyzer` |
+| Código intermedio | `src/intermediate_code/` | `tac_operation`, `tac_operand`, `tac_instruction`, `tac_list`, `intermediate_code` |
+| Optimización | `src/optimizer/` | `optimizer`, `live_variable_analysis` |
+| Código objeto | `src/object_code/` | `function_frame`, `object_code` |
+| Infraestructura | `src/core/` y `src/main.c` | `cli`, `driver`, `main`, `error_handler`, `string_builder`, `debug` |
 
 `bison.tab.c`, `lex.yy.c`, el contenido de `build/` y el ejecutable
 `mi_compilador` son artefactos generados y no se editan a mano.

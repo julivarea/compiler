@@ -77,33 +77,37 @@ sitio que como archivos sueltos: ver [Documentación](#documentación).
 │   ├── intermediate_code.h                          # generación de código intermedio
 │   ├── optimizer.h                                  # flags y pasadas de optimización sobre el TAC
 │   ├── live_variable_analysis.h                     # CFG y análisis de variables vivas
-│   ├── asm_instruction.h                            # instrucciones de ensamblador x86-64
 │   ├── function_frame.h                             # gestión del marco de pila (stack frame)
 │   ├── object_code.h                                # generación de código objeto
 │   ├── string_builder.h                             # buffer dinámico de cadenas
 │   └── error_handler.h                              # reporte de errores
-├── src/                                             # implementaciones (.c, .l, .y)
+├── src/                                             # implementaciones (.c, .l, .y) agrupadas por etapa
 │   ├── main.c                                       # punto de entrada
-│   ├── cli.c
-│   ├── driver.c
-│   ├── lexer.l
-│   ├── bison.y
-│   ├── ast.c
-│   ├── parser_helpers.c
-│   ├── symbol_table.c
-│   ├── type_checker.c
-│   ├── semantic_analyzer.c
-│   ├── tac_operand.c
-│   ├── tac_instruction.c
-│   ├── tac_list.c
-│   ├── intermediate_code.c
-│   ├── optimizer.c
-│   ├── live_variable_analysis.c
-│   ├── asm_instruction.c
-│   ├── function_frame.c
-│   ├── object_code.c
-│   ├── string_builder.c
-│   └── error_handler.c
+│   ├── core/                                        # infraestructura y orquestación
+│   │   ├── cli.c
+│   │   ├── driver.c
+│   │   ├── error_handler.c
+│   │   └── string_builder.c
+│   ├── parser/                                      # análisis léxico, sintáctico y AST
+│   │   ├── lexer.l
+│   │   ├── bison.y
+│   │   ├── parser_helpers.c
+│   │   └── ast.c
+│   ├── semantic/                                    # tabla de símbolos, tipos y análisis semántico
+│   │   ├── symbol_table.c
+│   │   ├── type_checker.c
+│   │   └── semantic_analyzer.c
+│   ├── intermediate_code/                           # código intermedio de tres direcciones (TAC)
+│   │   ├── tac_operand.c
+│   │   ├── tac_instruction.c
+│   │   ├── tac_list.c
+│   │   └── intermediate_code.c
+│   ├── optimizer/                                   # optimizaciones sobre TAC y variables vivas
+│   │   ├── live_variable_analysis.c
+│   │   └── optimizer.c
+│   └── object_code/                                 # generación de código objeto x86-64
+│       ├── function_frame.c
+│       └── object_code.c
 ├── tests/                                           # diez suites de tests unitarios con Unity
 ├── examples/                                        # programas .ctds de ejemplo, válidos e inválidos
 ├── build/                                           # archivos de compilacion
@@ -140,25 +144,24 @@ bash build.sh
 El script `build.sh` ejecuta las siguientes operaciones en orden:
 
 1. **Crea el directorio de salida:** Crea la carpeta `build/` si aún no existe.
-2. **Genera el parser sintáctico:** Corre `bison -d src/bison.y -o build/bison.tab.c`, generando el analizador sintáctico y el archivo de cabecera con los tokens (`build/bison.tab.h`).
-3. **Genera el scanner léxico:** Corre `flex -o build/lex.yy.c src/lexer.l`, generando el analizador léxico a partir de las expresiones regulares de tokens.
-4. **Compila y enlaza:** Invoca `gcc` con las rutas de inclusión `-Iinclude -Isrc -Ibuild`, compilando los dos archivos generados junto con todos los módulos de `src/`:
-   - `src/main.c` (Punto de entrada) y `src/cli.c` (Parseo de los argumentos de la línea de comandos)
-   - `src/driver.c` (Orquestación de las etapas según `-target`)
-   - `src/ast.c` (Árbol de Sintaxis Abstracta) y `src/parser_helpers.c` (Utilidades de las acciones de Bison)
-   - `src/symbol_table.c` (Gestión de ámbitos y tabla de símbolos)
-   - `src/type_checker.c` (Inferencia, reglas de tipos y coerción)
-   - `src/semantic_analyzer.c` (Recorrido y validaciones semánticas)
-   - `src/error_handler.c` (Formateo y reporte de errores)
-   - `src/string_builder.c` (Buffer dinámico para la salida de cada etapa)
-   - `src/tac_operand.c` (Estructura y constructores de operandos TAC)
-   - `src/tac_instruction.c` (Estructura de instrucciones TAC)
-   - `src/tac_list.c` (Lista enlazada de cuádruplas TAC)
-   - `src/intermediate_code.c` (Recorrido del AST que construye el TAC)
-   - `src/optimizer.c` (Pasadas de optimización sobre el TAC)
-   - `src/live_variable_analysis.c` (CFG y análisis de variables vivas)
-   - `src/asm_instruction.c` (Instrucciones x86-64) y `src/function_frame.c` (Marco de pila)
-   - `src/object_code.c` (Generador de código objeto)
+2. **Genera el parser sintáctico:** Corre `bison -d src/parser/bison.y -o build/bison.tab.c`, generando el analizador sintáctico y el archivo de cabecera con los tokens (`build/bison.tab.h`).
+3. **Genera el scanner léxico:** Corre `flex -o build/lex.yy.c src/parser/lexer.l`, generando el analizador léxico a partir de las expresiones regulares de tokens.
+4. **Compila y enlaza:** Invoca `gcc` con las rutas de inclusión `-Iinclude -Ibuild`, compilando los dos archivos generados junto con todos los módulos de `src/`:
+   - `src/main.c` (Punto de entrada) y `src/core/cli.c` (Parseo de los argumentos de la línea de comandos)
+   - `src/core/driver.c` (Orquestación de las etapas según `-target`)
+   - `src/parser/ast.c` (Árbol de Sintaxis Abstracta) y `src/parser/parser_helpers.c` (Utilidades de las acciones de Bison)
+   - `src/semantic/symbol_table.c` (Gestión de ámbitos y tabla de símbolos)
+   - `src/semantic/type_checker.c` (Inferencia, reglas de tipos y coerción)
+   - `src/semantic/semantic_analyzer.c` (Recorrido y validaciones semánticas)
+   - `src/core/error_handler.c` (Formateo y reporte de errores)
+   - `src/core/string_builder.c` (Buffer dinámico para la salida de cada etapa)
+   - `src/intermediate_code/tac_operand.c` (Estructura y constructores de operandos TAC)
+   - `src/intermediate_code/tac_instruction.c` (Estructura de instrucciones TAC)
+   - `src/intermediate_code/tac_list.c` (Lista enlazada de cuádruplas TAC)
+   - `src/intermediate_code/intermediate_code.c` (Recorrido del AST que construye el TAC)
+   - `src/optimizer/optimizer.c` (Pasadas de optimización sobre el TAC)
+   - `src/optimizer/live_variable_analysis.c` (CFG y análisis de variables vivas)
+   - `src/object_code/function_frame.c` (Marco de pila) y `src/object_code/object_code.c` (Generador de código objeto)
 5. **Genera el binario final:** Produce el ejecutable `./mi_compilador` en la raíz del repositorio.
 
 ### Consideraciones y mantenimiento

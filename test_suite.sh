@@ -19,30 +19,30 @@ step() {
 }
 
 echo "Compilando dependencias y suites de tests..."
-step "bison" bison -d src/bison.y -o build/bison.tab.c
-step "flex" flex -o build/lex.yy.c src/lexer.l
+step "bison" bison -d src/parser/bison.y -o build/bison.tab.c
+step "flex" flex -o build/lex.yy.c src/parser/lexer.l
 step "compilacion de tests del lexer" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_lexer.c build/bison.tab.c build/lex.yy.c src/ast.c src/parser_helpers.c src/symbol_table.c src/error_handler.c -o build/run_lexer_tests
+    gcc -DUNITY_TESTING -Iinclude -Ibuild -I./tests/unity tests/unity/unity.c tests/test_lexer.c build/bison.tab.c build/lex.yy.c src/parser/ast.c src/parser/parser_helpers.c src/semantic/symbol_table.c src/core/error_handler.c -o build/run_lexer_tests
 step "compilacion de tests del parser" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_parser.c src/ast.c src/parser_helpers.c src/symbol_table.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_parser_tests
+    gcc -DUNITY_TESTING -Iinclude -Ibuild -I./tests/unity tests/unity/unity.c tests/test_parser.c src/parser/ast.c src/parser/parser_helpers.c src/semantic/symbol_table.c src/core/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_parser_tests
 step "compilacion de tests del AST" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_ast.c src/ast.c src/parser_helpers.c src/symbol_table.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_ast_tests
+    gcc -DUNITY_TESTING -Iinclude -Ibuild -I./tests/unity tests/unity/unity.c tests/test_ast.c src/parser/ast.c src/parser/parser_helpers.c src/semantic/symbol_table.c src/core/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_ast_tests
 step "compilacion de tests de la tabla de simbolos" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -I./tests/unity tests/unity/unity.c tests/test_symbol_table.c src/symbol_table.c -o build/run_symbol_table_tests
+    gcc -DUNITY_TESTING -Iinclude -I./tests/unity tests/unity/unity.c tests/test_symbol_table.c src/semantic/symbol_table.c -o build/run_symbol_table_tests
 step "compilacion de tests del analisis semantico" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_semantic.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_semantic_tests
+    gcc -DUNITY_TESTING -Iinclude -Ibuild -I./tests/unity tests/unity/unity.c tests/test_semantic.c src/semantic/semantic_analyzer.c src/semantic/type_checker.c src/semantic/symbol_table.c src/parser/ast.c src/parser/parser_helpers.c src/core/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_semantic_tests
 step "compilacion de tests del TAC" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_tac.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c src/string_builder.c build/bison.tab.c build/lex.yy.c -o build/run_tac_tests
+    gcc -DUNITY_TESTING -Iinclude -Ibuild -I./tests/unity tests/unity/unity.c tests/test_tac.c src/intermediate_code/intermediate_code.c src/intermediate_code/tac_list.c src/intermediate_code/tac_instruction.c src/intermediate_code/tac_operand.c src/semantic/semantic_analyzer.c src/semantic/type_checker.c src/semantic/symbol_table.c src/parser/ast.c src/parser/parser_helpers.c src/core/error_handler.c src/core/string_builder.c build/bison.tab.c build/lex.yy.c -o build/run_tac_tests
 step "compilacion de tests del analisis de variables vivas" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_live_variable_analysis.c src/live_variable_analysis.c src/optimizer.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c src/string_builder.c build/bison.tab.c build/lex.yy.c -o build/run_live_variable_tests
+    gcc -DUNITY_TESTING -Iinclude -Ibuild -I./tests/unity tests/unity/unity.c tests/test_live_variable_analysis.c src/optimizer/live_variable_analysis.c src/optimizer/optimizer.c src/intermediate_code/intermediate_code.c src/intermediate_code/tac_list.c src/intermediate_code/tac_instruction.c src/intermediate_code/tac_operand.c src/semantic/semantic_analyzer.c src/semantic/type_checker.c src/semantic/symbol_table.c src/parser/ast.c src/parser/parser_helpers.c src/core/error_handler.c src/core/string_builder.c build/bison.tab.c build/lex.yy.c -o build/run_live_variable_tests
 step "compilacion de tests de codigo objeto" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_object_code.c src/object_code.c src/function_frame.c src/string_builder.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_object_code_tests
+    gcc -DUNITY_TESTING -Iinclude -Ibuild -I./tests/unity tests/unity/unity.c tests/test_object_code.c src/object_code/object_code.c src/object_code/function_frame.c src/core/string_builder.c src/intermediate_code/intermediate_code.c src/intermediate_code/tac_list.c src/intermediate_code/tac_instruction.c src/intermediate_code/tac_operand.c src/semantic/semantic_analyzer.c src/semantic/type_checker.c src/semantic/symbol_table.c src/parser/ast.c src/parser/parser_helpers.c src/core/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_object_code_tests
 step "compilacion de tests del optimizador" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_optimizer.c src/optimizer.c src/live_variable_analysis.c src/object_code.c src/function_frame.c src/string_builder.c src/intermediate_code.c src/tac_list.c src/tac_instruction.c src/tac_operand.c src/semantic_analyzer.c src/type_checker.c src/symbol_table.c src/ast.c src/parser_helpers.c src/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_optimizer_tests
+    gcc -DUNITY_TESTING -Iinclude -Ibuild -I./tests/unity tests/unity/unity.c tests/test_optimizer.c src/optimizer/optimizer.c src/optimizer/live_variable_analysis.c src/object_code/object_code.c src/object_code/function_frame.c src/core/string_builder.c src/intermediate_code/intermediate_code.c src/intermediate_code/tac_list.c src/intermediate_code/tac_instruction.c src/intermediate_code/tac_operand.c src/semantic/semantic_analyzer.c src/semantic/type_checker.c src/semantic/symbol_table.c src/parser/ast.c src/parser/parser_helpers.c src/core/error_handler.c build/bison.tab.c build/lex.yy.c -o build/run_optimizer_tests
 step "compilacion del compilador" \
-    gcc -Iinclude -Isrc -Ibuild build/bison.tab.c build/lex.yy.c src/main.c src/driver.c src/ast.c src/parser_helpers.c src/symbol_table.c src/type_checker.c src/semantic_analyzer.c src/error_handler.c src/string_builder.c src/tac_operand.c src/tac_instruction.c src/tac_list.c src/live_variable_analysis.c src/intermediate_code.c src/optimizer.c src/function_frame.c src/object_code.c src/cli.c -o mi_compilador
+    gcc -Iinclude -Ibuild build/bison.tab.c build/lex.yy.c src/main.c src/core/driver.c src/parser/ast.c src/parser/parser_helpers.c src/semantic/symbol_table.c src/semantic/type_checker.c src/semantic/semantic_analyzer.c src/core/error_handler.c src/core/string_builder.c src/intermediate_code/tac_operand.c src/intermediate_code/tac_instruction.c src/intermediate_code/tac_list.c src/optimizer/live_variable_analysis.c src/intermediate_code/intermediate_code.c src/optimizer/optimizer.c src/object_code/function_frame.c src/object_code/object_code.c src/core/cli.c -o mi_compilador
 step "compilacion de tests de la linea de comandos" \
-    gcc -DUNITY_TESTING -Iinclude -Isrc -Ibuild -I./tests/unity tests/unity/unity.c tests/test_cli.c src/cli.c -o build/run_cli_tests
+    gcc -DUNITY_TESTING -Iinclude -Ibuild -I./tests/unity tests/unity/unity.c tests/test_cli.c src/core/cli.c -o build/run_cli_tests
 
 # Convierte la salida de Unity a una linea por test y descarta los mensajes
 # de error que imprime el propio compilador ("Error <etapa> en la linea N: ...")
