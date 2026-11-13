@@ -103,6 +103,14 @@ NodeAST *newOperatorNode(OperationType operation, NodeAST *left, NodeAST *right)
 NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *parameters, NodeAST *body);
 
 /**
+ * @brief Crea un nodo de declaración de parámetro formal para un método.
+ *
+ * @param id Nombre del parámetro cedido en propiedad al nuevo símbolo.
+ * @return Puntero al nodo de declaración creado, o NULL si falló la reserva de memoria.
+ */
+NodeAST *newParameterDeclaration(DataType type, char *id);
+
+/**
  * @brief Crea un nodo AST de referencia a identificador (ID_NODE).
  *
  * @param id Nombre del identificador cedido en propiedad al símbolo.

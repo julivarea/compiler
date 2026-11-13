@@ -97,23 +97,6 @@ NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second) {
     return first;
 }
 
-NodeAST *newParameterDeclaration(DataType type, char *id) {
-    Symbol *symbol = newSymbol(id, VARIABLE_SYMBOL, type, NULL);
-    if (symbol == NULL) {
-        free(id);
-        return NULL;
-    }
-
-    NodeAST *declaration = newNode(VARIABLE_DECLARATION_NODE, symbol, NULL, NULL, NULL);
-    if (declaration == NULL) {
-        freeSymbol(symbol);
-        return NULL;
-    }
-
-    declaration->type = type;
-    return declaration;
-}
-
 NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers) {
     if (identifiers == NULL) {
         return NULL;

@@ -53,14 +53,6 @@ void resolveNodeArray(NodeAST *parent, NodeArray *array);
 NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second);
 
 /**
- * @brief Crea un nodo de declaración de parámetro formal para un método.
- *
- * @param id Nombre del parámetro cedido en propiedad al nuevo símbolo.
- * @return Puntero al nodo de declaración creado, o NULL si falló la reserva de memoria.
- */
-NodeAST *newParameterDeclaration(DataType type, char *id);
-
-/**
  * @brief Convierte in-place una lista de identificadores en nodos de declaración de variable con el tipo dado.
  *
  * @param identifiers Arreglo de nodos ID_NODE a transformar en VARIABLE_DECLARATION_NODE (acepta NULL).

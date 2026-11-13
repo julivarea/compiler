@@ -70,6 +70,10 @@ NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *pa
     return newSymbolNode(METHOD_DECLARATION_NODE, METHOD_SYMBOL, returnType, methodName, parameters, parameters, body);
 }
 
+NodeAST *newParameterDeclaration(DataType type, char *id) {
+    return newSymbolNode(VARIABLE_DECLARATION_NODE, VARIABLE_SYMBOL, type, id, NULL, NULL, NULL);
+}
+
 NodeAST *newIdentifierNode(char *id) {
     return newSymbolNode(ID_NODE, VARIABLE_SYMBOL, TYPE_VOID, id, NULL, NULL, NULL);
 }
