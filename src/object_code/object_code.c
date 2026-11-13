@@ -19,9 +19,6 @@ typedef enum {
     LOCATION_GLOBAL
 } OperandLocation;
 
-static char **globalVariableNames = NULL;
-static int globalVariableCount = 0;
-static int globalVariableCapacity = 0;
 static int objectCodeErrors = 0;
 
 // Optimizaciones activas en la corrida emitidas en Assembly
@@ -68,17 +65,14 @@ static void storeOperand(const TACOperand *operand, const char *registerName, co
 
 static OperandLocation resolveOperandLocation(const TACOperand *operand, const FunctionFrame *frame, int *offset);
 static bool isDeclaredGlobal(const TACOperand *operand);
-static void registerGlobalVariable(const TACOperand *operand);
 static const char *getGlobalName(const TACOperand *operand);
 
-static void resetGlobalVariables(void);
 static void emitGlobals(const TACList *tacList);
 
 void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
     bool isNullList = (tacList == NULL);
     if (isNullList) return;
 
-    resetGlobalVariables();
     objectCodeErrors = 0;
     activeOptimizations = enabled;
 
@@ -121,8 +115,6 @@ void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
     }
 
     buildStringf("\n.section .note.GNU-stack,\"\",@progbits\n");
-
-    resetGlobalVariables();
 }
 
 int getObjectCodeErrors(void) {
@@ -653,55 +645,8 @@ static OperandLocation resolveOperandLocation(const TACOperand *operand, const F
     return LOCATION_UNRESOLVED;
 }
 
-static void resetGlobalVariables(void) {
-    if (globalVariableNames != NULL) {
-        for (int i = 0; i < globalVariableCount; i++) {
-            if (globalVariableNames[i] != NULL) {
-                free(globalVariableNames[i]);
-            }
-        }
-        free(globalVariableNames);
-        globalVariableNames = NULL;
-    }
-    globalVariableCount = 0;
-    globalVariableCapacity = 0;
-}
-
 static bool isDeclaredGlobal(const TACOperand *operand) {
-    if (operand == NULL) {
-        return false;
-    }
-    if (operand->symbol != NULL) {
-        return operand->symbol->isGlobal;
-    }
-    if (operand->name[0] == '\0' || globalVariableNames == NULL) {
-        return false;
-    }
-    for (int i = 0; i < globalVariableCount; i++) {
-        if (globalVariableNames[i] != NULL && strcmp(globalVariableNames[i], operand->name) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static void registerGlobalVariable(const TACOperand *operand) {
-    if (operand == NULL || operand->symbol != NULL || operand->name[0] == '\0') return;
-
-    if (globalVariableCount >= globalVariableCapacity) {
-        int newCapacity = (globalVariableCapacity == 0) ? 64 : globalVariableCapacity * 2;
-        char **newNames = (char **)realloc(globalVariableNames, sizeof(char *) * (size_t)newCapacity);
-        if (newNames == NULL) return;
-        globalVariableNames = newNames;
-        globalVariableCapacity = newCapacity;
-    }
-
-    globalVariableNames[globalVariableCount] = (char *)malloc(TAC_NAME_LENGTH);
-    if (globalVariableNames[globalVariableCount] == NULL) return;
-
-    strncpy(globalVariableNames[globalVariableCount], operand->name, TAC_NAME_LENGTH - 1);
-    globalVariableNames[globalVariableCount][TAC_NAME_LENGTH - 1] = '\0';
-    globalVariableCount++;
+    return operand != NULL && operand->symbol != NULL && operand->symbol->isGlobal;
 }
 
 static const char *getGlobalName(const TACOperand *operand) {
@@ -722,7 +667,6 @@ static void emitGlobals(const TACList *tacList) {
                 buildStringf(".data\n");
                 hasGlobals = true;
             }
-            registerGlobalVariable(&instruction->result);
 
             const char *name = getGlobalName(&instruction->result);
             buildStringf(".globl %s\n", name);

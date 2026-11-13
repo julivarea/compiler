@@ -14,8 +14,6 @@
 
 typedef struct {
     char name[TAC_NAME_LENGTH];
-    OperandKind destinationKind;
-    bool hasSymbol;
     bool isGlobal;
     TACOperand value;
 } KnownConstant;
@@ -44,7 +42,7 @@ static bool evaluateUnary(TACOperation operation, const TACOperand *operand, TAC
 static const TACOperand *lookupKnownConstant(const KnownConstantTable *table, const TACOperand *operand);
 static void forgetConstant(KnownConstantTable *table, const TACOperand *operand);
 static void rememberConstant(KnownConstantTable *table, const TACOperand *destination, const TACOperand *value);
-static void forgetGlobalVariables(KnownConstantTable *table, const TACList *tacList);
+static void forgetGlobalVariables(KnownConstantTable *table);
 static bool replaceWithKnownConstant(const KnownConstantTable *table, TACOperand *operand);
 
 static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previous, TACInstruction *current);
@@ -53,8 +51,7 @@ static bool endsControlFlow(TACOperation operation);
 static bool isStructural(TACOperation operation);
 static int removeUnreferencedLabels(TACList *tacList);
 static bool isLabelReferenced(const TACList *tacList, const char *labelName);
-static bool isDeadStoreCandidate(const TACList *tacList, const TACInstruction *instruction);
-static bool isGlobalVariable(const TACList *tacList, const char *variableName);
+static bool isDeadStoreCandidate(const TACInstruction *instruction);
 static void printSingleInstruction(FILE *output, const TACInstruction *instruction);
 static void printTACWithDeletedInRed(const TACList *tacList, TACInstruction **deletedList, size_t deletedCount, const char *reason);
 
@@ -127,7 +124,7 @@ static int propagateConstants(TACList *tacList) {
             }
 
             case TAC_CALL:
-                forgetGlobalVariables(&table, tacList);
+                forgetGlobalVariables(&table);
                 forgetConstant(&table, &instruction->result);
                 continue;
 
@@ -285,7 +282,7 @@ static int removeDeadStores(TACList *tacList) {
     for (size_t blockIndex = 0; blockIndex < analysis->blockCount; blockIndex++) {
         const BasicBlock *block = analysis->blocks[blockIndex];
         for (TACInstruction *current = block->firstInstruction; current != NULL; current = current->next) {
-            bool canBeDeadStore = isDeadStoreCandidate(tacList, current);
+            bool canBeDeadStore = isDeadStoreCandidate(current);
             bool isDead = (canBeDeadStore && isDeadDefinitionInBlock(analysis, block, current));
             if (isDead) {
                 deadInstructions[deadCount++] = current;
@@ -395,25 +392,15 @@ static void rememberConstant(KnownConstantTable *table, const TACOperand *destin
 
     KnownConstant *entry = &table->entries[table->count];
     snprintf(entry->name, sizeof(entry->name), "%s", destination->name);
-    entry->destinationKind = destination->kind;
-    entry->hasSymbol = (destination->symbol != NULL);
     entry->isGlobal = (destination->symbol != NULL && destination->symbol->isGlobal);
     entry->value = *value;
     table->count++;
 }
 
-static void forgetGlobalVariables(KnownConstantTable *table, const TACList *tacList) {
+static void forgetGlobalVariables(KnownConstantTable *table) {
     int keptEntriesCount = 0;
     for (int i = 0; i < table->count; i++) {
-        bool isGlobal = false;
-        if (table->entries[i].destinationKind == OPERAND_VARIABLE) {
-            if (table->entries[i].hasSymbol) {
-                isGlobal = table->entries[i].isGlobal;
-            } else {
-                isGlobal = isGlobalVariable(tacList, table->entries[i].name);
-            }
-        }
-        if (!isGlobal) {
+        if (!table->entries[i].isGlobal) {
             table->entries[keptEntriesCount++] = table->entries[i];
         }
     }
@@ -597,53 +584,19 @@ static bool isLabelReferenced(const TACList *tacList, const char *labelName) {
     return false;
 }
 
-static bool isGlobalVariable(const TACList *tacList, const char *variableName) {
-    if (tacList == NULL || variableName == NULL) {
-        return false;
-    }
-    for (const TACInstruction *current = tacList->head; current != NULL; current = current->next) {
-        if (current->operation == TAC_GLOBAL_DECL) {
-            bool matchesName = (strcmp(current->result.name, variableName) == 0);
-            if (matchesName) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-static bool isDeadStoreCandidate(const TACList *tacList, const TACInstruction *instruction) {
+static bool isDeadStoreCandidate(const TACInstruction *instruction) {
     bool hasCandidateResult = (instruction->result.kind == OPERAND_VARIABLE ||
                                instruction->result.kind == OPERAND_TEMP);
     if (!hasCandidateResult) {
         return false;
     }
 
-    bool hasSideEffects = (instruction->operation == TAC_CALL);
-    if (hasSideEffects) {
+    if (instruction->operation == TAC_CALL || isStructural(instruction->operation)) {
         return false;
     }
 
-    bool isDeclaration = (instruction->operation == TAC_GLOBAL_DECL ||
-                          instruction->operation == TAC_LOCAL_DECL ||
-                          instruction->operation == TAC_PARAM_DECL);
-    if (isDeclaration) {
-        return false;
-    }
-
-    bool isGlobal = false;
-    if (instruction->result.kind == OPERAND_VARIABLE) {
-        if (instruction->result.symbol != NULL) {
-            isGlobal = instruction->result.symbol->isGlobal;
-        } else {
-            isGlobal = isGlobalVariable(tacList, instruction->result.name);
-        }
-    }
-    if (isGlobal) {
-        return false;
-    }
-
-    return true;
+    bool isGlobal = (instruction->result.symbol != NULL && instruction->result.symbol->isGlobal);
+    return !isGlobal;
 }
 
 static void printSingleInstruction(FILE *output, const TACInstruction *instruction) {
