@@ -1,6 +1,6 @@
 # Tabla de Símbolos y Ámbitos
 
-**Ficha F09** · Archivos: `include/symbol_table.h`, `src/symbol_table.c` (358 líneas)
+**Ficha F09** · Archivos: `include/symbol_table.h`, `src/semantic/symbol_table.c` (278 líneas)
 
 La estructura con la que el compilador sabe qué identificadores existen, de qué
 tipo son y cuál de los que comparten nombre corresponde en cada punto del
@@ -244,8 +244,9 @@ Un **contador global**, no por ámbito. Cada símbolo que se registra en algún
 Esto tiene dos usos y los dos importan:
 
 **1. `uid == 0` significa "nunca registrado".** Es lo que usa `freeAST` para
-decidir si un nodo es dueño de su símbolo (ver la [ficha F08](03-ast.md)). Por eso
-el contador arranca en 1 y no en 0.
+decidir si un nodo es dueño de su símbolo, y `resolveNodeSymbol` para saber si
+el símbolo que va a reemplazar es un provisorio del parser que hay que liberar
+(ver la [ficha F08](03-ast.md)). Por eso el contador arranca en 1 y no en 0.
 
 **2. Desambiguar nombres repetidos en las fases posteriores.** El código
 intermedio y el assembly no tienen ámbitos: son listas planas de instrucciones.
@@ -465,7 +466,7 @@ analizar ningún cuerpo. Es un cambio en F11, no acá: la tabla ya soporta el ca
 
 ## 12. Cómo se valida
 
-- **Suite:** `tests/test_symbol_table.c` (511 líneas). Creación y liberación de
+- **Suite:** `tests/test_symbol_table.c`. Creación y liberación de
   ámbitos, registro de símbolos, asignación de `uid`, búsqueda local contra
   jerárquica, ocultamiento y los casos con `NULL`.
 - **A mano:** el `uid` de cada símbolo aparece en el archivo `.sem` después del

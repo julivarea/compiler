@@ -26,13 +26,12 @@ leer.
 11. [Tabla de Símbolos y Ámbitos](04-symbol-table.md) — `symbol_table.c`
 12. [Chequeo de Tipos](04.5-type-checker.md) — `type_checker.c`
 13. [Análisis Semántico](04-semantic-analysis.md) — `semantic_analyzer.c`
-14. [La Representación Intermedia (TAC)](05-tac-representation.md) — `tac_*.c`
+14. [La Representación Intermedia (TAC)](05-tac-representation.md) — `tac.c`
 15. [Generación de Código Intermedio](05.5-tac-generation.md) — `intermediate_code.c`
 16. [Análisis de Variables Vivas](05.7-live-variables.md) — `live_variable_analysis.c`
 17. [Optimización del Código Intermedio](05.9-optimizer.md) — `optimizer.c`
-18. [Instrucciones x86-64](06-asm-instructions.md) — `asm_instruction.c`
-19. [Marco de Pila](06.5-stack-frame.md) — `function_frame.c`
-20. [Generación de Código Objeto](06-object-code.md) — `object_code.c`
+18. [Marco de Pila](06.5-stack-frame.md) — `function_frame.c`
+19. [Generación de Código Objeto](06-object-code.md) — `object_code.c`
 
 ---
 

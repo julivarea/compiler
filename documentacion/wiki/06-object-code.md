@@ -1,10 +1,12 @@
 # Generación de Código Objeto
 
-**Ficha F18** · Archivos: `include/object_code.h`, `src/object_code.c` (858 líneas)
+**Ficha F18** · Archivos: `include/object_code.h`, `src/object_code/object_code.c` (668 líneas)
 
 La traducción de cada [cuádrupla TAC](05-tac-representation.md) a assembly
-x86-64, usando el [modelo de instrucciones](06-asm-instructions.md) y el
-[marco de pila](06.5-stack-frame.md). **Es el archivo más grande del proyecto.**
+x86-64 usando el [marco de pila](06.5-stack-frame.md). El assembly se emite como
+texto con `buildStringf` del [acumulador de cadenas](01.8-utilities.md): no hay
+una representación intermedia de instrucciones de máquina. **Es el archivo más
+grande del proyecto.**
 
 !!! note "Esta etapa cubre tipos enteros y lógicos"
     El enunciado acota el código objeto a **tipos enteros y lógicos**, así que
@@ -43,7 +45,7 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
 
 `generateAssembly` es el punto de entrada. Las otras tres están expuestas para
 que los tests puedan emitir una instrucción aislada sin recorrer un programa
-entero; las otras **cuarenta** funciones del módulo son `static`.
+entero; las otras **treinta y dos** funciones del módulo son `static`.
 
 **`enabled` llega acá porque `strength-reduce` es la única optimización que
 depende de la máquina** (ver la [ficha F15](05.9-optimizer.md)): decidir si una
@@ -58,7 +60,6 @@ errores del programa compilado sino bugs del compilador. Ver §9.
 ## 3. La estructura general
 
 ```c
-resetGlobalVariables();
 emitGlobals(tacList);               /* .data:  las variables globales */
 buildStringf(".text\n");            /* .text:  el codigo */
 
@@ -89,8 +90,12 @@ salida de la compilación.
 
 ## 4. El despachador
 
-`generateInstruction` es un `switch` sobre los 23 opcodes del TAC, con una
-función `emitX` por cada uno. Dos casos valen notar:
+`generateInstruction` es un `switch` sobre los opcodes del TAC. Los que
+comparten patrón comparten función, y la diferencia va por parámetro:
+`TAC_ADD` y `TAC_SUB` llaman a `emitBinaryOp` con `"addl"` o `"subl"`,
+`TAC_DIV` y `TAC_MOD` a `emitDivisionOp` con el registro de resultado,
+`TAC_LT`/`TAC_GT`/`TAC_EQ` a `emitRelationalOp`, y `TAC_IF_FALSE`/`TAC_IF_TRUE`
+a `emitConditionalJump` con `"je"` o `"jne"`. Dos casos valen notar:
 
 | Caso | Qué hace |
 | --- | --- |
@@ -103,7 +108,7 @@ vez en el prólogo con `subq`.
 
 ### Los tres patrones de traducción
 
-Casi todas las funciones `emitX` siguen uno de tres esquemas:
+Casi todas las funciones de emisión siguen uno de tres esquemas:
 
 ```c
 /* binaria */                          /* unaria */              /* comparacion */
@@ -150,9 +155,10 @@ acá.
 
 ### Del lado del llamado: `emitParamDeclaration`
 
-Cada `TAC_PARAM_DECL` copia su registro a la ranura del marco, y **avanza el
-contador de su clase**. Si los registros de su clase se agotaron, el argumento
-llegó por la pila del llamador y se lee de `+16(%rbp)` en adelante:
+Cada `TAC_PARAM_DECL` copia su registro a la ranura del marco y avanza
+`integerParamCount`. Si los seis registros ya se usaron, el argumento llegó por
+la pila del llamador, se lee de `+16(%rbp)` en adelante y avanza
+`stackParamCount`:
 
 ```c
 int callerOffset = 16 + frame->stackParamCount * 8;
@@ -170,25 +176,31 @@ llamada interna sobrescriba los registros.
 
 ### Del lado del llamador: `emitCall`
 
-Es la función más compleja del módulo, en cinco pasos:
+Es la función más compleja del módulo. Cuando llega el `call n`, los `n`
+argumentos ya están copiados en ranuras del marco (los dejó ahí cada `param`,
+ver la [ficha F17](06.5-stack-frame.md)); los últimos `n` de la pila de
+pendientes son los de esta llamada:
 
 ```c
-1. classifyCallArguments(...)     /* quien va a registro y quien a la pila */
+1. base = pendingParamCount - n;  /* primer argumento de esta llamada */
 2. if (stackArguments impar) subq $8, %rsp       /* relleno de alineacion */
-3. emitCallStackArguments(...)    /* pushq en orden INVERSO */
-4. emitCallRegisterArguments(...) /* cargar los registros */
+3. emitCallStackArguments(...)    /* del 7.o en adelante: pushq en orden INVERSO */
+4. emitCallRegisterArguments(...) /* los primeros 6: ranura -> registro */
 5. call <nombre>
 6. if (hubo pila o relleno) addq $N, %rsp        /* limpieza */
-7. emitCallResult(...)            /* %eax -> la ranura del resultado */
+7. pendingParamCount = base;
+8. emitCallResult(...)            /* %eax -> la ranura del resultado */
 ```
 
-**El orden de los pasos 3 y 4 importa:** los `pushq` se hacen **antes** de cargar
-los registros, porque `pushq` usa `%rax` como intermediario y clobbearía un
-registro de argumento ya cargado.
+**Primero se apila y después se cargan los registros.** Cada argumento de pila
+pasa por `%eax` (`movl ranura, %eax; pushq %rax`), que no es registro de
+argumento, así que no pisa ninguno; dejar las cargas a registro para el final
+garantiza que nada las sobrescriba entre la carga y el `call`.
 
-**Los argumentos de pila se apilan en orden inverso** (`for (i = n-1; i >= 0; i--)`),
-porque la pila crece hacia abajo y la ABI exige que el argumento 7 quede en la
-dirección más baja de los apilados, o sea que sea el último en apilarse.
+**Los argumentos de pila se apilan en orden inverso**
+(`for (i = argumentCount - 1; i >= MAX_ARG_REGISTERS; i--)`), porque la pila
+crece hacia abajo y la ABI exige que el argumento 7 quede en la dirección más
+baja de los apilados, o sea que sea el último en apilarse.
 
 **El relleno de alineación.** Cada `pushq` mueve `%rsp` 8 bytes. Si se apila una
 cantidad **impar** de argumentos, `%rsp` queda desalineado respecto de los 16
@@ -208,12 +220,13 @@ pendientes siguen ahí.
 ### División y módulo: la misma instrucción
 
 ```c
-static void emitModulo(const TACInstruction *instruction, const FunctionFrame *frame) {
-    emitDivisionOp(instruction, frame, "%edx");    /* el resto */
-}
-static void emitDivision(...) {
+case TAC_DIV:
     emitDivisionOp(instruction, frame, "%eax");    /* el cociente */
-}
+    break;
+
+case TAC_MOD:
+    emitDivisionOp(instruction, frame, "%edx");    /* el resto */
+    break;
 ```
 
 `idivl` deja el **cociente en `%eax` y el resto en `%edx`**, así que división y
@@ -235,7 +248,7 @@ idivl %ecx
    arbitrario.
 2. **El divisor va en `%ecx`, nunca en `%edx`.** Porque `cltd` **sobrescribe
    `%edx`**: si el divisor estuviera ahí, se destruiría justo antes de usarlo. Es
-   la razón de que `%ecx` esté en el enum de registros de la ficha F16.
+   el único lugar del generador que usa `%ecx`.
 
 Verificado: `-17 / 5` da `-3` y `-17 % 5` da `-2`, que es la semántica de C
 (truncamiento hacia cero).
@@ -243,7 +256,11 @@ Verificado: `-17 / 5` da `-3` y `-17 % 5` da `-2`, que es la semántica de C
 ### Comparaciones: `setCC` más `movzbl`
 
 Las instrucciones `setl`, `setg`, `sete` solo pueden escribir en un registro de
-**8 bits**:
+**8 bits**. El mnemónico de cada opcode sale de `getRelationalMnemonics`, que
+para `TAC_LT`, `TAC_GT` y `TAC_EQ` devuelve las tres variantes que se usan: el
+`setCC` para producir el booleano, y el salto que se toma si la comparación da
+verdadera y si da falsa (estos dos los usa la fusión con el salto siguiente, ver
+el [ADR 003](../decisiones/adr-003-fusion-comparacion-y-salto-condicional.md)):
 
 ```asm
 cmpl   %edx, %eax      # calcula %eax - %edx y setea flags
@@ -324,6 +341,11 @@ hereda del opcode del TAC: `TAC_GLOBAL_DECL` contra `TAC_LOCAL_DECL`.
 devuelve `operand->symbol->id` —el identificador original— y solo cae al
 `operand->name` calificado si el operando no tiene símbolo asociado.
 
+**Saber si un operando es global no requiere ninguna búsqueda:**
+`isDeclaredGlobal` lee `operand->symbol->isGlobal`, la marca que dejó la tabla
+de símbolos al registrar la variable en el ámbito global (ver el
+[ADR 002](../decisiones/adr-002-resolucion-variables-globales-isglobal.md)).
+
 Eso es deliberado y vale entender por qué: el `@uid` existe para desambiguar
 nombres repetidos, y **una global no puede estar repetida**, porque hay un solo
 ámbito global. Al no necesitar el sufijo, usar el nombre limpio hace que la tabla
@@ -369,15 +391,15 @@ funciones: no hace falta ninguna tabla de constantes en memoria.
 
 ## 9. Los errores internos
 
-El módulo lleva un contador `objectCodeErrors` que se incrementa en cinco
-situaciones, todas bugs del compilador y no del programa compilado:
+El módulo lleva un contador `objectCodeErrors` que se incrementa en cuatro
+situaciones, todas bugs del compilador o falta de memoria, y no errores del
+programa compilado:
 
 | Dónde | Cuándo |
 | --- | --- |
 | `generateAssembly` | No se pudo crear el marco de una función |
 | `generateAssembly` | `buildFrameLayout` devolvió `false`: no se pudieron reservar las ranuras de argumentos |
 | `emitParam` | No se pudo ampliar el arreglo de argumentos pendientes |
-| `emitCall` | No se pudo reservar la clasificación de argumentos |
 | `resolveOperandLocation` | Un operando sin lugar asignado (§8) |
 
 **Los dos primeros se reportan en `generateAssembly` y no en la función que
@@ -396,9 +418,11 @@ error interno significa "el compilador está mal".
 
 ## 10. Inventario de funciones
 
-Cuarenta y cinco funciones: **cinco públicas** y **cuarenta `static`**. Es el
-archivo con más funciones del proyecto, y está ordenado por la regla de descenso:
-el punto de entrada arriba, el acceso a operandos abajo.
+Treinta y siete funciones: **cinco públicas** y **treinta y dos `static`**. Es
+el archivo con más funciones del proyecto, y está ordenado por la regla de
+descenso: cada función aparece antes que las que invoca, el punto de entrada
+arriba y el acceso a operandos abajo. El bloque de prototipos del principio
+sigue el mismo orden y sirve de índice.
 
 ### Públicas
 
@@ -432,32 +456,29 @@ hay un argumento de `f` pendiente, así que los dos necesitan ranura propia. Un
 contador que se reseteara en cada `call` daría un pico demasiado chico y los
 argumentos se pisarían.
 
-### Una función por opcode (pasada 2)
+### La emisión por opcode (pasada 2)
 
-| Función | Qué emite |
-| --- | --- |
-| `emitParamDeclaration` | Copia el registro de argumento a su ranura, o lo lee del marco del llamador si los registros se agotaron. Avanza el contador de **su clase** |
-| `emitAssignment` | Cargar a `%eax` y guardar |
-| `emitAddition` / `emitSubtraction` | `ASM_ADD`/`ASM_SUB` vía `emitBinaryOp` |
-| `emitMultiplication` | Primero prueba la reducción de fuerza; si no aplica, el `imull` normal |
-| `emitDivision` | `emitDivisionOp` leyendo `%eax`, que es donde `idivl` deja el cociente |
-| `emitModulo` | `emitDivisionOp` leyendo `%edx`, que es donde deja el resto |
-| `emitUnaryMinus` | `negl` sobre `%eax` |
-| `emitNot` | `xorl $1` |
-| `emitLessThan` / `emitGreaterThan` / `emitEquality` | `emitRelationalOp` con `setl`, `setg` y `sete` |
-| `emitLabel` | `.L3:` — la etiqueta sale de `result` |
-| `emitGoto` | `jmp .L3` — sale de `firstOperand` |
-| `emitIfFalse` / `emitIfTrue` | `cmpl $0` más `je`/`jne` — la etiqueta sale de `secondOperand` |
-| `emitParam` | Deja el argumento en su ranura pendiente y anota su tipo |
-| `emitCall` | Los siete pasos de §5 |
-| `emitReturn` | Deja el valor en `%eax` y salta al epílogo común |
+| Función | Opcodes | Qué emite |
+| --- | --- | --- |
+| `emitParamDeclaration` | `TAC_PARAM_DECL` | Copia el registro de argumento a su ranura, o lo lee del marco del llamador si los registros se agotaron |
+| `emitAssignment` | `TAC_ASSIGN` | Cargar a `%eax` y guardar |
+| `emitBinaryOp` | `TAC_ADD`, `TAC_SUB` | `addl` / `subl` según el mnemónico que recibe |
+| `emitMultiplication` | `TAC_MUL` | Primero prueba la reducción de fuerza; si no aplica, `emitBinaryOp` con `imull` |
+| `emitDivisionOp` | `TAC_DIV`, `TAC_MOD` | `cltd` + `idivl %ecx`, guardando `%eax` (cociente) o `%edx` (resto) |
+| `emitUnaryMinus` | `TAC_UMINUS` | `negl` sobre `%eax` |
+| `emitNot` | `TAC_NOT` | `xorl $1` |
+| `emitRelationalOp` | `TAC_LT`, `TAC_GT`, `TAC_EQ` | `cmpl` + `setCC` + `movzbl` |
+| `emitLabel` | `TAC_LABEL` | `.L3:` — la etiqueta sale de `result` |
+| `emitGoto` | `TAC_GOTO` | `jmp .L3` — sale de `firstOperand` |
+| `emitConditionalJump` | `TAC_IF_FALSE`, `TAC_IF_TRUE` | `cmpl $0` más `je`/`jne` — la etiqueta sale de `secondOperand` |
+| `emitParam` | `TAC_PARAM` | Copia el argumento a su ranura pendiente |
+| `emitCall` | `TAC_CALL` | Los pasos de §5 |
+| `emitReturn` | `TAC_RETURN` | Deja el valor en `%eax` y salta al epílogo común |
 
 **Las tres posiciones distintas de la etiqueta** —`result` en `emitLabel`,
 `firstOperand` en `emitGoto`, `secondOperand` en los saltos condicionales— son la
-asimetría del catálogo de cuádruplas, y son exactamente la razón de que el
-generador de TAC tenga una capa de emisores con nombre
-([ficha F13](05.5-tac-generation.md)). Acá se paga del otro lado: hay que saber en
-qué campo guardó la etiqueta cada opcode.
+asimetría del catálogo de cuádruplas ([ficha F12](05-tac-representation.md)).
+Acá se paga: hay que saber en qué campo guardó la etiqueta cada opcode.
 
 **`emitNot` merece un párrafo.** Negar un booleano con `xorl $1` da el resultado
 correcto **solo si el valor es exactamente 0 o 1**: con cualquier otro bit
@@ -470,21 +491,22 @@ instrucción en lugar de las tres que costaría `cmpl $0` + `sete` + `movzbl`.
 
 | Función | Qué hace |
 | --- | --- |
-| `emitFunction` | Prólogo, el bucle de instrucciones hasta `end_func`, epílogo. Devuelve dónde quedó el recorrido |
-| `emitBinaryOp` | El patrón entero: `%eax`, `%edx`, operar, guardar |
-| `emitDivisionOp` | `cltd` más `idivl %ecx`, con el registro de resultado por parámetro |
-| `emitRelationalOp` | `cmpl` + `setCC` + `movzbl` |
+| `emitFunction` | Prólogo, el bucle de instrucciones hasta `end_func` (fusionando comparación y salto cuando se puede), epílogo. Devuelve dónde quedó el recorrido |
+| `canFuseConditionAndJump` | Si `peephole` está activa y un relacional deja un temporal que lee el salto siguiente |
+| `emitFusedComparisonAndJump` | `cmpl` y un único salto condicional, sin materializar el booleano |
+| `getRelationalMnemonics` | El `setCC` y los dos saltos de cada relacional; devuelve `false` si el opcode no es relacional |
 | `emitStrengthReducedMultiplication` | Los tres casos de §6; devuelve `false` si no aplica |
 | `powerOfTwoExponent` | `(v & (v - 1)) == 0` y después el exponente |
-| `classifyCallArguments` | Decide, argumento por argumento, registro de su clase o pila |
 | `emitCallStackArguments` | Los `pushq`, en orden inverso |
 | `emitCallRegisterArguments` | Las cargas a los registros, después de los `pushq` |
 | `emitCallResult` | `%eax` a la ranura del resultado, si la llamada tiene resultado |
 
-Las cuatro funciones con un **mnemónico o un registro por parámetro** son el
-patrón que mantiene corto al archivo: `emitDivisionOp` sirve para `/` y para `%`
-cambiando el registro que se lee, y `emitRelationalOp` sirve para los tres
-relacionales cambiando el `setCC`. Agregar `!=` es una línea precisamente por eso.
+Las funciones con un **mnemónico o un registro por parámetro** son el patrón que
+mantiene corto al archivo: `emitBinaryOp` sirve para `+`, `-` y `*`,
+`emitDivisionOp` para `/` y `%` cambiando el registro que se lee, y
+`emitRelationalOp` para los tres relacionales con el `setCC` que le da
+`getRelationalMnemonics`. Agregar `!=` es un `case` en esa tabla y en el
+despachador.
 
 `powerOfTwoExponent` tiene una sutileza de contrato: devuelve **`-1`** si el
 valor no es potencia de dos, pero devuelve **`0`** para el valor `1`, que sí lo
@@ -498,26 +520,18 @@ es correcto, porque el caso `× 1` ya se resolvió antes, en su propia rama.
 | `loadOperand` | Constante → inmediato; si no, resuelve y carga de la pila o de la global |
 | `storeOperand` | Resuelve y guarda a la pila o a la global |
 | `resolveOperandLocation` | Pila, global, o el error interno de §8 |
-| `isDeclaredGlobal` | Búsqueda lineal en el arreglo de nombres globales |
-| `registerGlobalVariable` | Agrega un nombre al arreglo, duplicando la capacidad desde 64 |
+| `isDeclaredGlobal` | Lee `operand->symbol->isGlobal` (§7) |
 | `getGlobalName` | El `id` del símbolo si lo tiene; si no, el nombre calificado (§7) |
-
-La asimetría que vale notar está entre las dos funciones de globales:
-`isDeclaredGlobal` busca por `operand->name`, el nombre **calificado con `@uid`**,
-mientras `getGlobalName` emite el símbolo **sin** el sufijo. Las dos conviven
-porque la lista interna habla el idioma del TAC y el assembly habla el del
-programa (§7).
 
 ### Las globales
 
 | Función | Qué hace |
 | --- | --- |
-| `emitGlobals` | Emite `.data` con una palabra por `global_decl`, y las registra |
-| `resetGlobalVariables` | Libera el arreglo estático de nombres |
+| `emitGlobals` | Emite `.data` con una palabra (`.long 0`) por cada `global_decl` |
 
-**`resetGlobalVariables` se llama al entrar y al salir** de `generateAssembly`.
-El de salida es el que permite que los tests llamen a `generateAssembly` muchas
-veces en el mismo proceso sin arrastrar las globales de la corrida anterior.
+El generador no guarda estado propio sobre las globales: todo lo que necesita
+saber de una variable lo lleva su `Symbol`, así que no hay nada que reiniciar
+entre dos llamadas a `generateAssembly`.
 
 ---
 
@@ -525,11 +539,10 @@ veces en el mismo proceso sin arrastrar las globales de la corrida anterior.
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `tac_list.h` (F12, F13) | La lista de cuádruplas, ya optimizada si se pidió |
-| `optimizer.h` (F15) | El `OptimizationSet`, solo para `strength-reduce` |
+| `tac.h` (F12, F13) | La lista de cuádruplas, ya optimizada si se pidió |
+| `optimizer.h` (F15) | El `OptimizationSet`, para `strength-reduce` y la fusión de `peephole` |
 | `function_frame.h` (F17) | `frameSize` y un offset por operando |
-| `asm_instruction.h` (F16) | Los constructores y `emitAsm`, para el 20% del assembly |
-| `string_builder.h` (F04) | `buildStringf`, para el otro 80% |
+| `string_builder.h` (F04) | `buildStringf`, por donde sale todo el assembly |
 
 | Va hacia | Qué entrega |
 | --- | --- |
@@ -549,15 +562,18 @@ veces en el mismo proceso sin arrastrar las globales de la corrida anterior.
 
 ### Un opcode TAC nuevo
 
-Un `case` en `generateInstruction` y su función `emitX`. **Si se omite, cae en el
-`default` que no hace nada**: la instrucción desaparece del ejecutable sin un solo
-aviso. Es el fallo silencioso de esta ficha, el mismo patrón que en F13.
+Un `case` en `generateInstruction` que llame a una función de emisión existente
+o a una nueva. **Si se omite, cae en el `default` que no hace nada**: la
+instrucción desaparece del ejecutable sin un solo aviso. Es el fallo silencioso
+de esta ficha, el mismo patrón que en F13.
 
 ### Un operador relacional nuevo (`!=`, `<=`, `>=`)
 
-Cada uno es una línea: `emitRelationalOp(instruction, "setne", frame)`, más su
-opcode en el TAC y su fila en el chequeo de tipos. Es la extensión más barata de
-todas, y está desarrollada en la [ficha F15](05.9-optimizer.md).
+Un `case` en `getRelationalMnemonics` con sus tres mnemónicos (por ejemplo
+`setne` / `jne` / `je` para `!=`) y su opcode en la lista de relacionales del
+despachador, más su opcode en el TAC y su fila en el chequeo de tipos. La fusión
+con el salto siguiente funciona sola, porque lee la misma tabla. Es la extensión
+más barata de todas, y está desarrollada en la [ficha F15](05.9-optimizer.md).
 
 ### Reducir el código generado
 
@@ -576,9 +592,6 @@ exactamente lo que el diseño actual evita a propósito.
 - **El divisor nunca puede ir en `%edx`** porque `cltd` lo sobrescribe (§6).
 - **Los registros no conservan valores entre instrucciones TAC** (§4). Es
   deliberado, y es la razón de que el código sea largo.
-- **`emitCall` libera `registerIndex` y `goesToStack` en el camino normal**, pero
-  en el camino de error de la reserva devuelve antes sin haber reservado, así que
-  no hay fuga; conviene no reordenar esos `return`.
 - **Las globales pierden el sufijo `@uid` al volverse símbolos** (§7), al
   contrario de lo que pasa en el TAC. Buscar `g@1` en el `.ass` no encuentra nada;
   el símbolo es `g`.
@@ -602,9 +615,9 @@ exactamente lo que el diseño actual evita a propósito.
   alineada la pila. Respetarla es lo que permite enlazar con libc y que `gcc`
   acepte el objeto.
 - **Clasificación de argumentos**: la ABI de System V clasifica cada argumento en
-  INTEGER, SSE o MEMORY y lo asigna a la secuencia de registros de su clase. Las
-  dos secuencias independientes de §5 son la implementación de esa regla para los
-  dos casos que el lenguaje necesita.
+  INTEGER, SSE o MEMORY y lo asigna a la secuencia de registros de su clase.
+  Como el código generable es solo de enteros y booleanos, acá se usa únicamente
+  la secuencia INTEGER; §5 explica qué cambiaría con reales.
 - **Registros preservados por el llamado contra por el llamador**
   (*callee-saved* / *caller-saved*): la ABI reparte los registros en dos grupos.
   Este generador usa solo `%eax`, `%edx`, `%ecx` y los de argumentos, que son

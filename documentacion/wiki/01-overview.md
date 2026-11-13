@@ -17,7 +17,7 @@ La transformación del código fuente se estructura en seis fases secuenciales:
    - Valida el tipado estático, coherencia de retornos en funciones y condiciones booleanas en estructuras de control.
    - A diferencia del analizador sintáctico, acumula y reporta todos los errores encontrados antes de abortar.
 5. **Generación de Código Intermedio (TAC):** Recorre el AST validado y emite Código de Tres Direcciones linealizado con variables temporales y etiquetas para control de saltos.
-6. **Generación de Código Objeto y Gestión del Stack:** Recorre la lista TAC, dimensiona los marcos de activación de pila (`FunctionFrame` y `StackSlot`) según la convención System V AMD64 ABI, y emite instrucciones en lenguaje ensamblador x86-64 (`AsmInstruction`).
+6. **Generación de Código Objeto y Gestión del Stack:** Recorre la lista TAC, dimensiona los marcos de activación de pila (`FunctionFrame` y `StackSlot`) según la convención System V AMD64 ABI, y emite las instrucciones en lenguaje ensamblador x86-64 como texto, con `buildStringf`.
 
 ---
 
@@ -36,7 +36,7 @@ flowchart LR
     TAC_GEN -->|"TACList"| TAC_INST["Cuádruplas TAC (TACInstruction & TACOperand)"]
     TAC_INST --> ASM_GEN["Generador de Código Objeto"]
     ASM_GEN <-->|"Cálculo de Offsets (-%rbp)"| FRAME["Gestor de Pila (FunctionFrame & StackSlot)"]
-    ASM_GEN -->|"AsmInstruction"| ASM_OUT["Ensamblador x86-64 (.ass / .s)"]
+    ASM_GEN -->|"texto (buildStringf)"| ASM_OUT["Ensamblador x86-64 (.ass / .s)"]
 ```
 
 ---
@@ -82,7 +82,7 @@ flowchart LR
             +int count
             +int capacity
             +appendNode(node)
-            +resolveNodeArray(parent)
+            +mergeNodeArrays(other)
         }
 
         %% ========================================================
@@ -160,6 +160,7 @@ flowchart LR
             +int uid
             +DataType type
             +SymbolType symbolType
+            +bool isGlobal
             +NodeAST* parameters
             +ValueUnion value
             +newSymbol(id, symbolType, type, params)
@@ -248,11 +249,15 @@ flowchart LR
             +DataType returnType
             +StackSlot* slots
             +int slotCount
+            +int slotCapacity
             +int nextOffset
             +int frameSize
-            +int paramCount
-            +int pendingParamSlots[64]
+            +int* pendingParamSlots
             +int pendingParamCount
+            +int pendingParamCapacity
+            +int maxPendingParams
+            +int integerParamCount
+            +int stackParamCount
             +createFrame(functionName)
             +addSlot(operand)
         }
@@ -262,51 +267,8 @@ flowchart LR
             +int offset
         }
 
-        class AsmInstruction {
-            +AsmOpcode opcode
-            +AsmOperand dest
-            +AsmOperand src
-        }
-
-        class AsmOperand {
-            +AsmOperandType type
-            +AsmRegister reg
-            +int offset
-            +int immediate
-            +char* globalName
-            +char customReg[16]
-        }
-
-        class AsmOpcode {
-            <<enumeration>>
-            ASM_MOV, ASM_ADD, ASM_SUB, ASM_IMUL, ASM_IDIV
-            ASM_CMP, ASM_SETE, ASM_SETNE, ASM_SETL, ASM_SETG
-            ASM_MOVZBL, ASM_CLTD, ...
-        }
-
-        class AsmOperandType {
-            <<enumeration>>
-            ASM_OP_NONE
-            ASM_OP_REG
-            ASM_OP_MEM
-            ASM_OP_GLOBAL
-            ASM_OP_IMM
-        }
-
-        class AsmRegister {
-            <<enumeration>>
-            ASM_RAX
-            ASM_RDX
-            ASM_RCX
-        }
-
         FunctionFrame "1" *-- "many" StackSlot : slots (-offset de %rbp)
         FunctionFrame --> DataType : returnType
-        AsmInstruction --> AsmOpcode : opcode
-        AsmInstruction "1" *-- "1" AsmOperand : dest
-        AsmInstruction "1" *-- "1" AsmOperand : src
-        AsmOperand --> AsmOperandType : type
-        AsmOperand --> AsmRegister : reg
 
         %% Conexión inter-etapa TAC -> Frame
         FunctionFrame ..> TACOperand : asigna offsets a variables y temporales
@@ -528,13 +490,18 @@ flowchart LR
             +DataType returnType
             +StackSlot* slots
             +int slotCount
+            +int slotCapacity
             +int nextOffset
             +int frameSize
-            +int paramCount
-            +int pendingParamSlots[64]
+            +int* pendingParamSlots
             +int pendingParamCount
+            +int pendingParamCapacity
+            +int maxPendingParams
+            +int integerParamCount
+            +int stackParamCount
             +createFrame(name) FunctionFrame*
             +addSlot(operand) int
+            +getSlotOffset(name, outOffset) bool
         }
 
         class StackSlot {
@@ -542,50 +509,7 @@ flowchart LR
             +int offset
         }
 
-        class AsmInstruction {
-            +AsmOpcode opcode
-            +AsmOperand dest
-            +AsmOperand src
-        }
-
-        class AsmOperand {
-            +AsmOperandType type
-            +AsmRegister reg
-            +int offset
-            +int immediate
-            +char* globalName
-            +char customReg[16]
-        }
-
-        class AsmOpcode {
-            <<enumeration>>
-            ASM_MOV, ASM_ADD, ASM_SUB, ASM_IMUL, ASM_IDIV
-            ASM_CMP, ASM_SETE, ASM_SETNE, ASM_SETL, ASM_SETG
-            ASM_MOVZBL, ASM_CLTD, ...
-        }
-
-        class AsmOperandType {
-            <<enumeration>>
-            ASM_OP_NONE
-            ASM_OP_REG
-            ASM_OP_MEM
-            ASM_OP_GLOBAL
-            ASM_OP_IMM
-        }
-
-        class AsmRegister {
-            <<enumeration>>
-            ASM_RAX
-            ASM_RDX
-            ASM_RCX
-        }
-
         FunctionFrame "1" *-- "many" StackSlot : slots (-offset de %rbp)
-        AsmInstruction --> AsmOpcode : opcode
-        AsmInstruction "1" *-- "1" AsmOperand : dest
-        AsmInstruction "1" *-- "1" AsmOperand : src
-        AsmOperand --> AsmOperandType : type
-        AsmOperand --> AsmRegister : reg
     ```
 
 ---
@@ -599,7 +523,7 @@ flowchart LR
 | **Árbol de Sintaxis (AST)** | `NodeAST` | `NodeType`, `OperationType` | Estructura universal arbórea. Cada nodo aloja sus hijos en `children`. Enlaza con `Symbol` para identificar variables y métodos, y con `DataType` para su tipo semántico. |
 | **Análisis Semántico** | `Scope`, `Symbol` | `SymbolType`, `DataType` | Organiza los identificadores en un árbol de entornos léxicos (`parent` / `children`). Asigna `uid` único para resolver colisiones por *shadowing*. El `Symbol` de métodos conserva el puntero a su subárbol `parameters` en el AST. |
 | **Código Intermedio (TAC)** | `TACList`, `TACInstruction`, `TACOperand` | `TACOperation`, `OperandKind` | Transforma el AST en una lista enlazada de cuádruplas atómicas. Cada `TACOperand` puede referenciar al `Symbol` original para propagar nombres calificados (`id@uid`) y tipos de datos. |
-| **Código Objeto y Stack** | `FunctionFrame`, `StackSlot`, `AsmInstruction`, `AsmOperand` | `AsmOpcode`, `AsmOperandType`, `AsmRegister` | El backend recorre el TAC: dimensiona el marco de pila (`FunctionFrame`) asignando a cada variable/temporal un `StackSlot` con desplazamiento negativo respecto a `%rbp`, y emite instrucciones `AsmInstruction` en formato AT&T para x86-64. |
+| **Código Objeto y Stack** | `FunctionFrame`, `StackSlot` | `OperandLocation` (privado de `object_code.c`) | El backend recorre el TAC: dimensiona el marco de pila (`FunctionFrame`) asignando a cada variable/temporal un `StackSlot` con desplazamiento negativo respecto a `%rbp`, y emite el assembly x86-64 en sintaxis AT&T como texto, instrucción por instrucción. |
 
 ---
 

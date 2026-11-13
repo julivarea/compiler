@@ -10,8 +10,8 @@
 
 Originalmente, la condición de si una variable era global o local no estaba modelada explícitamente como un atributo intrínseco en su entidad semántica (`Symbol`), sino que se infería mediante **heurísticas posicionales y escaneos lineales**:
 
-1. **Generación de TAC (`src/intermediate_code.c`):** Asumía implícitamente que las declaraciones globales ocurrían únicamente al inicio de la raíz del AST antes de los métodos.
-2. **Optimizador (`src/optimizer.c`) y Generador de Código Objeto (`src/object_code.c`):** Para determinar si un operando era una variable global (por ejemplo, para emitir `movl var(%rip), %reg` en lugar de un offset de stack, o para descartar candidatos en eliminación de asignaciones muertas), la función `isGlobalVariable` realizaba un escaneo lineal de la lista enlazada de instrucciones TAC buscando `TAC_GLOBAL_DECL` por comparación de cadenas (`strcmp`), o se detenía ante el primer `TAC_BEGIN_FUNC`.
+1. **Generación de TAC (`src/intermediate_code/intermediate_code.c`):** Asumía implícitamente que las declaraciones globales ocurrían únicamente al inicio de la raíz del AST antes de los métodos.
+2. **Optimizador (`src/optimizer/optimizer.c`) y Generador de Código Objeto (`src/object_code/object_code.c`):** Para determinar si un operando era una variable global (por ejemplo, para emitir `movl var(%rip), %reg` en lugar de un offset de stack, o para descartar candidatos en eliminación de asignaciones muertas), la función `isGlobalVariable` realizaba un escaneo lineal de la lista enlazada de instrucciones TAC buscando `TAC_GLOBAL_DECL` por comparación de cadenas (`strcmp`), o se detenía ante el primer `TAC_BEGIN_FUNC`.
 
 Este esquema presentaba serias deficiencias:
 * **Acoplamiento posicional frágil:** Dependía de la ubicación física de las instrucciones o nodos en lugar de su ámbito semántico.
@@ -25,14 +25,14 @@ Este esquema presentaba serias deficiencias:
 Se toma la decisión arquitectónica de **establecer a la Tabla de Símbolos (`SymbolTable`) como la única fuente de verdad autoritativa para el ámbito de las variables**, propagando esta información hacia las fases posteriores:
 
 1. **Atributo `isGlobal` en `Symbol`:** Se agrega un campo booleano `bool isGlobal` en la estructura `Symbol` (`include/symbol_table.h`).
-2. **Determinación automática en inserción:** En `src/symbol_table.c` (`appendSymbol`), se asigna automáticamente:
+2. **Determinación automática en inserción:** En `src/semantic/symbol_table.c` (`appendSymbol`), se asigna automáticamente:
    ```c
    newSymbol->isGlobal = (scope->parent == NULL);
    ```
    Toda variable registrada en el ámbito raíz (sin padre) queda marcada irrevocablemente como global.
-3. **Desacoplamiento en Código Intermedio:** En `src/intermediate_code.c`, la emisión de declaraciones de variables se unifica en `generateVariableDeclarationCode`, discriminando la cuádrupla a emitir (`TAC_GLOBAL_DECL` vs. `TAC_LOCAL_DECL`) consultando directamente `node->symbol->isGlobal`, sin depender de si la declaración se procesa en el bucle principal de la raíz o dentro de un bloque.
+3. **Desacoplamiento en Código Intermedio:** En `src/intermediate_code/intermediate_code.c`, la emisión de declaraciones de variables se unifica en `generateVariableDeclarationCode`, discriminando la cuádrupla a emitir (`TAC_GLOBAL_DECL` vs. `TAC_LOCAL_DECL`) consultando directamente `node->symbol->isGlobal`, sin depender de si la declaración se procesa en el bucle principal de la raíz o dentro de un bloque.
 4. **Propagación a `TACOperand` y Resolución $O(1)$:** El puntero al `Symbol` se preserva dentro de `TACOperand`. Tanto el optimizador como el generador de código x86-64 consultan `operand->symbol->isGlobal` en tiempo constante $O(1)$.
-5. **Fallback para cuádruplas sintéticas:** Se mantiene un escaneo de respaldo en `isGlobalVariable` únicamente para cuádruplas aisladas construidas en tests unitarios que carezcan de referencia al símbolo (`operand->symbol == NULL`).
+5. **Sin fallback por nombre:** En una primera versión se mantuvo un escaneo de respaldo (`isGlobalVariable` en el optimizador y un registro de nombres globales en el generador de código objeto) para cuádruplas sin referencia al símbolo. Como `tacVariable` siempre guarda el símbolo, ese camino no se ejecutaba nunca y se eliminó: hoy la única fuente es `operand->symbol->isGlobal`.
 
 ---
 

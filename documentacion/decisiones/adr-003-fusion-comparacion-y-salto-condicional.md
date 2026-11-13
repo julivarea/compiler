@@ -1,8 +1,8 @@
 # ADR 003: Fusión de Comparaciones Relacionales y Saltos Condicionales (Condition Code & Branch Folding)
 
-- **Estado:** Aceptado (En diseño / Pendiente de implementación)
+- **Estado:** Aceptado e implementado (`canFuseConditionAndJump` y `emitFusedComparisonAndJump` en `src/object_code/object_code.c`, activos con `-opt peephole`)
 - **Fecha:** 2026-11-13
-- **Contexto:** Generación de código x86-64 para estructuras de control (`if`, `while`) a partir de cuádruplas TAC en `src/object_code.c`.
+- **Contexto:** Generación de código x86-64 para estructuras de control (`if`, `while`) a partir de cuádruplas TAC en `src/object_code/object_code.c`.
 
 ---
 
@@ -10,7 +10,7 @@
 
 En el lenguaje fuente, las estructuras condicionales e iterativas (`if`, `if-else`, `while`) evalúan condiciones relacionales como `a < b`, `a > b` o `a == b`. 
 
-Durante la etapa de generación de código intermedio (`src/intermediate_code.c`), estas construcciones se aplanan canónicamente en dos cuádruplas TAC consecutivas:
+Durante la etapa de generación de código intermedio (`src/intermediate_code/intermediate_code.c`), estas construcciones se aplanan canónicamente en dos cuádruplas TAC consecutivas:
 1. Una operación relacional que almacena el valor de verdad en un operando temporal virtual:
    ```
    t0 = a < b
@@ -20,15 +20,15 @@ Durante la etapa de generación de código intermedio (`src/intermediate_code.c`
    ifFalse t0 goto .L1
    ```
 
-Actualmente, el generador de código objeto (`src/object_code.c`) traduce cada cuádrupla de forma **aislada y sin contexto**, mediante plantillas fijas de macro-expansión. Esto provoca una severa sobrecarga de instrucciones y accesos redundantes a memoria.
+Sin la optimización, el generador de código objeto (`src/object_code/object_code.c`) traduce cada cuádrupla de forma **aislada y sin contexto**, mediante plantillas fijas de macro-expansión. Esto provoca una severa sobrecarga de instrucciones y accesos redundantes a memoria.
 
 ---
 
-## 2. Estado Actual (Cómo lo tenemos hoy)
+## 2. Traducción sin fusión (sin `-opt peephole`)
 
 Cada cuádrupla se traduce independientemente, forzando la materialización numérica del booleano (0 o 1) en memoria:
 
-### Traducción de `t0 = a < b` ([emitRelationalOp](file:///home/francisco/compiler/src/object_code.c#L641-L648))
+### Traducción de `t0 = a < b` ([emitRelationalOp](https://github.com/julivarea/compiler/blob/main/src/object_code/object_code.c#L409))
 ```assembly
     movl a(%rbp), %eax       # 1. Carga primer operando
     movl b(%rbp), %edx       # 2. Carga segundo operando
@@ -38,23 +38,23 @@ Cada cuádrupla se traduce independientemente, forzando la materialización num�
     movl %eax, -12(%rbp)     # 6. Vuelca el booleano al stack slot de t0
 ```
 
-### Traducción de `ifFalse t0 goto .L1` ([emitIfFalse](file:///home/francisco/compiler/src/object_code.c#L429-L433))
+### Traducción de `ifFalse t0 goto .L1` ([emitConditionalJump](https://github.com/julivarea/compiler/blob/main/src/object_code/object_code.c#L431))
 ```assembly
     movl -12(%rbp), %eax     # 7. Vuelve a leer t0 desde la pila a %eax
     cmpl $0, %eax            # 8. Compara el booleano contra cero
     je .L1                   # 9. Salta si es cero (falso)
 ```
 
-### Diagnóstico del Estado Actual
+### Diagnóstico de la traducción sin fusión
 * **Costo por condición:** **8 a 9 instrucciones** de Assembly x86-64.
 * **Sobrecarga de memoria:** 2 accesos a memoria (un `store` y un `load` consecutivo sobre el mismo slot de pila `-12(%rbp)`).
 * **Desperdicio de hardware:** La instrucción `cmpl` inicial ya dejó en el registro de estados (*EFLAGS*) la información exacta del resultado (`ZF`, `SF`, `OF`). La secuencia `setcc` $\to$ `movzbl` $\to$ `store` $\to$ `load` $\to$ `cmpl $0` no hace más que destruir y reconstruir un estado que el procesador ya tenía listo.
 
 ---
 
-## 3. Diseño Objetivo (Cómo quedaría)
+## 3. Diseño implementado
 
-Aplicar **Condition Code and Branch Folding** mediante reconocimiento de patrones en ventana deslizante (*Peephole / Lookahead*) durante la emisión de la función en `src/object_code.c`.
+Aplicar **Condition Code and Branch Folding** mediante reconocimiento de patrones en ventana deslizante (*Peephole / Lookahead*) durante la emisión de la función en `src/object_code/object_code.c`: `emitFunction` pregunta a `canFuseConditionAndJump` por cada instrucción y su siguiente, y si se puede llama a `emitFusedComparisonAndJump` y avanza dos instrucciones. Los mnemónicos salen de `getRelationalMnemonics`, la misma tabla que usa `emitRelationalOp`.
 
 Cuando una cuádrupla relacional (`TAC_LT`, `TAC_GT`, `TAC_EQ`) sea sucedida inmediatamente por un salto condicional (`TAC_IF_FALSE` o `TAC_IF_TRUE`) que consume ese mismo temporal, **se fusionan ambas operaciones**.
 

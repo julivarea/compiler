@@ -1,6 +1,6 @@
 # Árbol de Sintaxis Abstracta (AST)
 
-**Ficha F08** · Archivos: `include/ast.h`, `src/ast.c` (350 líneas)
+**Ficha F08** · Archivos: `include/ast.h`, `src/parser/ast.c` (535 líneas)
 
 La estructura que produce el [parser](02.5-syntax-analysis.md) y que consumen
 todas las fases siguientes.
@@ -26,18 +26,31 @@ Si hay una estructura que conviene conocer de memoria para la defensa, es esta.
 | `newNode(nodeType, symbol, left, mid, right)` | Constructor genérico, hasta tres hijos |
 | `newOperatorNode(operation, left, right)` | Nodo de operación unaria o binaria |
 | `newMethodDeclaration(returnType, name, parameters, body)` | Declaración de método |
-| `newIntLiteralNode(int)` | Literal entero |
-| `newFloatLiteralNode(float)` | Literal real |
-| `newBoolLiteralNode(int)` | Literal booleano |
+| `newParameterDeclaration(type, id)` | Declaración de un parámetro formal |
+| `newIdentifierNode(id)` | Referencia a un identificador (`ID_NODE`) |
+| `newAssignmentNode(id, expression)` | Asignación |
+| `newMethodCallNode(id, arguments)` | Llamada; adopta la lista de argumentos |
+| `newBlockNode(items)` | Bloque; adopta la lista de declaraciones y sentencias |
+| `newParametersNode(parameters)` | Contenedor de parámetros; adopta la lista |
+| `newReturnNode(expression)` | `return`, con o sin expresión |
+| `newWhileNode(condition, body)` | `while` |
+| `newIfElseNode(condition, ifBlock, elseBlock)` | `if`, con o sin `else` |
+| `newIntLiteralNode(int)` / `newFloatLiteralNode(float)` / `newBoolLiteralNode(int)` | Literales |
 | `freeAST(node)` | Libera un subárbol en postorden |
+| `resolveNodeSymbol(node, declared)` | Reapunta una referencia al símbolo declarado y libera el provisorio (§8) |
 | `fprintAST(out, node, level)` | Imprime el árbol a un stream |
 | `printAST(node, level)` | Lo mismo, a `stdout` |
 
 Más el enum `NodeType`, la estructura `NodeAST` y ocho macros de acceso (§7).
 
-**Quién lo usa:** `bison.y` y `parser_helpers.c` para construirlo;
-`semantic_analyzer.c` y `type_checker.c` para anotarlo; `intermediate_code.c`
-para generar el TAC; `driver.c` para imprimirlo en `-target parse` y `-target sem`.
+**Hay un constructor con nombre por cada construcción del lenguaje.** Las
+acciones de `bison.y` llaman a `newWhileNode($3, $5)` y no a
+`newNode(WHILE_NODE, NULL, $3, $5, NULL)`: la acción dice qué se construye, y el
+orden de los hijos de cada nodo queda escrito una sola vez, acá.
+
+**Quién lo usa:** `bison.y` para construirlo; `semantic_analyzer.c` y
+`type_checker.c` para anotarlo; `intermediate_code.c` para generar el TAC;
+`driver.c` para imprimirlo en `-target parse` y `-target sem`.
 
 ---
 
@@ -152,9 +165,6 @@ void main(){
 
 ## 5. La compactación de hijos en `newNode`
 
-Este es el mecanismo menos obvio del archivo y **es carga estructural**: si
-alguien lo "arregla", se rompe el recorrido del `while`.
-
 ```c
 int count = 0;
 NodeAST *temp[3];
@@ -165,31 +175,24 @@ if (right) temp[count++] = right;
 
 `newNode` recibe hasta tres hijos y **descarta los `NULL`, corriendo los que
 quedan hacia la izquierda**. O sea que la posición en la que un hijo termina no
-es la posición del parámetro.
+es necesariamente la posición del parámetro.
 
-El caso donde esto importa es el `while`. La gramática lo construye así:
+Hoy los constructores con nombre siempre pasan los hijos presentes primero y los
+opcionales al final, así que la compactación solo elimina los ausentes del
+final:
 
-```
-WHILE '(' Expression ')' Block   { $$ = newNode(WHILE_NODE, NULL, $3, NULL, $5); }
-```
+| Constructor | Llama a `newNode` con | Resultado |
+| --- | --- | --- |
+| `newIfElseNode(cond, ifBlock, NULL)` | `(cond, ifBlock, NULL)` | 2 hijos: `if` sin `else` |
+| `newReturnNode(NULL)` | `(NULL, NULL, NULL)` | 0 hijos: `return` sin expresión |
+| `newWhileNode(cond, body)` | `(cond, body, NULL)` | 2 hijos |
+| `newMethodDeclaration(...)` | `(parameters, body, NULL)` | 2 hijos: `parameters` nunca es `NULL` |
 
-El cuerpo se pasa como **tercer** hijo (`right`), con el del medio en `NULL`.
-Como la compactación corre los no nulos hacia la izquierda, el cuerpo **aterriza
-en el índice 1**, que es exactamente donde lo busca `GET_WHILE_BLOCK`:
-
-```c
-#define GET_WHILE_BLOCK(node)  GET_CHILD(node, 1)
-```
-
-Verificado arriba: el `While` del ejemplo tiene 2 hijos y el bloque está en el 1.
-
-Si la compactación se cambiara por una que preserve posiciones (`children[2] =
-right`), el `while` quedaría con `children[1] == NULL` y `GET_WHILE_BLOCK`
-devolvería `NULL`: el cuerpo del ciclo desaparecería del TAC sin un solo error de
-compilación. Es el tipo de cambio "de limpieza" que rompe todo en silencio.
-
-Lo mismo hace funcionar al `if` sin `else`: se pasa `(cond, ifBlock, NULL)` y
-queda con 2 hijos.
+**Es carga estructural igual**: es lo que hace que un `if` sin `else` tenga
+`childCount == 2` y que `GET_ELSE_BLOCK` devuelva `NULL` por rango. Si alguien
+pasara un `NULL` en el medio, el hijo siguiente se correría un lugar y las macros
+de §7 leerían otra cosa. Por eso el orden de los argumentos de `newNode` vive
+dentro de los constructores con nombre y no en las acciones de la gramática.
 
 ---
 
@@ -210,33 +213,49 @@ unario se llama con `right == NULL` y el nodo queda con un solo hijo.
 Si el `newNode` falla, libera los dos subárboles que recibió: no los deja
 colgando sin dueño.
 
-### `newMethodDeclaration(returnType, methodName, parameters, body)`
-
-La única que **no** usa la compactación de `newNode`: crea el nodo sin hijos y
-después arma el arreglo de 2 a mano.
+### `newSymbolNode(...)` (privada): los nodos que llevan símbolo
 
 ```c
-node->children = malloc(2 * sizeof(NodeAST *));
-node->childCount = 2;
-node->children[0] = parameters;
-node->children[1] = body;
+static NodeAST *newSymbolNode(NodeType nodeType, SymbolType symbolType, DataType dataType,
+                              char *id, NodeAST *parameters, NodeAST *left, NodeAST *mid);
 ```
 
-Y tiene que ser así: si pasara `parameters` y `body` por `newNode`, un método sin
-parámetros compactaría el cuerpo al índice 0 y el layout `[parameters, body]`
-dejaría de valer. Acá se fuerza la aridad fija.
+El constructor común de todo nodo que nombra algo: crea el `Symbol` con
+`newSymbol(id, symbolType, dataType, parameters)`, lo envuelve en un nodo con
+`newNode` y pone `node->type = dataType`. Si cualquiera de las dos reservas
+falla, libera el nombre, el símbolo y los subárboles que recibió.
 
-Crea además el `Symbol` del método con `METHOD_SYMBOL` y el tipo de retorno, y
-guarda el nodo de parámetros en `symbol->parameters`, que es lo que después usa
-el chequeo de tipos para validar las llamadas.
+Siete constructores públicos son una línea sobre ella:
 
-Tiene cuatro caminos de error, cada uno liberando exactamente lo que ya había
-reservado más los subárboles recibidos.
+| Constructor | `NodeType` | `SymbolType` | Hijos |
+| --- | --- | --- | --- |
+| `newMethodDeclaration` | `METHOD_DECLARATION_NODE` | `METHOD_SYMBOL` | `[parameters, body]`; además guarda `parameters` en `symbol->parameters` |
+| `newParameterDeclaration` | `VARIABLE_DECLARATION_NODE` | `VARIABLE_SYMBOL` | 0 |
+| `newIdentifierNode` | `ID_NODE` | `VARIABLE_SYMBOL` (provisorio, tipo `VOID`) | 0 |
+| `newAssignmentNode` | `ASSIGNMENT_NODE` | `VARIABLE_SYMBOL` (provisorio) | `[expression]` |
+| `newMethodCallNode` | `METHOD_CALL_NODE` | `METHOD_SYMBOL` (provisorio) | los argumentos, adoptados de la lista |
+| `newConstantNode` (privada) | `CONSTANT_NODE` | `CONSTANT_SYMBOL` | 0 |
+
+`symbol->parameters` es lo que después usa el chequeo de tipos para validar la
+aridad y los tipos de las llamadas.
+
+### Los constructores que adoptan una lista: `resolveNodeArray` (privada)
+
+`newBlockNode`, `newParametersNode` y `newMethodCallNode` reciben el `NodeArray`
+que armó la gramática y lo convierten en los hijos del nodo con
+`resolveNodeArray`, **sin copiar**: el nodo adopta el buffer de punteros y se
+libera solo el contenedor. Si el nodo no se pudo crear, libera los nodos de la
+lista. El detalle está en la [ficha F07](02.7-parser-actions.md).
+
+### `newReturnNode`, `newWhileNode`, `newIfElseNode`
+
+Una línea cada una sobre `newNode`, sin símbolo, con los hijos en el orden de la
+tabla de §4.
 
 ### `newIntLiteralNode`, `newFloatLiteralNode`, `newBoolLiteralNode`
 
-Las tres tienen la misma forma: crean un `Symbol` con `CONSTANT_SYMBOL`, le
-guardan el valor en la unión y lo envuelven en un `CONSTANT_NODE`.
+Las tres tienen la misma forma: piden un `CONSTANT_NODE` a `newConstantNode` y
+le guardan el valor en la unión de su `Symbol`.
 
 Dos detalles:
 
@@ -253,6 +272,27 @@ símbolo si le pertenece, y al final el nodo. El orden importa: liberar el nodo
 antes que los hijos perdería los punteros.
 
 La regla de propiedad del símbolo es lo interesante, y está en §8.
+
+### `resolveNodeSymbol(node, declared)`
+
+La usan el análisis semántico y el chequeo de tipos al resolver una referencia
+(un `ID_NODE`, el destino de una asignación o una llamada) contra la tabla de
+símbolos:
+
+```c
+void resolveNodeSymbol(NodeAST *node, Symbol *declared) {
+    bool isProvisional = (node->symbol != NULL && node->symbol->uid == 0);
+    if (isProvisional) {
+        freeSymbol(node->symbol);
+    }
+    node->symbol = declared;
+}
+```
+
+Libera el símbolo provisorio que había creado el parser solo para llevar el
+nombre, y deja el nodo apuntando al declarado. Si el nodo ya apuntaba a un
+símbolo registrado (`uid != 0`), solo reasigna: así una segunda resolución del
+mismo nodo no libera el símbolo de la tabla.
 
 ### `fprintAST(out, node, level)` y `printAST(node, level)`
 
@@ -351,28 +391,25 @@ doble liberación: el dueño es la tabla.
 Es una regla que funciona pero que **codifica la propiedad en un valor de dato**
 en lugar de en el tipo. Un campo `bool ownsSymbol` sería más explícito.
 
-### Dónde esto se conecta con una fuga real
+### Los dos caminos de un símbolo provisorio
 
-La regla está pensada para que los símbolos provisorios (`uid == 0`) los libere
-`freeAST`. Pero no alcanza, por dos motivos:
+Un símbolo provisorio (`uid == 0`) termina liberado por uno de dos caminos:
 
-1. **El análisis semántico sobreescribe el puntero.** Cuando resuelve un
-   identificador, hace `node->symbol = resolvedSymbol`, y el provisorio deja de
-   ser alcanzable desde cualquier nodo: `freeAST` ya no puede verlo. Es la fuga
-   medida en la [ficha F07](02.7-parser-actions.md), sección *Trampas*.
-2. **`freeAST` nunca se llama sobre el árbol completo.** `main.c` no lo invoca:
-   el AST vive hasta que termina el proceso. Las únicas llamadas a `freeAST` en
-   todo el compilador están en `parser_helpers.c`, y son caminos de error por
-   falta de memoria.
+1. **Si el semántico resuelve la referencia**, `resolveNodeSymbol` lo libera en
+   el momento de reemplazarlo por el declarado. Antes ese reemplazo era un
+   `node->symbol = resolvedSymbol` directo y el provisorio quedaba inalcanzable:
+   valgrind sobre `examples/factorial.ctds` informaba 8 bloques perdidos desde
+   `newSymbol`.
+2. **Si la referencia no se pudo resolver** (variable no declarada, por ejemplo),
+   el nodo conserva el provisorio y `freeAST` lo libera por la regla del
+   `uid == 0`.
 
-Eso explica también por qué el detector de fugas no reporta el AST entero: el
-árbol sigue siendo alcanzable desde la variable global `astRoot`, así que no
-cuenta como perdido. Lo que sí reporta son los símbolos que quedaron sin
-referencia y los ámbitos.
-
-Para un compilador que procesa un archivo y termina es una decisión defendible
-—el sistema operativo recupera todo— pero conviene poder decirlo como decisión y
-no como olvido.
+**`freeAST` nunca se llama sobre el árbol completo.** El driver no lo invoca: el
+AST vive hasta que termina el proceso. Las llamadas a `freeAST` están en los
+caminos de error por falta de memoria de `ast.c` y `parser_helpers.c`, y en los
+tests. Para un compilador que procesa un archivo y termina es una decisión
+defendible —el sistema operativo recupera todo— pero conviene poder decirlo como
+decisión y no como olvido.
 
 ---
 
@@ -381,8 +418,8 @@ no como olvido.
 ```c
 node->line = yylineno;
 
-bool hasConditionLine = ((nodeType == WHILE_NODE || nodeType == IF_ELSE_NODE) && left != NULL);
-if (hasConditionLine) {
+// if/while/method se reducen tras su bloque: usar la línea del encabezado, no la del '}'.
+if ((nodeType == IF_ELSE_NODE || nodeType == WHILE_NODE || nodeType == METHOD_DECLARATION_NODE) && left != NULL) {
     node->line = left->line;
 }
 ```
@@ -391,9 +428,10 @@ Por defecto, la línea de un nodo es `yylineno` **en el momento de la reducción
 que es la línea del *último* token que se consumió. Para una construcción que
 ocupa varias líneas, eso apunta al final y no al principio.
 
-Para `if` y `while` se corrige tomando la línea de la condición, que está mucho
-más cerca de donde el programador escribió la construcción.
-`newMethodDeclaration` hace lo análogo con la línea de los parámetros.
+Para `if` y `while` se corrige tomando la línea de la condición (su primer
+hijo), que está mucho más cerca de donde el programador escribió la
+construcción. Para un método, el primer hijo es el `PARAMETERS_NODE`, así que
+toma la línea de la lista de parámetros.
 
 ### Verificación del efecto
 
@@ -435,7 +473,7 @@ línea de inicio de cada token y que cada acción de la gramática la propagara.
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `bison.y` y `parser_helpers.c` (F06, F07) | Los nodos se crean durante las reducciones; `children` lo puebla `resolveNodeArray` |
+| `bison.y` y `parser_helpers.c` (F06, F07) | Los nodos se crean durante las reducciones con los constructores de acá; las listas que acumula `parser_helpers.c` las adopta `resolveNodeArray` |
 | `symbol_table.c` (F09) | `Symbol`, `newSymbol`, `freeSymbol` |
 
 | Va hacia | En qué estado |
@@ -468,9 +506,11 @@ del mismo programa muestra exactamente qué agrega:
    `Nodo Desconocido`.
 3. **Definir y documentar su layout de hijos** en la tabla de §4, y agregar las
    macros de acceso si hacen falta.
-4. Si la aridad es fija y algún hijo puede ser `NULL`, **no usar `newNode`**:
-   construir el arreglo a mano como hace `newMethodDeclaration`, porque la
-   compactación correría las posiciones.
+4. **Un constructor con nombre** (`newDoWhileNode(condition, body)`, por
+   ejemplo) que llame a `newNode` con los hijos obligatorios primero y los
+   opcionales al final, para que la compactación no corra posiciones (§5). Si
+   el nodo se reduce después de su bloque, sumar su `NodeType` a la lista de la
+   heurística de línea de `newNode` (§9).
 5. Agregar el caso en el semántico y el generador de TAC. El
    `switch` de cada uno tiene un `default`, así que **olvidarse de uno no da error
    de compilación**: la construcción simplemente no hace nada.
@@ -502,14 +542,15 @@ una llamada por acceso.
   inicializar, y el valor va a ser basura reproducible, que es la peor clase: en
   una corrida parece funcionar. El header lo aclara ("solo válido en
   `OPERATOR_NODE`") pero nada lo impide.
-- **La compactación de hijos es carga estructural** (§5). El `while` depende de
-  ella para que su cuerpo caiga en el índice 1.
+- **La compactación de hijos es carga estructural** (§5). El `if` sin `else` y
+  el `return` sin expresión dependen de ella para tener la cantidad de hijos que
+  esperan las macros.
 - **`type` vale `TYPE_VOID` al construirse**, no es el tipo real. Cualquier fase
   que lea `type` antes del análisis semántico lee un valor sin sentido. Es lo que
   se ve en el `.sint`.
 - **Un `if` sin `else` tiene `childCount == 2`**, no 3 con `NULL`. Recorrer con
   `for (i = 0; i < 3; i++)` lee fuera del arreglo.
-- **El árbol nunca se libera** (§8). `main.c` no llama a `freeAST`.
+- **El árbol nunca se libera** (§8). Ni `main.c` ni el driver llaman a `freeAST`.
 - **La propiedad del símbolo depende de `uid == 0`**, un valor de dato, no de un
   campo explícito. Si alguna vez `appendSymbol` empezara a asignar `uid` 0 a algo
   registrado, la regla se rompería en silencio y produciría dobles liberaciones.
@@ -549,7 +590,7 @@ una llamada por acceso.
 
 ## 14. Cómo se valida
 
-- **Suite:** `tests/test_ast.c` (483 líneas). Verifica la forma del árbol que
+- **Suite:** `tests/test_ast.c`. Verifica la forma del árbol que
   produce cada construcción: cantidad de hijos, orden, layouts de `if`/`while`,
   declaraciones múltiples y bloques vacíos.
 - **A mano:** los dos archivos que imprimen el árbol son la herramienta de

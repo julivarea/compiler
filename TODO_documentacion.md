@@ -385,9 +385,9 @@ Ahora son **seis**, y cada uno tiene cómo se detectó y la alternativa concreta
 | Sin declaración adelantada de métodos | Pasada previa que registre los `METHOD_DECLARATION_NODE` antes de analizar los cuerpos |
 | Desborde con signo al plegar `+`, `-`, `*` | Verificar antes de operar y devolver `false`, igual que ya hacen `/` y `%` |
 | `-0.0` no se puede producir | `xorps` contra una máscara `0x80000000` en vez de restar `0 - x` |
-| `emitCondition` es código muerto | Completar la sustitución en `generateOperatorCode` o eliminarla |
-| Símbolos provisorios huérfanos | Liberar antes de reemplazar el puntero, en los dos lugares |
-| Mirilla sobre assembly sin implementar | Trabajar sobre `asm_instruction` antes de imprimir, no sobre el texto |
+| `emitCondition` es código muerto | **Resuelto:** la función se eliminó |
+| Símbolos provisorios huérfanos | **Resuelto** con `resolveNodeSymbol` (commit `dc1caa9`) |
+| Mirilla sobre assembly sin implementar | Introducir una representación de instrucciones de máquina antes de imprimir; `asm_instruction` se eliminó y hoy el assembly se emite como texto |
 
 Los seis están **verificados**, no supuestos: el `-0.0` ejecutando, el de
 `emitCondition` con `-Wall`, el de los símbolos con ASan y el del desborde con
@@ -825,7 +825,7 @@ porque es lo que explica **cómo se orquesta todo lo demás**.
 
 ### Bloque 6 — Código objeto
 
-- [x] **F16 — Instrucciones x86-64** · `asm_instruction.h`, `asm_instruction.c` · 391 líneas
+- [x] **F16 — Instrucciones x86-64** · `asm_instruction.h`, `asm_instruction.c` · 391 líneas — **ficha eliminada**: el módulo se quitó del código (el assembly se emite como texto desde `object_code.c`) y la página `wiki/06-asm-instructions.md` se borró
   - La representación de una instrucción de assembly y el repertorio usado.
   - **Hecha:** `documentacion/wiki/06-asm-instructions.md`, página nueva. Era un
     **hueco completo**: `06-object-code.md` no tenía ni una sección sobre este
@@ -957,7 +957,7 @@ Lo que ya hay, para no reescribir de cero:
 | Página | Líneas | Qué le falta para servir de estudio |
 | --- | --- | --- |
 | `wiki/01-overview.md` | 619 | Es la más completa. Revisar que el pipeline incluya el optimizador |
-| `wiki/06-asm-instructions.md` | 438 | **F16, hecha.** |
+| ~~`wiki/06-asm-instructions.md`~~ | — | **Eliminada:** el módulo `asm_instruction` se quitó del código y la página quedó sin objeto |
 | `wiki/06.5-stack-frame.md` | 528 | **F17, hecha.** |
 | `wiki/06-object-code.md` | 625 | **F18, hecha.** |
 | `wiki/04.5-type-checker.md` | 457 | **F10, hecha.** |
@@ -980,7 +980,7 @@ Lo que ya hay, para no reescribir de cero:
 > F01–F04). Las tres fichas del back-end estaban cubiertas por una sola página
 > de 370 líneas; ahora son 438 + 528 + 625.
 
-### Pendiente transversal: 22 links rotos a la máquina de Fran
+### Links rotos a la máquina de Fran — RESUELTO
 
 Tres páginas tienen links absolutos de la forma
 `file:///home/francisco/compiler/include/symbol_table.h#L16-L20`, que apuntan al
@@ -989,16 +989,24 @@ una ruta personal en el sitio publicado.
 
 | Página | Links rotos | Estado |
 | --- | --- | --- |
-| `analisis-semantico.md` | 15 | pendiente: es página de Documentación Técnica, no de una ficha |
+| `analisis-semantico.md` | 15 | **arreglados** |
 | `wiki/04-semantic-analysis.md` | 4 | **arreglados en F09** |
-| `convenciones_comentarios.md` | 3 | pendiente |
+| `convenciones_comentarios.md` | 3 | **arreglados** |
+| `decisiones/adr-003-...md` | 2 | **arreglados** (apuntan a GitHub) |
 
 Como `mkdocs.yml` ya define `repo_url`, el reemplazo natural es el link a GitHub
 (`https://github.com/julivarea/compiler/blob/main/include/symbol_table.h#L16-L20`),
 que además conserva el ancla de líneas. Conviene hacerlo junto con las fichas
 F09–F11, que son las dueñas de esas páginas.
 
-### Pendiente de código: fuga de los símbolos provisorios
+### Fuga de los símbolos provisorios — RESUELTO
+
+Se corrigió con `resolveNodeSymbol` en `ast.c` (commit `dc1caa9`): el semántico y
+el chequeo de tipos lo usan para reemplazar el símbolo provisorio por el
+declarado, liberando el provisorio. Valgrind sobre `examples/factorial.ctds` pasó
+de 8 bloques perdidos desde `newSymbol` a ninguno; lo único que queda es el AST
+completo, que el driver no libera a propósito. El texto de abajo queda como
+registro del hallazgo original.
 
 Encontrado al documentar F07, medido con ASan. El parser crea un `Symbol`
 provisorio para cada aparición de un identificador, y el análisis semántico

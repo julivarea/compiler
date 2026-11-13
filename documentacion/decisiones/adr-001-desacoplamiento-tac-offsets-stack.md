@@ -8,9 +8,9 @@
 
 ## 1. Contexto del Problema
 
-Se evaluó la posibilidad de calcular los desplazamientos (*offsets*) relativos a `%rbp` y la reserva de ranuras de memoria (*slots*) para variables locales y temporales directamente durante la fase de generación de código intermedio (`src/intermediate_code.c`). 
+Se evaluó la posibilidad de calcular los desplazamientos (*offsets*) relativos a `%rbp` y la reserva de ranuras de memoria (*slots*) para variables locales y temporales directamente durante la fase de generación de código intermedio (`src/intermediate_code/intermediate_code.c`). 
 
-La propuesta sugería utilizar contadores/variables globales que se reiniciaran al comienzo de cada función (aprovechando que `temporaryCount` ya se reinicia por método) para prefijar el tamaño del marco de pila (*stack frame*) o preasignar la posición de cada operando en el stack, evitando así la pasada previa de escaneo (`buildFrameLayout` / `allocateLocalSlots`) que actualmente realiza el backend en `src/object_code.c`.
+La propuesta sugería utilizar contadores/variables globales que se reiniciaran al comienzo de cada función (aprovechando que `temporaryCount` ya se reinicia por método) para prefijar el tamaño del marco de pila (*stack frame*) o preasignar la posición de cada operando en el stack, evitando así la pasada previa de escaneo (`buildFrameLayout` / `allocateLocalSlots`) que actualmente realiza el backend en `src/object_code/object_code.c`.
 
 ---
 
@@ -18,7 +18,7 @@ La propuesta sugería utilizar contadores/variables globales que se reiniciaran 
 
 **Se rechaza trasladar la lógica de offsets y reserva de memoria a la generación de código intermedio (TAC).**
 
-El cálculo de offsets, el mapeo de variables/temporales a la pila y el dimensionamiento del marco de activación permanecen como responsabilidad exclusiva del **Backend** (`src/object_code.c` y `src/function_frame.c`). 
+El cálculo de offsets, el mapeo de variables/temporales a la pila y el dimensionamiento del marco de activación permanecen como responsabilidad exclusiva del **Backend** (`src/object_code/object_code.c` y `src/object_code/function_frame.c`). 
 
 El código intermedio (TAC) continuará operando bajo el modelo de **registros virtuales ilimitados y nombres simbólicos**, completamente agnóstico de la memoria física y del hardware de ejecución.
 
@@ -37,7 +37,7 @@ La decisión se fundamenta en los principios canónicos de diseño de compilador
 En nuestro compilador, el pipeline de ejecución es:
 $$\text{AST} \longrightarrow \text{TAC} \longrightarrow \textbf{Optimizador} \longrightarrow \text{Código Objeto}$$
 
-El optimizador (`src/optimizer.c`) aplica transformaciones como propagación de constantes, plegado algebraico (*constant folding*) y eliminación de código muerto (*dead-code elimination*):
+El optimizador (`src/optimizer/optimizer.c`) aplica transformaciones como propagación de constantes, plegado algebraico (*constant folding*) y eliminación de código muerto (*dead-code elimination*):
 * Si TAC calcula los offsets de antemano basándose en `temporaryCount` o declaraciones, cualquier temporal o variable muerta eliminada por el optimizador deja huecos inutilizados en el stack frame o infla artificialmente el prólogo de la función (`subq $N, %rsp`).
 * Si se pretendiera recalcular o compactar offsets dentro del optimizador, se contaminaría una fase puramente algebraica con detalles de gestión de memoria de bajo nivel.
 
@@ -63,4 +63,4 @@ El generador de código intermedio no tiene por qué (ni debe) conocer estas res
 4. **Ausencia de estado mutable global:** Se evita introducir variables globales mutables de control en `intermediate_code.c`.
 
 ### Costo Aceptado
-* El backend debe realizar un escaneo lineal previo por función (`allocateLocalSlots` en `src/object_code.c`) para registrar los operandos que efectivamente sobrevivieron a las optimizaciones y calcular el frame alineado. Este costo es de orden $O(N)$ sobre unas pocas decenas de cuádruplas en memoria, ejecutándose en microsegundos y resultando despreciable frente a los beneficios de diseño.
+* El backend debe realizar un escaneo lineal previo por función (`allocateLocalSlots` en `src/object_code/object_code.c`) para registrar los operandos que efectivamente sobrevivieron a las optimizaciones y calcular el frame alineado. Este costo es de orden $O(N)$ sobre unas pocas decenas de cuádruplas en memoria, ejecutándose en microsegundos y resultando despreciable frente a los beneficios de diseño.

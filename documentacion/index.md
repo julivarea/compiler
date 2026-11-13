@@ -33,8 +33,8 @@ hasta un ejecutable x86-64, con un optimizador sobre el código intermedio.
   corto circuito para `&&` y `||`.
 - **Código objeto x86-64**:
   traduce el TAC a assembly de GNU Assembler (sintaxis AT&T) y lo ensambla con
-  `gcc` para producir el ejecutable. Enteros, booleanos y reales de precisión
-  simple (SSE), respetando la convención de llamada System V AMD64.
+  `gcc` para producir el ejecutable. Enteros y booleanos, respetando la
+  convención de llamada System V AMD64 (ver *Alcance de `float`*).
 - **Optimizador**:
   siete optimizaciones sobre el TAC, cada una activable por separado con
   `-opt <nombre>` o todas juntas con `-opt all`: plegado de constantes
@@ -184,33 +184,37 @@ comportamiento indefinido.
   haría entonces la cuenta en ejecución, que es exactamente lo que haría sin el
   optimizador.
 
-### Los símbolos provisorios del parser quedan huérfanos
+### El AST y los ámbitos no se liberan al terminar
 
-El parser crea un `Symbol` provisorio por cada aparición de un identificador, y
-el análisis semántico sobrescribe el puntero al resolverlo contra la tabla **sin
-liberar el provisorio**.
+El driver no llama a `freeAST` ni a `freeScope`: el árbol y la tabla de
+símbolos viven hasta que termina el proceso.
 
-- **Cómo se detectó:** con **ASan**. Medido: `void main(){ }` pierde 6
-  asignaciones; con una asignación en el programa, 8; con cuatro, 14.
-- **Es acotado** —no crece con la ejecución, solo con el tamaño del programa— y
-  el sistema operativo lo recupera al terminar, así que no afecta a la
-  corrección de ninguna compilación.
-- **Alternativa:** liberar el símbolo provisorio antes de reemplazar el puntero,
-  en los dos lugares donde eso pasa: `analyzeAssignmentNode` en
-  `semantic_analyzer.c` y `analyzeIdentifier` en `type_checker.c`. Está
-  explicado en la [ficha F07](wiki/02.7-parser-actions.md).
+- **Cómo se detectó:** con **valgrind**, que reporta un único bloque perdido
+  por compilación (el árbol completo con sus ámbitos).
+- **Es deliberado y acotado:** el compilador procesa un archivo y termina, así
+  que el sistema operativo recupera todo. No afecta a la corrección.
+- **Alternativa:** liberar el AST y el ámbito global al final de `compile`.
+  Antes hay que resolver el doble dueño de los símbolos de declaración —hoy los
+  libera tanto `freeAST` como `freeScope`—, por ejemplo haciendo que los ámbitos
+  solo guarden punteros prestados.
+
+La fuga que sí crecía con el programa, la de los símbolos provisorios que el
+parser crea por cada referencia, **está resuelta**: el semántico los reemplaza
+con `resolveNodeSymbol`, que los libera (ver la [ficha F08](wiki/03-ast.md)).
 
 ### Las tres optimizaciones de mirilla sobre assembly
 
-`peephole` hoy actúa sobre el TAC (saltos redundantes); los tres patrones
-pensados sobre el assembly emitido —pares `movl` redundantes, `movl $0`
-acortable a `xorl`— no están implementados.
+`peephole` actúa sobre el TAC (saltos redundantes) y en el generador de código
+objeto fusiona una comparación con el salto condicional siguiente. Los tres
+patrones pensados sobre el assembly emitido —pares `movl` redundantes, `movl $0`
+acortable a `xorl`, recargar un valor que ya está en el registro— no están
+implementados.
 
 - **Cómo se detectó:** al cerrar el catálogo de optimizaciones contra la lista
   acordada.
-- **Alternativa:** trabajar sobre `asm_instruction` **antes** de imprimirlo, no
-  sobre el texto ya emitido. El modelo de instrucciones existe justamente para
-  eso: una pasada sobre la secuencia de `AsmInstruction` puede reconocer los
-  patrones de forma estructural, mientras que hacerlo sobre el texto obligaría a
-  parsear de vuelta lo que se acaba de generar. Está en la
+- **Alternativa:** el assembly se emite como texto directo con `buildStringf`,
+  así que hacerlo sobre la salida obligaría a parsear de vuelta lo que se acaba
+  de generar. Lo razonable es introducir una representación de instrucciones de
+  máquina (opcode y operandos) entre el TAC y el texto, aplicar los patrones
+  sobre esa secuencia y recién después imprimir. Está en la
   [ficha F15](wiki/05.9-optimizer.md).

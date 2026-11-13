@@ -113,9 +113,8 @@ Queda abierto, en orden de urgencia: el **desborde con signo en `+`, `-` y `*` d
     `if` y de `while`. Los programas del corpus que no usan operadores lógicos generan un TAC
     byte a byte idéntico al anterior.
 
-  - **Pendiente menor:** `TAC_AND` y `TAC_OR` quedaron en el enum pero ya no los emite nadie.
-    Se conservan por si el optimizador quiere plegar una expresión sin efectos colaterales a
-    una única instrucción; si se decide que no, hay que borrarlos.
+  - **Resuelto:** `TAC_AND` y `TAC_OR` se quitaron del enum `TACOperation`: no los emitía
+    nadie y el optimizador no los necesitó.
 
 ### 2.2
 - [x] **Retorno implícito en métodos `void` al alcanzar el fin del bloque**
@@ -382,7 +381,7 @@ Queda abierto, en orden de urgencia: el **desborde con signo en `+`, `-` y `*` d
 
 ### 3.7
 - [ ] **El desborde con signo en `+`, `-` y `*` sigue siendo comportamiento indefinido**
-  - **Ubicación:** El plegado de constantes (`src/optimizer.c`, `evaluateBinary`, casos `TAC_ADD`/`TAC_SUB`/`TAC_MUL`).
+  - **Ubicación:** El plegado de constantes (`src/optimizer/optimizer.c`, `evaluateBinary`, casos `TAC_ADD`/`TAC_SUB`/`TAC_MUL`).
   - **Problema:** UBSan lo marca, por ejemplo `signed integer overflow: 2147483647 * 3 cannot be represented in type 'int'`. Hoy no se nota porque gcc envuelve en silencio y el resultado coincide con lo que hace el assembly generado, pero formalmente es UB y con otros flags gcc podría plegar a cualquier cosa, con lo que `-opt all` dejaría de preservar la semántica.
   - **Acción:** Calcular en `int64_t` y envolver explícitamente a 32 bits, o usar `__builtin_add_overflow` y compañía para detectar el desborde; el optimizador puede simplemente negarse a plegar, como ya hace con la división.
 

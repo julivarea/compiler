@@ -1,6 +1,6 @@
 # Análisis Léxico
 
-**Ficha F05** · Archivo: `src/lexer.l` (78 líneas)
+**Ficha F05** · Archivo: `src/parser/lexer.l` (78 líneas)
 
 ---
 

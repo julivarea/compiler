@@ -1,6 +1,6 @@
 # Análisis Semántico
 
-**Ficha F11** · Archivos: `include/semantic_analyzer.h`, `src/semantic_analyzer.c` (328 líneas)
+**Ficha F11** · Archivos: `include/semantic_analyzer.h`, `src/semantic/semantic_analyzer.c` (299 líneas)
 
 El recorrido que valida las reglas contextuales del lenguaje, construyendo la
 [tabla de símbolos](04-symbol-table.md) y apoyándose en el
@@ -60,12 +60,14 @@ consulta. Ver §7.
 Scope *currentScope = createScope(level, parent, function);
 if (!isGlobalScope) appendChildScope(parent, currentScope);
 
-for (int i = 0; i < root->childCount; i++) {
-    analyzeNodeSemantics(root->children[i], currentScope);
-}
+analyzeChildren(root, currentScope);
 
 if (isGlobalScope) checkMainMethodExists(currentScope);
 ```
+
+`analyzeChildren(node, scope)` es el bucle que llama a `analyzeNodeSemantics`
+sobre cada hijo. Está factorizado porque lo usan tres lugares: este, el cuerpo de
+un método (§4) y el `default` del despachador.
 
 ### `analyzeNodeSemantics`: despacha un nodo
 
@@ -119,11 +121,13 @@ analiza el cuerpo de `fact`, el símbolo `fact` ya está en el ámbito global, a
 que `fact(n-1)` resuelve. Con el orden invertido daría "método no declarado".
 Verificado: `fact(5)` compila y devuelve 120.
 
-**Los parámetros y el cuerpo se analizan en el mismo `methodScope`.** Nótese que
-el paso 5 itera `body->childCount` **directamente**, en lugar de llamar a
-`analyzeSemantics(body, methodScope)`. Si llamara, las llaves del método abrirían
-un ámbito extra y un local podría ocultar a un parámetro. Como no lo hace,
-comparten ámbito y repetir el nombre es una redeclaración:
+**Los parámetros y el cuerpo se analizan en el mismo `methodScope`.** El paso 4
+pasa el `PARAMETERS_NODE` a `analyzeNodeSemantics`, que cae en el `default` y
+recorre sus declaraciones. El paso 5 llama a `analyzeChildren(body, methodScope)`
+**directamente**, en lugar de `analyzeSemantics(body, methodScope)`. Si llamara a
+la segunda, las llaves del método abrirían un ámbito extra y un local podría
+ocultar a un parámetro. Como no lo hace, comparten ámbito y repetir el nombre es
+una redeclaración:
 
 ```c
 int f(int n){ int n; n = 1; return n; }
@@ -157,7 +161,7 @@ exitoso. Así el nodo mismo lleva el registro de si la asignación es válida, s
 una bandera aparte.
 
 Después: resolver el nombre, exigir que sea una variable y no un método,
-reapuntar `node->symbol` al símbolo de la tabla, y comprobar
+reapuntar `node->symbol` al símbolo de la tabla con `resolveNodeSymbol`, y comprobar
 `isAssignable(tipoDeLaVariable, tipoDeLaExpresión)`.
 
 ### `analyzeReturnNode(node, currentScope)`
@@ -182,11 +186,21 @@ lo contiene, porque cada ámbito copió el `function` de su padre.
 ### `analyzeIfElseNode` y `analyzeWhileNode`
 
 Las dos tienen la misma forma: analizar la condición, exigir que sea `TYPE_BOOL`,
-y recursar en los bloques.
+y recursar en los bloques. La parte común está en `analyzeBooleanCondition(node,
+scope, statementName)`, que recibe `"if"` o `"while"` solo para el mensaje:
 
 ```c
-bool isInvalidConditionType = (conditionType != TYPE_ERROR && conditionType != TYPE_BOOL);
+static void analyzeBooleanCondition(NodeAST *node, Scope *currentScope, const char *statementName) {
+    DataType conditionType = analyzeExpression(GET_CONDITION(node), currentScope);
+    bool isInvalidConditionType = (conditionType != TYPE_ERROR && conditionType != TYPE_BOOL);
+    if (isInvalidConditionType) {
+        semanticError(node->line, "La condicion del %s debe ser de tipo BOOL, pero es %s.",
+                      statementName, getDataTypeName(conditionType));
+    }
+}
 ```
+
+Una construcción nueva con condición (`do-while`, `for`) la reusa tal cual.
 
 El `!= TYPE_ERROR` es la **supresión de cascada**: si la condición ya falló por
 otro motivo, no se agrega un segundo mensaje sobre su tipo.
@@ -372,6 +386,37 @@ Si hubo al menos uno, la compilación termina con código 1 y **no se generan ni
 el código intermedio ni el assembly**. Esa garantía es la que permite que el
 generador de TAC no revalide nada: si llega a ejecutarse, el programa es válido.
 
+### Decisiones sobre ambigüedades del enunciado
+
+Tres puntos donde la letra de la especificación no es unívoca. Están tomadas a
+conciencia y conviene confirmarlas con la cátedra:
+
+1. **`==` exige tipos idénticos; `<` y `>` no.** La regla 11 y la sección
+   *Expresiones* dicen que solo se pueden comparar expresiones del mismo tipo,
+   mientras que la regla 14 permite coerciones `int`/`float` en general. Se
+   interpretó que la regla específica de `==` gana sobre la general, pero que
+   para `<` y `>` (regla 10, que pide operandos "int o float" sin exigir que
+   coincidan) la coerción sí aplica. Consecuencia visible: `x > y` con un `int`
+   y un `float` se acepta, `x == y` no. El detalle de las reglas está en la
+   [ficha F10](04.5-type-checker.md).
+2. **`%` acepta solo enteros.** La regla 10 dice que los operadores aritméticos
+   —y `%` figura entre ellos— admiten `int` o `float`, pero la sección
+   *Expresiones* dice que `%` computa el resto de una división de enteros. Se
+   eligió la segunda por ser más específica. **Es la más riesgosa de las tres:**
+   si un test siguiera la regla 10 al pie de la letra, un `3.5 % 2` que acá se
+   rechaza contaría como falso positivo.
+3. **No se reportan `return` duplicados ni código inalcanzable.** Ninguna de las
+   catorce reglas los prohíbe, y el enunciado dice que si no hay violaciones no
+   se debe generar ningún informe. Un chequeo anterior, además de reportar algo
+   que no es violación, se disparaba con cualquier sentencia posterior a un
+   `return` y dejaba de analizarla, de modo que un error real ubicado después
+   quedaba invisible. `examples/two_returns.ctds` es un programa válido; el
+   código inalcanzable lo elimina el optimizador con `dead-code` (ficha F15).
+
+> **Advertencia:** el programa de ejemplo del propio enunciado (página 3) tiene
+> un `void main()` que ejecuta `return 1;`, lo que viola la regla 6. No sirve
+> como caso de test.
+
 ---
 
 ## 8. Conexión con las fases vecinas
@@ -408,8 +453,8 @@ más fuerte a favor de ese camino.
 Si en cambio lleva un `NodeType` propio, hace falta:
 
 1. Un caso en el `switch` de `analyzeNodeSemantics`.
-2. Una función `analyzeXNode` que valide lo suyo (típicamente, que la condición
-   sea booleana y recursar en el cuerpo).
+2. Una función `analyzeXNode` que valide lo suyo (típicamente,
+   `analyzeBooleanCondition` sobre la condición y recursar en el cuerpo).
 3. Decidir su regla en `guaranteesReturn`. **Es el paso que se olvida**, y
    olvidarlo es seguro por el lado correcto: el `default` devuelve `false`, o sea
    que la construcción nueva no garantizará retorno y a lo sumo se rechazarán
@@ -447,16 +492,15 @@ Es la extensión más chica que amplía el conjunto de programas aceptados.
 ## 10. Trampas y límites conocidos
 
 - **`while (true)` no garantiza retorno** (§5). Es deliberado y conservador.
-- **`node->symbol = resolvedSymbol` filtra el símbolo provisorio.** Ver la
-  [ficha F07](02.7-parser-actions.md).
+- **El símbolo provisorio de una asignación se libera al resolverla.**
+  `analyzeAssignmentNode` reemplaza el símbolo del destino con
+  `resolveNodeSymbol(node, resolvedSymbol)` (ficha F08), que libera el
+  provisorio. Antes era una asignación directa del puntero y lo perdía.
 - **El chequeo de `return` fuera de una función es código muerto.** El mensaje
   `Sentencia 'return' fuera del cuerpo de una funcion.` no se puede provocar: un
   `return` suelto en el nivel global es **error de sintaxis**, porque la gramática
   solo admite sentencias dentro de un bloque. Verificado. Es defensa razonable,
   pero no corresponde a ningún programa alcanzable.
-- **El `hasExpression` de `analyzeAssignmentNode` siempre es verdadero.** La
-  gramática es `ID '=' Expression ';'`, así que el nodo siempre tiene su hijo. Otro
-  chequeo defensivo sin caso real.
 - **El mensaje de duplicado dice "metodo" aunque el conflicto sea con una
   variable** (§6).
 - **El `default` del despachador no avisa.** Un `NodeType` nuevo sin su caso cae
@@ -507,7 +551,7 @@ Es la extensión más chica que amplía el conjunto de programas aceptados.
 
 ## 12. Cómo se valida
 
-- **Suite:** `tests/test_semantic.c` (327 líneas), con un caso válido y uno
+- **Suite:** `tests/test_semantic.c`, con un caso válido y uno
   inválido por regla.
 - **A mano:** la etapa escribe el AST **anotado** en un `.sem`, que comparado con
   el `.sint` del mismo programa muestra exactamente lo que resolvió:

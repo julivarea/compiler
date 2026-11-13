@@ -1,6 +1,6 @@
 # La Representación Intermedia (Cuádruplas TAC)
 
-**Ficha F12** · Archivos: `include/tac.h`, `src/intermediate_code/tac.c` (~550 líneas)
+**Ficha F12** · Archivos: `include/tac.h`, `src/intermediate_code/tac.c` (~610 líneas)
 
 La estructura de datos del **Código de Tres Direcciones**: el puente entre el
 front-end y el back-end.
@@ -164,6 +164,28 @@ antes de llenar los campos.
 El `memset` inicial importa: garantiza que los campos que una categoría no usa
 queden en cero en lugar de contener basura, así que comparar `operand.value.intValue`
 de un operando que no es constante da 0 y no un valor aleatorio.
+
+### Dos preguntas compartidas: `holdsValue` e `isConditionalJump`
+
+`tac.h` define dos funciones `static inline` para las preguntas sobre el TAC que
+se hacen en varias fases, y así no se escriben a mano en cada una:
+
+```c
+static inline bool holdsValue(const TACOperand *operand) {
+    return operand->kind == OPERAND_TEMP || operand->kind == OPERAND_VARIABLE;
+}
+
+static inline bool isConditionalJump(TACOperation operation) {
+    return operation == TAC_IF_FALSE || operation == TAC_IF_TRUE;
+}
+```
+
+`holdsValue` dice si el operando guarda un valor en tiempo de ejecución: es el
+criterio de qué puede tener una constante conocida (propagación), qué puede ser
+una asignación muerta (optimizador) y qué variables analiza la vivacidad.
+`isConditionalJump` la usan el armado del CFG, la propagación de constantes, la
+simplificación de saltos constantes y la fusión de comparación y salto del
+generador de código objeto.
 
 ---
 
@@ -330,22 +352,24 @@ esos dos opcodes es lo que garantiza la semántica del lenguaje**.
 void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instruction);
 ```
 
-La usan tres consumidores distintos:
+Encima hay dos envoltorios, uno por destino, y todos los consumidores pasan por
+alguno de ellos:
 
-| Quién | Para qué |
-| --- | --- |
-| `printTACInstruction` → `formatTACList` | Escribir el archivo `.ci` o `.opt` |
-| El optimizador | El volcado de `-debug`, que marca con `[ELIMINADA]` lo que sacó |
-| El análisis de variables vivas | Imprimir las instrucciones de cada bloque básico |
+| Función | Destino | Quién la usa |
+| --- | --- | --- |
+| `printTACInstruction` (vía `formatTACList`) | El acumulador de cadenas | El driver, para escribir el archivo `.ci` o `.opt` |
+| `fprintTACInstruction(output, instruction)` | Un `FILE *` | El volcado de `-debug` del optimizador, que marca con `[ELIMINADA]` lo que sacó, y el del análisis de variables vivas, que imprime las instrucciones de cada bloque básico |
 
 Tener una sola fuente garantiza que las tres salidas coincidan. Si el formato
 estuviera duplicado, el TAC que muestra el optimizador podría diferir del que
 escribe el archivo, y comparar los dos dejaría de servir para depurar.
 
 El `switch` tiene un caso por familia, y el `default` cubre **todos los
-operadores binarios** con una sola línea de formato (`result = first sym second`),
-delegando el símbolo a `getOperatorSymbol`. Agregar un operador binario nuevo no
-requiere tocar el formateador: alcanza con su símbolo.
+operadores** aritméticos, relacionales y unarios, delegando el símbolo a
+`getOperatorSymbol`. Unario o binario se decide por la forma de la instrucción:
+si `secondOperand` es `OPERAND_NONE` imprime `result = sym first` (`t0 = -x@2`),
+y si no `result = first sym second`. Agregar un operador nuevo no requiere tocar
+el formateador: alcanza con su símbolo.
 
 Hay dos formas que dependen de si un operando está presente:
 
@@ -389,14 +413,15 @@ la lista y generar el TAC sería cuadrático.
 | `formatTACList(list)` | Vuelca la lista entera al `string_builder` |
 
 **La creación y el enlazado están separados**, y `appendInstruction` es la
-composición de los dos. Esa separación permite que un llamador cree la
-instrucción, decida algo mirándola y solo entonces la enlace; es lo que usa el
-`emit` del generador (ver la [ficha F13](05.5-tac-generation.md)) para
-distinguir "no se pudo reservar" de "no se pudo enlazar".
+composición de los dos. El compilador usa siempre `appendInstruction`; las dos
+mitades sueltas existen para que los tests armen y enlacen instrucciones a mano.
 
-**`appendInstruction` devuelve la instrucción que creó.** Eso lo usa el generador
-cuando necesita retocar una instrucción después de emitirla, que es la técnica
-con la que se resuelven las etiquetas de salto en una sola pasada.
+**`appendInstruction` devuelve la instrucción que creó, o `NULL` si no pudo
+reservarla.** El `emit` del generador (ver la
+[ficha F13](05.5-tac-generation.md)) usa ese `NULL` para detectar la falta de
+memoria, y los tests usan el puntero para inspeccionar la instrucción recién
+agregada. Las etiquetas de salto no necesitan retocar nada después de emitido:
+son nombres, así que se pueden referenciar antes de definirlas.
 
 ### Los operandos se guardan por valor
 
@@ -481,9 +506,10 @@ instrucción por tres, porque hay tres operandos.
   Hay que mirar `kind` primero.
 - **`getOperandName` devuelve un puntero al buffer interno** del operando. Es
   estable mientras la instrucción exista, pero no sobrevive a liberarla.
-- **El `default` del formateador trata cualquier opcode desconocido como
-  binario**, y `getOperatorSymbol` devuelve `"?"`. Un opcode nuevo sin símbolo se
-  imprime `t0 = a ? b` en lugar de fallar.
+- **El `default` del formateador trata cualquier opcode desconocido como un
+  operador**, y `getOperatorSymbol` devuelve `"?"`. Un opcode nuevo sin símbolo se
+  imprime `t0 = a ? b` (o `t0 = ?a` si no tiene segundo operando) en lugar de
+  fallar.
 - **`TAC_INSTRUCTION_TEXT_LENGTH` es 1024** y los tres operandos suman 768 más el
   texto fijo. Alcanza, pero no hay margen si se agrandara `TAC_NAME_LENGTH` sin
   tocar este valor.
@@ -527,7 +553,7 @@ instrucción por tres, porque hay tres operandos.
 
 ## 12. Cómo se valida
 
-- **Suite:** `tests/test_tac.c` (1015 líneas) verifica las cuádruplas que produce
+- **Suite:** `tests/test_tac.c` verifica las cuádruplas que produce
   cada construcción del lenguaje, comparando la lista generada instrucción por
   instrucción.
 - **A mano:** el `.ci` es el volcado textual de la lista, así que leerlo es
