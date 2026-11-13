@@ -1,7 +1,6 @@
 %{
 #include "ast.h"
 #include "parser_helpers.h"
-#include "symbol_table.h"
 #include "error_handler.h"
 extern int yylex(void);
 extern int yylineno;
@@ -80,8 +79,8 @@ Type
     ;
 
 IdentifierList
-    : ID                                        { $$ = appendNode(NULL, newNode(ID_NODE, newSymbol($1, VARIABLE_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); }
-    | IdentifierList ',' ID                     { $$ = appendNode($1, newNode(ID_NODE, newSymbol($3, VARIABLE_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL)); }
+    : ID                                        { $$ = appendNode(NULL, newIdentifierNode($1)); }
+    | IdentifierList ',' ID                     { $$ = appendNode($1, newIdentifierNode($3)); }
     ;
 
 MethodDeclaration
@@ -134,13 +133,13 @@ Statement
     ;
 
 Assignment
-    : ID '=' Expression                         { $$ = newNode(ASSIGNMENT_NODE, newSymbol($1, VARIABLE_SYMBOL, TYPE_VOID, NULL), $3, NULL, NULL); }
+    : ID '=' Expression                         { $$ = newAssignmentNode($1, $3); }
     ;
 
 MethodCall
-    : ID '(' ')'                                { $$ = newNode(METHOD_CALL_NODE, newSymbol($1, METHOD_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL); }
+    : ID '(' ')'                                { $$ = newMethodCallNode($1); }
     | ID '(' ArgumentList ')' {
-        NodeAST *call = newNode(METHOD_CALL_NODE, newSymbol($1, METHOD_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL);
+        NodeAST *call = newMethodCallNode($1);
         resolveNodeArray(call, $3);
         $$ = call;
     }
@@ -152,7 +151,7 @@ ArgumentList
     ;
 
 Expression
-    : ID                                        { $$ = newNode(ID_NODE, newSymbol($1, VARIABLE_SYMBOL, TYPE_VOID, NULL), NULL, NULL, NULL); }
+    : ID                                        { $$ = newIdentifierNode($1); }
     | MethodCall                                { $$ = $1; }
     | FLOAT_CONST                               { $$ = newFloatLiteralNode($1); }
     | BOOL_CONST                                { $$ = newBoolLiteralNode($1); }

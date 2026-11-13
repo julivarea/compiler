@@ -11,6 +11,8 @@
 extern int yylineno;
 
 static void describeNode(FILE *out, const NodeAST *node);
+static NodeAST *newSymbolNode(NodeType nodeType, SymbolType symbolType, DataType dataType,
+                              char *id, NodeAST *parameters, NodeAST *left, NodeAST *mid);
 static NodeAST *newConstantNode(DataType type);
 static const char *getOperationName(OperationType operation);
 
@@ -54,6 +56,28 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
     return node;
 }
 
+static NodeAST *newSymbolNode(NodeType nodeType, SymbolType symbolType, DataType dataType,
+                              char *id, NodeAST *parameters, NodeAST *left, NodeAST *mid) {
+    Symbol *symbol = newSymbol(id, symbolType, dataType, parameters);
+    if (symbol == NULL) {
+        free(id);
+        freeAST(left);
+        freeAST(mid);
+        return NULL;
+    }
+
+    NodeAST *node = newNode(nodeType, symbol, left, mid, NULL);
+    if (node == NULL) {
+        freeSymbol(symbol);
+        freeAST(left);
+        freeAST(mid);
+        return NULL;
+    }
+
+    node->type = dataType;
+    return node;
+}
+
 NodeAST *newOperatorNode(OperationType operator, NodeAST *left, NodeAST *right) {
     NodeAST *node = newNode(OPERATOR_NODE, NULL, left, right, NULL);
     if (node == NULL) {
@@ -66,33 +90,23 @@ NodeAST *newOperatorNode(OperationType operator, NodeAST *left, NodeAST *right) 
 }
 
 NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *parameters, NodeAST *body) {
-    Symbol *symbol = newSymbol(methodName, METHOD_SYMBOL, returnType, parameters);
-    if (symbol == NULL) {
-        free(methodName);
-        freeAST(parameters);
-        freeAST(body);
-        return NULL;
-    }
+    return newSymbolNode(METHOD_DECLARATION_NODE, METHOD_SYMBOL, returnType, methodName, parameters, parameters, body);
+}
 
-    NodeAST *node = newNode(METHOD_DECLARATION_NODE, symbol, parameters, body, NULL);
-    if (node == NULL) {
-        freeSymbol(symbol);
-        freeAST(parameters);
-        freeAST(body);
-        return NULL;
-    }
+NodeAST *newIdentifierNode(char *id) {
+    return newSymbolNode(ID_NODE, VARIABLE_SYMBOL, TYPE_VOID, id, NULL, NULL, NULL);
+}
 
-    node->type = returnType;
-    return node;
+NodeAST *newAssignmentNode(char *id, NodeAST *expression) {
+    return newSymbolNode(ASSIGNMENT_NODE, VARIABLE_SYMBOL, TYPE_VOID, id, NULL, expression, NULL);
+}
+
+NodeAST *newMethodCallNode(char *id) {
+    return newSymbolNode(METHOD_CALL_NODE, METHOD_SYMBOL, TYPE_VOID, id, NULL, NULL, NULL);
 }
 
 static NodeAST *newConstantNode(DataType type) {
-    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, type, NULL);
-    if (symbol == NULL) return NULL;
-
-    NodeAST *node = newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
-    if (node == NULL) freeSymbol(symbol);
-    return node;
+    return newSymbolNode(CONSTANT_NODE, CONSTANT_SYMBOL, type, NULL, NULL, NULL, NULL);
 }
 
 NodeAST *newIntLiteralNode(int value) {

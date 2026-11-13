@@ -103,6 +103,31 @@ NodeAST *newOperatorNode(OperationType operation, NodeAST *left, NodeAST *right)
 NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *parameters, NodeAST *body);
 
 /**
+ * @brief Crea un nodo AST de referencia a identificador (ID_NODE).
+ *
+ * @param id Nombre del identificador cedido en propiedad al símbolo.
+ * @return Puntero al nodo creado, o NULL si falló la reserva de memoria.
+ */
+NodeAST *newIdentifierNode(char *id);
+
+/**
+ * @brief Crea un nodo AST de sentencia de asignación (ASSIGNMENT_NODE).
+ *
+ * @param id Nombre de la variable destino cedido en propiedad al símbolo.
+ * @param expression Subárbol de la expresión asignada.
+ * @return Puntero al nodo creado, o NULL si falló la reserva de memoria.
+ */
+NodeAST *newAssignmentNode(char *id, NodeAST *expression);
+
+/**
+ * @brief Crea un nodo AST de invocación a método (METHOD_CALL_NODE) sin argumentos iniciales.
+ *
+ * @param id Nombre del método invocado cedido en propiedad al símbolo.
+ * @return Puntero al nodo creado, o NULL si falló la reserva de memoria.
+ */
+NodeAST *newMethodCallNode(char *id);
+
+/**
  * @brief Crea un nodo AST constante de tipo entero.
  *
  * @param value Valor numérico entero del literal.
