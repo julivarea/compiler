@@ -30,6 +30,7 @@ typedef struct Symbol {
     int uid;                    /**< Identificador único (0 si aún no fue registrado en un ámbito). */
     DataType type;
     SymbolType symbolType;
+    bool isGlobal;              /**< true si el símbolo fue registrado en el ámbito global (parent == NULL). */
     struct NodeAST *parameters; /**< Parámetros formales si symbolType es METHOD_SYMBOL. */
     union {
         int intValue;

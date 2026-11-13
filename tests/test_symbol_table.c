@@ -43,6 +43,7 @@ void test_new_symbol_initialization(void) {
     TEST_ASSERT_EQUAL_INT(VARIABLE_SYMBOL, symbol->symbolType);
     TEST_ASSERT_EQUAL_INT(TYPE_INT, symbol->type);
     TEST_ASSERT_EQUAL_INT(0, symbol->uid);
+    TEST_ASSERT_FALSE(symbol->isGlobal);
     TEST_ASSERT_NULL(symbol->parameters);
     freeSymbol(symbol);
 }
@@ -153,6 +154,22 @@ void test_append_symbol_null_safe(void) {
     TEST_ASSERT_EQUAL_INT(0, testRootScope->symbolCount);
 
     freeSymbol(variableSymbol);
+}
+
+// appendSymbol marca isGlobal en true en el ámbito global (parent == NULL) y false en anidados
+void test_append_symbol_marks_global_flag(void) {
+    testRootScope = createScope(0, NULL, NULL);
+    Scope *innerScope = createScope(1, testRootScope, NULL);
+    appendChildScope(testRootScope, innerScope);
+
+    Symbol *globalVar = newSymbol(strdup("g"), VARIABLE_SYMBOL, TYPE_INT, NULL);
+    Symbol *localVar = newSymbol(strdup("l"), VARIABLE_SYMBOL, TYPE_INT, NULL);
+
+    appendSymbol(testRootScope, globalVar);
+    appendSymbol(innerScope, localVar);
+
+    TEST_ASSERT_TRUE(globalVar->isGlobal);
+    TEST_ASSERT_FALSE(localVar->isGlobal);
 }
 
 /* ------------------------------------------------------------------------
@@ -435,6 +452,7 @@ int main(void) {
     RUN_TEST(test_append_symbol_assigns_incremental_positive_uid);
     RUN_TEST(test_append_symbol_preserves_existing_uid);
     RUN_TEST(test_append_symbol_null_safe);
+    RUN_TEST(test_append_symbol_marks_global_flag);
 
     // Búsqueda local
     RUN_TEST(test_lookup_current_scope_finds_symbol);

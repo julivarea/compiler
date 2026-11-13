@@ -87,13 +87,7 @@ const TACList *generateIntermediateCode(NodeAST *root) {
     currentMethodType = TYPE_VOID;
 
     for (int i = 0; i < root->childCount; i++) {
-        NodeAST *declaration = root->children[i];
-        bool isGlobalVariable = (declaration->nodeType == VARIABLE_DECLARATION_NODE);
-        if (isGlobalVariable) {
-            generateGlobalDeclarationCode(declaration);
-        } else {
-            generateStatementCode(declaration);
-        }
+        generateStatementCode(root->children[i]);
     }
 
     if (tacMemoryError) {
@@ -128,10 +122,6 @@ static NodeAST *findUnsupportedType(NodeAST *node) {
         }
     }
     return NULL;
-}
-
-static void generateGlobalDeclarationCode(NodeAST *node) {
-    emitGlobalDecl(tacVariable(node->symbol));
 }
 
 static void generateStatementCode(NodeAST *node) {
@@ -206,7 +196,12 @@ static void generateBlockCode(NodeAST *node) {
 }
 
 static void generateVariableDeclarationCode(NodeAST *node) {
-    emitLocalDecl(tacVariable(node->symbol));
+    bool isGlobal = (node != NULL && node->symbol != NULL && node->symbol->isGlobal);
+    if (isGlobal) {
+        emitGlobalDecl(tacVariable(node->symbol));
+    } else {
+        emitLocalDecl(tacVariable(node->symbol));
+    }
 }
 
 static void generateAssignmentCode(NodeAST *node) {

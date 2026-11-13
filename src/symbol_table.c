@@ -19,6 +19,7 @@ Symbol *newSymbol(char *id, SymbolType symbolType, DataType type, struct NodeAST
     symbol->parameters = parameters;
     symbol->id = id;
     symbol->uid = 0; // Asignado por appendSymbol al registrarse en un ambito
+    symbol->isGlobal = false;
 
     return symbol;
 }
@@ -89,6 +90,8 @@ void appendSymbol(Scope *scope, Symbol *symbol) {
     if (isUndeclared) {
         symbol->uid = nextSymbolUid++;
     }
+
+    symbol->isGlobal = (scope->parent == NULL);
 
     bool needsExpansion = (scope->symbolCount >= scope->symbolCapacity);
     if (needsExpansion) {
