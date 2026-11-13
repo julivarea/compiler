@@ -323,10 +323,8 @@ static bool canFuseConditionAndJump(const TACInstruction *inst, const TACInstruc
     if (!isEnabled || inst == NULL || next == NULL) return false;
 
     bool isRelational = getRelationalMnemonics(inst->operation, NULL, NULL, NULL);
-    bool isConditionalJump = (next->operation == TAC_IF_FALSE ||
-                              next->operation == TAC_IF_TRUE);
 
-    if (!isRelational || !isConditionalJump) return false;
+    if (!isRelational || !isConditionalJump(next->operation)) return false;
 
     return (inst->result.kind == OPERAND_TEMP &&
             strcmp(inst->result.name, next->firstOperand.name) == 0);

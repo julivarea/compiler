@@ -10,6 +10,7 @@
 #include "types.h"
 #include "symbol_table.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 
@@ -187,6 +188,20 @@ TACOperand tacMethod(const char *name, DataType returnType);
  * @return Cadena constante con el nombre del operando, o "" si es NULL o inactivo.
  */
 const char *getOperandName(const TACOperand *operand);
+
+/**
+ * @brief Indica si el operando guarda un valor en tiempo de ejecución (temporal o variable).
+ */
+static inline bool holdsValue(const TACOperand *operand) {
+    return operand->kind == OPERAND_TEMP || operand->kind == OPERAND_VARIABLE;
+}
+
+/**
+ * @brief Indica si la operación es un salto condicional (IF_FALSE o IF_TRUE).
+ */
+static inline bool isConditionalJump(TACOperation operation) {
+    return operation == TAC_IF_FALSE || operation == TAC_IF_TRUE;
+}
 
 /* ========================================================================= */
 /* 4. Instrucciones TAC (Cuádruplas)                                         */

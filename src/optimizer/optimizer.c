@@ -106,9 +106,7 @@ static int propagateConstants(TACList *tacList) {
             case TAC_IF_TRUE:
             case TAC_BEGIN_FUNC:
             case TAC_END_FUNC: {
-                bool isConditionalJump = (instruction->operation == TAC_IF_FALSE ||
-                                          instruction->operation == TAC_IF_TRUE);
-                if (isConditionalJump) {
+                if (isConditionalJump(instruction->operation)) {
                     if (replaceWithKnownConstant(&table, &instruction->firstOperand)) {
                         changes++;
                     }
@@ -138,9 +136,7 @@ static int propagateConstants(TACList *tacList) {
             changes++;
         }
 
-        bool writesResult = (instruction->result.kind == OPERAND_TEMP ||
-                             instruction->result.kind == OPERAND_VARIABLE);
-        if (!writesResult) {
+        if (!holdsValue(&instruction->result)) {
             continue;
         }
 
@@ -191,9 +187,7 @@ static int simplifyConstantBranches(TACList *tacList) {
     TACInstruction *current = tacList->head;
 
     while (current != NULL) {
-        bool isConditionalJump = (current->operation == TAC_IF_FALSE ||
-                                  current->operation == TAC_IF_TRUE);
-        bool hasConstantCondition = (isConditionalJump && isConstant(&current->firstOperand));
+        bool hasConstantCondition = (isConditionalJump(current->operation) && isConstant(&current->firstOperand));
 
         if (!hasConstantCondition) {
             previous = current;
@@ -301,11 +295,9 @@ static int removeSelfAssignments(TACList *tacList) {
 
     for (TACInstruction *curr = tacList->head; curr != NULL; curr = curr->next) {
         bool isAssignment = (curr->operation == TAC_ASSIGN);
-        bool isVariableOrTemp = (curr->result.kind == OPERAND_VARIABLE ||
-                                 curr->result.kind == OPERAND_TEMP);
         bool hasSameKind = (curr->firstOperand.kind == curr->result.kind);
         bool hasSameName = (strcmp(curr->result.name, curr->firstOperand.name) == 0);
-        bool isSelfAssignment = (isAssignment && isVariableOrTemp && hasSameKind && hasSameName);
+        bool isSelfAssignment = (isAssignment && holdsValue(&curr->result) && hasSameKind && hasSameName);
         if (isSelfAssignment) {
             selfList[selfCount++] = curr;
         }
@@ -469,9 +461,7 @@ static bool endsControlFlow(TACOperation operation) {
 }
 
 static bool isDeadStoreCandidate(const TACInstruction *instruction) {
-    bool hasCandidateResult = (instruction->result.kind == OPERAND_VARIABLE ||
-                               instruction->result.kind == OPERAND_TEMP);
-    if (!hasCandidateResult) {
+    if (!holdsValue(&instruction->result)) {
         return false;
     }
 
@@ -484,8 +474,7 @@ static bool isDeadStoreCandidate(const TACInstruction *instruction) {
 }
 
 static const TACOperand *lookupKnownConstant(const KnownConstantTable *table, const TACOperand *operand) {
-    bool canHoldConstant = (operand->kind == OPERAND_TEMP || operand->kind == OPERAND_VARIABLE);
-    if (!canHoldConstant) {
+    if (!holdsValue(operand)) {
         return NULL;
     }
 
@@ -516,7 +505,7 @@ static bool isLabelReferenced(const TACList *tacList, const char *labelName) {
         if (instruction->operation == TAC_GOTO && strcmp(instruction->firstOperand.name, labelName) == 0) {
             return true;
         }
-        if ((instruction->operation == TAC_IF_FALSE || instruction->operation == TAC_IF_TRUE) &&
+        if (isConditionalJump(instruction->operation) &&
             strcmp(instruction->secondOperand.name, labelName) == 0) {
             return true;
         }

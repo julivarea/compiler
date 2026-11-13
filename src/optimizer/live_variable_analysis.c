@@ -21,7 +21,6 @@ static bool instructionWritesVariable(const TACInstruction *instruction, const c
 static void printVariableSet(FILE *output, const LiveVariableAnalysis *analysis, VariableSet set);
 static int registerVariable(LiveVariableAnalysis *analysis, const char *name);
 static bool endsBasicBlock(const TACInstruction *instruction);
-static bool isCandidate(const TACOperand *operand);
 static bool isVariableInSet(VariableSet set, int variableIndex);
 static int getVariableIndex(const LiveVariableAnalysis *analysis, const char *name);
 
@@ -184,7 +183,7 @@ static void buildControlFlowEdges(LiveVariableAnalysis *analysis) {
 
         if (last->operation == TAC_GOTO) {
             addSuccessor(block, findBlockByLabel(analysis, last->firstOperand.name));
-        } else if (last->operation == TAC_IF_FALSE || last->operation == TAC_IF_TRUE) {
+        } else if (isConditionalJump(last->operation)) {
             addSuccessor(block, findBlockByLabel(analysis, last->secondOperand.name));
             addSuccessor(block, nextBlock);
         } else if (last->operation != TAC_RETURN && last->operation != TAC_END_FUNC) {
@@ -283,7 +282,7 @@ static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, 
 }
 
 static void collectOperandVariable(LiveVariableAnalysis *analysis, const TACOperand *operand) {
-    if (isCandidate(operand)) {
+    if (holdsValue(operand)) {
         registerVariable(analysis, operand->name);
     }
 }
@@ -320,20 +319,20 @@ static bool isDeclaration(const TACInstruction *instruction) {
 }
 
 static int getOperandVariableIndex(const LiveVariableAnalysis *analysis, const TACOperand *operand) {
-    if (!isCandidate(operand)) return -1;
+    if (!holdsValue(operand)) return -1;
     return getVariableIndex(analysis, operand->name);
 }
 
 static bool instructionReadsVariable(const TACInstruction *instruction, const char *variableName) {
-    bool readsFirst = isCandidate(&instruction->firstOperand) &&
+    bool readsFirst = holdsValue(&instruction->firstOperand) &&
                       strcmp(instruction->firstOperand.name, variableName) == 0;
-    bool readsSecond = isCandidate(&instruction->secondOperand) &&
+    bool readsSecond = holdsValue(&instruction->secondOperand) &&
                        strcmp(instruction->secondOperand.name, variableName) == 0;
     return readsFirst || readsSecond;
 }
 
 static bool instructionWritesVariable(const TACInstruction *instruction, const char *variableName) {
-    return isCandidate(&instruction->result) &&
+    return holdsValue(&instruction->result) &&
            strcmp(instruction->result.name, variableName) == 0;
 }
 
@@ -365,15 +364,9 @@ static int registerVariable(LiveVariableAnalysis *analysis, const char *name) {
 
 static bool endsBasicBlock(const TACInstruction *instruction) {
     return instruction->operation == TAC_GOTO ||
-           instruction->operation == TAC_IF_FALSE ||
-           instruction->operation == TAC_IF_TRUE ||
+           isConditionalJump(instruction->operation) ||
            instruction->operation == TAC_RETURN ||
            instruction->operation == TAC_END_FUNC;
-}
-
-static bool isCandidate(const TACOperand *operand) {
-    return operand != NULL &&
-           (operand->kind == OPERAND_VARIABLE || operand->kind == OPERAND_TEMP);
 }
 
 static bool isVariableInSet(VariableSet set, int variableIndex) {
