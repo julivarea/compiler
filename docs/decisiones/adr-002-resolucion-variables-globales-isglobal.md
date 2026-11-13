@@ -53,4 +53,4 @@ Se toma la decisión arquitectónica de **establecer a la Tabla de Símbolos (`S
 4. **Compatibilidad:** La representación textual externa de las cuádruplas TAC (`.ci`) no se alteró, manteniendo invariantes los contratos de prueba existentes.
 
 ### Negativas / Compromisos Aceptados
-* Se mantiene una pequeña función de fallback lineal en `object_code.c` y `optimizer.c` que solo se ejecuta cuando `operand->symbol` es nulo, pensada exclusivamente para soportar suites de pruebas sintéticas donde se crean instrucciones TAC "a mano".
+* Al eliminarse el escaneo lineal de respaldo, cualquier `TACOperand` de variable debe conservar su puntero `symbol` válido para resolverse como global (`operand->symbol != NULL && operand->symbol->isGlobal`). En el compilador esto se cumple siempre a través de `tacVariable(symbol)`; las suites de pruebas sintéticas que construyen instrucciones TAC "a mano" para variables globales deben asociar el `Symbol` correspondiente.

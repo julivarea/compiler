@@ -1,6 +1,6 @@
 # Convenciones de Documentación y Comentarios
 
-Este documento formaliza las reglas y patrones de documentación en código C utilizados en el compilador. Se basa en las convenciones establecidas en [`include/semantic_analyzer.h`](https://github.com/julivarea/compiler/blob/main/include/semantic_analyzer.h), [`src/semantic_analyzer.c`](https://github.com/julivarea/compiler/blob/main/src/semantic_analyzer.c) y [`src/tac_instruction.c`](https://github.com/julivarea/compiler/blob/main/src/tac_instruction.c).
+Este documento formaliza las reglas y patrones de documentación en código C utilizados en el compilador. Se basa en las convenciones establecidas en [`include/semantic_analyzer.h`](https://github.com/julivarea/compiler/blob/main/include/semantic_analyzer.h), [`src/semantic/semantic_analyzer.c`](https://github.com/julivarea/compiler/blob/main/src/semantic/semantic_analyzer.c) y [`src/intermediate_code/tac.c`](https://github.com/julivarea/compiler/blob/main/src/intermediate_code/tac.c).
 
 ---
 

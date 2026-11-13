@@ -17,6 +17,13 @@ recorre.
 
 Si hay una estructura que conviene conocer de memoria para la defensa, es esta.
 
+### Qué construcciones tienen nodo y cuáles delegan
+
+El criterio de diseño del árbol es directo: **si una construcción de la gramática no aporta significado propio, no se convierte en un nodo del AST sino que delega en su hijo.**
+
+- **`Statement` y `Expression` delegan (`{ $$ = $1; }`):** son categorías puramente sintácticas que agrupan alternativas (asignaciones, llamadas, operaciones, literales). No existen `STATEMENT_NODE` ni `EXPRESSION_NODE` porque envolverían sin aportar información nueva.
+- **`Block` sí crea `BLOCK_NODE`:** aunque aparece dentro de `Statement`, agrupa una lista de declaraciones y sentencias y además delimita un ámbito léxico en el programa.
+
 ---
 
 ## 2. Interfaz pública

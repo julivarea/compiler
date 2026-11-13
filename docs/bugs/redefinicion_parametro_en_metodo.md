@@ -4,7 +4,7 @@
 
 Se permitía que una variable local declarada en el cuerpo principal de una función tuviera el mismo identificador que un parámetro formal de dicha función, tratándolo erróneamente como un *shadowing* (ocultamiento) válido en lugar de emitir un error semántico de redeclaración en el mismo ámbito.
 
-## Código de Ejemplo (`examples/aliasing_parameters_in_method.txt`)
+## Código de Ejemplo (`examples/aliasing_parameters_in_method.ctds`)
 
 ```c
 int aliasing_parameters_with_assignment(int x){
@@ -22,7 +22,7 @@ void main(){
 El analizador semántico aceptaba el programa sin emitir errores y creaba dos entidades con distinto UID para la misma variable `x` (`#2` para el parámetro y `#3` para la variable local):
 
 ```text
-$ ./mi_compilador examples/aliasing_parameters_in_method.txt
+$ ./mi_compilador examples/aliasing_parameters_in_method.ctds
 --- Analisis sintactico sin errores formales. ---
 
 --- Arbol de Sintaxis Abstracta (AST) ---
@@ -48,7 +48,7 @@ main:
 
 ## Causa Raíz
 
-En `src/semantic_analyzer.c`, la función `analyzeMethodNode` creaba un `Scope` para el método (nivel 1) donde registraba los parámetros formales, pero delegaba el cuerpo de la función al nodo `BLOCK_NODE` mediante `analyzeBlockNode`, el cual creaba un **segundo `Scope` anidado** (nivel 2).
+En `src/semantic/semantic_analyzer.c`, la función `analyzeMethodNode` creaba un `Scope` para el método (nivel 1) donde registraba los parámetros formales, pero delegaba el cuerpo de la función al nodo `BLOCK_NODE` mediante `analyzeBlockNode`, el cual creaba un **segundo `Scope` anidado** (nivel 2).
 
 Al procesar la declaración local `int x;`, `analyzeVariableDeclarationNode` consultaba `lookupVariableCurrentScope(current_scope, "x")`. Como `current_scope` era el ámbito del bloque (nivel 2) y el parámetro formal residía en el ámbito del método (nivel 1), la búsqueda no hallaba colisión y permitía la redeclaración asignándole un nuevo UID.
 
@@ -66,7 +66,7 @@ Al procesar la declaración local `int x;`, `analyzeVariableDeclarationNode` con
 
 ## Solución Técnica
 
-Se modificó `analyzeMethodNode` en `src/semantic_analyzer.c` para que:
+Se modificó `analyzeMethodNode` en `src/semantic/semantic_analyzer.c` para que:
 1. Cree el `method_scope` con el tipo de retorno correspondiente.
 2. Analice los parámetros formales directamente en `method_scope`.
 3. Recorra e itere las declaraciones y sentencias del bloque cuerpo (`node->children[1]`) dentro de ese **mismo** `method_scope` sin crear un ámbito intermedio.
@@ -76,7 +76,7 @@ Al compartir el mismo ámbito, la función estándar `lookupVariableCurrentScope
 ## Traza Corregida (Comportamiento Actual)
 
 ```text
-$ ./mi_compilador examples/aliasing_parameters_in_method.txt
+$ ./mi_compilador examples/aliasing_parameters_in_method.ctds
 --- Analisis sintactico sin errores formales. ---
 Error semantico en la linea 2: La variable 'x' ya fue declarada previamente en este ambito.
 

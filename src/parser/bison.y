@@ -1,4 +1,8 @@
 %{
+/**
+ * @file bison.y
+ * @brief Gramática LALR(1) y acciones de construcción del AST de C-TDS en Bison.
+ */
 #include "ast.h"
 #include "parser_helpers.h"
 #include "error_handler.h"

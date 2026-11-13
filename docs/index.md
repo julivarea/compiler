@@ -10,7 +10,11 @@ hasta un ejecutable x86-64, con un optimizador sobre el código intermedio.
 
 - Agustín Alieni
 - Francisco Natale
-- Julián Varea
+- Julián Lucas Varea Grosso
+
+### División del trabajo
+
+La organización del equipo se realizó sin repartirse etapas de antemano. Al comienzo de cada etapa se definieron en conjunto las ideas principales y las decisiones de diseño importantes, avanzando luego de forma progresiva e incremental hasta completar la etapa sin un reparto explícito de tareas. Por ese motivo, todos los integrantes participaron activamente en el desarrollo y en las discusiones de todas las etapas del compilador.
 
 ## Estado actual
 
@@ -100,19 +104,22 @@ extensión no se podía producir.
   [Wiki de Onboarding](wiki/00-index.md), que va de la visión general del
   compilador hasta cada fase en el orden en que se ejecutan.
 - La sección **Documentación Técnica** del menú es material de consulta puntual
-  (decisiones de diseño del AST, alcance del análisis semántico, el conflicto de
-  Bison, el algoritmo de Sethi-Ullman), no está pensada para leerse de corrido.
+  (ADRs de diseño, explicación del conflicto de Bison y comparación con el algoritmo
+  de Sethi-Ullman), no está pensada para leerse de corrido.
 - **Convenciones del Código** explica por qué los archivos están organizados como
   están: la metáfora del periódico, la regla del paso descendente y el formato de
   los comentarios. Es la respuesta a "¿por qué este archivo se lee de arriba
   hacia abajo de lo general a lo particular?", que es un criterio que las fichas
   invocan seguido.
-- **Bugs Resueltos** son cuatro bugs reales del proyecto, cada uno con el programa
-  que lo disparó, la traza y la corrección. Están ahí porque el *cómo se
+- **Bugs Resueltos** documenta bugs reales del proyecto (junto con el ejemplo
+  que lo disparó, la traza y la corrección). Están ahí porque el *cómo se
   encontró* es tan parte del proyecto como el código final.
 - [**Cambios a etapas anteriores**](cambios-etapas-anteriores.md) junta todo lo
   que se tocó de una fase ya entregada mientras se trabajaba en una posterior,
   con el motivo de cada cambio.
+- En el repositorio también se conservan el enunciado y la especificación oficial
+  (`docs/spec/`) y el archivo histórico de borradores e informes iniciales
+  (`docs/historicos/`, fuera del índice principal del sitio).
 
 ## Estructura del repositorio
 
@@ -122,7 +129,7 @@ extensión no se podía producir.
 ├── src/                  # implementaciones (.c), más lexer.l y bison.y
 ├── tests/                # tests con Unity: una suite por etapa más una de integración
 ├── examples/             # programas .ctds de ejemplo, válidos e inválidos
-├── documentacion/        # las páginas de este sitio
+├── docs/                 # las páginas de este sitio
 ├── build/                # artefactos de Flex, Bison y los binarios de test
 ├── build.sh              # compilar el proyecto
 ├── test_suite.sh         # correr las once suites de tests

@@ -67,3 +67,5 @@ Con esta nueva estructura, el parser lee `int sumar` (es decir, la estructura `T
 - Si el siguiente token es un `(`, sabe sin ambigüedades que se trata de un método (`MethodDeclaration`).
 
 De esta manera se elimina el conflicto de Shift/Reduce logrando que ambas sentencias se parseen correctamente.
+
+> **Reproductor histórico:** El caso mínimo en Bison utilizado originalmente para diagnosticar este conflicto se conserva en `docs/historicos/lexico-sintactico/conflicto_ejecutable/` (`lalr_conflicto.y` y `lalr_conflicto.output`).

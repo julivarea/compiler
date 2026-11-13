@@ -1,6 +1,11 @@
 #ifndef DEBUG_H
 #define DEBUG_H
 
+/**
+ * @file debug.h
+ * @brief Utilidad centralizada de salida de diagnóstico controlada por `-debug`.
+ */
+
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -24,4 +29,4 @@ static void debugPrintf(bool debugEnabled, const char *format, ...) {
     va_end(arguments);
 }
 
-#endif
+#endif // DEBUG_H

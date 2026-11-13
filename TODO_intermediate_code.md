@@ -1,6 +1,6 @@
 # Checklist de Investigación y Pendientes: Generación de Código Intermedio (TAC)
 
-Este documento detalla el estado actual, los errores detectados en la implementación (`src/intermediate_code.c` y `src/intermediate_code.h`), las discrepancias con la especificación oficial de **C-TDS** (`documentacion/spec/01-TDS-spec-lenguaje.pdf`) y las decisiones de diseño necesarias para las siguientes etapas del compilador (Optimizador y Generador x86-64 según `documentacion/spec/00-TDS-proyecto.pdf`).
+Este documento detalla el estado actual, los errores detectados en la implementación (`src/intermediate_code.c` y `src/intermediate_code.h`), las discrepancias con la especificación oficial de **C-TDS** (`docs/spec/01-TDS-spec-lenguaje.pdf`) y las decisiones de diseño necesarias para las siguientes etapas del compilador (Optimizador y Generador x86-64 según `docs/spec/00-TDS-proyecto.pdf`).
 
 ---
 
@@ -74,7 +74,7 @@ Queda abierto, en orden de urgencia: el **desborde con signo en `+`, `-` y `*` d
 
 ### 2.1
 - [x] **Evaluación de corto circuito en operadores lógicos (`&&`, `||`)**
-  - **Referencia:** `documentacion/spec/01-TDS-spec-lenguaje.pdf` (Página 5, "Expresiones"):
+  - **Referencia:** `docs/spec/01-TDS-spec-lenguaje.pdf` (Página 5, "Expresiones"):
     > *"Los operadores lógicos && y || deben ser evaluados usando evaluación de corto circuito. El segundo operador no es evaluado si el primer operador determina el valor de toda la expresión, es decir, si el resultado es false para && o true para ||."*
   - **Problema actual:** En `generateExpressionCode`, para `OP_AND` y `OP_OR` se evalúa incondicionalmente el operando derecho y se emite una única instrucción `TAC_AND` / `TAC_OR`. Si el lado derecho contiene llamadas a métodos con efectos colaterales o expresiones con guardas (ej. `n != 0 && 10 / n > 1`), la semántica del lenguaje se rompe.
   - **Acción:** Diseñar la evaluación booleana con control de flujo (saltos condicionales) para asegurar que el operando derecho solo se evalúe cuando sea estrictamente necesario. Se resuelve en una sola pasada con etiquetas, sin backpatching, porque el AST ya está completo.
@@ -118,7 +118,7 @@ Queda abierto, en orden de urgencia: el **desborde con signo en `+`, `-` y `*` d
 
 ### 2.2
 - [x] **Retorno implícito en métodos `void` al alcanzar el fin del bloque**
-  - **Referencia:** `documentacion/spec/01-TDS-spec-lenguaje.pdf` (Página 4, "Invocación y Retorno de Métodos"):
+  - **Referencia:** `docs/spec/01-TDS-spec-lenguaje.pdf` (Página 4, "Invocación y Retorno de Métodos"):
     > *"Un método que no tiene declarado un tipo de retorno (un método void) retorna con una sentencia return (sin expresión) o cuando el fin del método es alcanzado."*
   - **Problema actual:** Si una función `void` (como `main`) no incluye una sentencia `return;` explícita, el generador no emite ninguna instrucción `ret`. En la posterior generación de código máquina x86-64, la función no tendrá epílogo de retorno y caerá en las instrucciones de la función contigua (fall-through caótico).
   - **Acción:** Al finalizar la generación del cuerpo de un método `void`, verificar si la última sentencia emitida fue un retorno; si no lo fue, emitir `ret\n`. Para los métodos no-void no hace falta: el análisis semántico ya garantiza que todos sus caminos terminan en un `return`.

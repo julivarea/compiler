@@ -12,7 +12,7 @@ intermedio, optimización sobre el código intermedio y emisión de código obje
 
 - Agustín Alieni
 - Francisco Natale
-- Julián Varea
+- Julián Lucas Varea Grosso
 
 ## Estado actual
 
@@ -52,7 +52,7 @@ Las optimizaciones disponibles son:
 | `peephole` | Mirilla sobre instrucciones contiguas: saltos redundantes a la etiqueta siguiente |
 | `strength-reduce` | Reducción de fuerza: multiplicaciones por potencias de 2 pasan a desplazamientos |
 
-En la [Wiki de Onboarding](documentacion/wiki/00-index.md) hay
+En la [Wiki de Onboarding](docs/wiki/00-index.md) hay
 una versión navegable estructurada paso a paso. Se lee mucho mejor servida como
 sitio que como archivos sueltos: ver [Documentación](#documentación).
 
@@ -106,7 +106,7 @@ sitio que como archivos sueltos: ver [Documentación](#documentación).
 ├── tests/                                           # suites de tests con Unity: una por etapa + integración
 ├── examples/                                        # programas .ctds de ejemplo, válidos e inválidos
 ├── build/                                           # archivos de compilacion
-├── documentacion/                                   # páginas del sitio de documentación (ver "Documentación")
+├── docs/                                            # páginas del sitio de documentación (ver "Documentación")
 │   ├── wiki/                                        # wiki de onboarding, una página por fase
 │   └── spec/                                        # enunciado y especificación del lenguaje (PDF)
 ├── mkdocs.yml                                       # configuración del sitio: docs_dir, nav y tema
@@ -292,7 +292,7 @@ VERBOSE=1 bash test_suite.sh
 La documentación del proyecto es un sitio navegable hecho con
 [MkDocs](https://www.mkdocs.org/) y el tema
 [Material](https://squidfunk.github.io/mkdocs-material/). Las páginas son los
-`.md` de `documentacion/` y la configuración está en `mkdocs.yml`.
+`.md` de `docs/` y la configuración está en `mkdocs.yml`.
 
 ### Prerrequisitos
 
@@ -339,16 +339,17 @@ Deja el HTML en `site/`, que es un artefacto generado y está en `.gitignore`.
 El recorrido pensado para alguien que llega al proyecto es la **Wiki de
 Onboarding**, que va de la visión general del compilador hasta cada fase en el
 orden en que se ejecutan: léxico y sintáctico, AST, análisis semántico, código
-intermedio, código objeto y análisis de variables vivas. La sección
-**Documentación Técnica** es material de consulta puntual (decisiones de diseño
-del AST, alcance del análisis semántico, el conflicto de Bison), no se lee de
-corrido.
+intermedio, análisis de variables vivas, optimización y código objeto. La sección
+**Documentación Técnica** es material de consulta puntual (ADRs de arquitectura,
+explicación del conflicto de Bison, algoritmo de Sethi-Ullman y cambios a etapas anteriores),
+no se lee de corrido. En `docs/spec/` quedan el enunciado y la especificación oficial,
+y en `docs/historicos/` el archivo de borradores e informes tempranos.
 
 ### Agregar una página nueva
 
 Dos pasos, y el segundo es el que se olvida:
 
-1. Crear el `.md` **dentro de `documentacion/`**. Es el `docs_dir` del sitio, así
+1. Crear el `.md` **dentro de `docs/`**. Es el `docs_dir` del sitio, así
    que todo lo que esté en la raíz del repo (los `TODO_*.md`, este mismo README)
    queda afuera y no aparece.
 2. Agregarlo al `nav:` de `mkdocs.yml`. Una página que no está en el `nav` igual

@@ -6,7 +6,7 @@ Compilador de múltiples pasadas para el lenguaje **C-TDS (TDS26)**. La arquitec
 
 ## Pipeline de Compilación
 
-La transformación del código fuente se estructura en seis fases secuenciales:
+La transformación del código fuente se estructura en siete fases secuenciales:
 
 1. **Análisis Léxico:** Reconoce y clasifica los caracteres del código fuente en tokens (palabras clave, identificadores, literales, operadores). Descarta espacios en blanco y comentarios, y rastrea números de línea para reportes de error.
 2. **Análisis Sintáctico:** Verifica que la secuencia de tokens respete la gramática libre de contexto de C-TDS mediante análisis LALR(1). Ante el primer error formal, interrumpe el proceso.
@@ -17,7 +17,8 @@ La transformación del código fuente se estructura en seis fases secuenciales:
    - Valida el tipado estático, coherencia de retornos en funciones y condiciones booleanas en estructuras de control.
    - A diferencia del analizador sintáctico, acumula y reporta todos los errores encontrados antes de abortar.
 5. **Generación de Código Intermedio (TAC):** Recorre el AST validado y emite Código de Tres Direcciones linealizado con variables temporales y etiquetas para control de saltos.
-6. **Generación de Código Objeto y Gestión del Stack:** Recorre la lista TAC, dimensiona los marcos de activación de pila (`FunctionFrame` y `StackSlot`) según la convención System V AMD64 ABI, y emite las instrucciones en lenguaje ensamblador x86-64 como texto, con `buildStringf`.
+6. **Análisis de Variables Vivas y Optimización (`-opt`):** Paso opcional controlado por línea de comandos. Construye el grafo de flujo de control (CFG) sobre el TAC, resuelve vivacidad por punto fijo (`LiveVariableAnalysis`, `BasicBlock`) y ejecuta iterativamente las transformaciones activas (`const-fold`, `const-prop`, `dead-code`, `const-branch`, `self-assign`, `peephole`), más `strength-reduce` al emitir objeto.
+7. **Generación de Código Objeto y Gestión del Stack:** Recorre la lista TAC (original u optimizada), dimensiona los marcos de activación de pila (`FunctionFrame` y `StackSlot`) según la convención System V AMD64 ABI, y emite las instrucciones en lenguaje ensamblador x86-64 como texto, con `buildStringf`.
 
 ---
 
@@ -34,7 +35,10 @@ flowchart LR
     SEM <-->|"Resolución y Tipos"| SYMB["Tabla de Símbolos (Scope & Symbol)"]
     SEM -->|"AST anotado + Symbols"| TAC_GEN["Generador Intermedio"]
     TAC_GEN -->|"TACList"| TAC_INST["Cuádruplas TAC (TACInstruction & TACOperand)"]
-    TAC_INST --> ASM_GEN["Generador de Código Objeto"]
+    TAC_INST -->|"-opt (opcional)"| OPT["Optimizador TAC"]
+    OPT <-->|"CFG y Vivacidad"| LVA["Variables Vivas (LiveVariableAnalysis)"]
+    TAC_INST -->|"sin -opt"| ASM_GEN["Generador de Código Objeto"]
+    OPT -->|"TAC optimizado"| ASM_GEN
     ASM_GEN <-->|"Cálculo de Offsets (-%rbp)"| FRAME["Gestor de Pila (FunctionFrame & StackSlot)"]
     ASM_GEN -->|"texto (buildStringf)"| ASM_OUT["Ensamblador x86-64 (.ass / .s)"]
 ```
@@ -55,12 +59,12 @@ flowchart LR
         %% CONFIGURACIÓN Y PIPELINE (CLI & DRIVER)
         %% ========================================================
         class Options {
-            +char* input
+            +const char* input
             +char* output
             +Target target
             +int explicitTarget
             +int debug
-            +char* opt
+            +OptimizationSet optimizations
         }
 
         class Target {
@@ -72,7 +76,20 @@ flowchart LR
             TARGET_ASSEMBLY
         }
 
+        class Optimization {
+            <<enumeration>>
+            OPTIMIZATION_NONE
+            OPTIMIZATION_CONST_FOLD
+            OPTIMIZATION_CONST_PROP
+            OPTIMIZATION_DEAD_CODE
+            OPTIMIZATION_CONST_BRANCH
+            OPTIMIZATION_SELF_ASSIGN
+            OPTIMIZATION_PEEPHOLE
+            OPTIMIZATION_STRENGTH
+        }
+
         Options --> Target : target
+        Options ..> Optimization : optimizations (bitmask)
 
         %% ========================================================
         %% FRONTEND Y PARSER (BISON & HELPERS)
@@ -242,6 +259,36 @@ flowchart LR
         TACOperand "0..1" o-- "0..1" Symbol : symbol (resolución uid)
 
         %% ========================================================
+        %% OPTIMIZACIÓN Y ANÁLISIS DE VARIABLES VIVAS
+        %% ========================================================
+        class LiveVariableAnalysis {
+            +TACList* tacList
+            +BasicBlock** blocks
+            +size_t blockCount
+            +char variableNames[64][256]
+            +size_t variableCount
+            +createLiveVariableAnalysis(tacList)
+            +isDeadDefinitionInBlock(block, instr)
+        }
+
+        class BasicBlock {
+            +int id
+            +TACInstruction* firstInstruction
+            +TACInstruction* lastInstruction
+            +BasicBlock* successors[2]
+            +size_t successorCount
+            +VariableSet use
+            +VariableSet def
+            +VariableSet liveIn
+            +VariableSet liveOut
+        }
+
+        LiveVariableAnalysis "1" o-- "1" TACList : analiza CFG
+        LiveVariableAnalysis "1" *-- "many" BasicBlock : blocks
+        BasicBlock "1" o-- "0..2" BasicBlock : successors
+        BasicBlock "1" o-- "many" TACInstruction : rango [first..last]
+
+        %% ========================================================
         %% CÓDIGO OBJETO Y GESTIÓN DEL STACK (x86-64)
         %% ========================================================
         class FunctionFrame {
@@ -288,7 +335,8 @@ flowchart LR
             +int capacity
             +createNodeArray(cap) NodeArray*
             +appendNode(node) NodeArray*
-            +resolveNodeArray(parent) void
+            +mergeNodeArrays(other) NodeArray*
+            +resolveVariableDefinition(type, ids) NodeArray*
         }
 
         class NodeAST {
@@ -370,6 +418,7 @@ flowchart LR
             +int uid
             +DataType type
             +SymbolType symbolType
+            +bool isGlobal
             +NodeAST* parameters
             +ValueUnion value
             +newSymbol(id, symType, type, params) Symbol*
@@ -477,7 +526,54 @@ flowchart LR
         TACOperand "0..1" o-- "0..1" Symbol : symbol
     ```
 
-=== "4. Código Objeto y Stack (x86-64)"
+=== "4. Optimización y Variables Vivas"
+
+    Estructuras de control y flujo de datos para construir el CFG, resolver conjuntos de vivacidad (`VariableSet`) y aplicar pasadas iterativas sobre el TAC:
+
+    ```mermaid
+    classDiagram
+        direction TB
+
+        class Optimization {
+            <<enumeration>>
+            OPTIMIZATION_NONE
+            OPTIMIZATION_CONST_FOLD
+            OPTIMIZATION_CONST_PROP
+            OPTIMIZATION_DEAD_CODE
+            OPTIMIZATION_CONST_BRANCH
+            OPTIMIZATION_SELF_ASSIGN
+            OPTIMIZATION_PEEPHOLE
+            OPTIMIZATION_STRENGTH
+        }
+
+        class LiveVariableAnalysis {
+            +TACList* tacList
+            +BasicBlock** blocks
+            +size_t blockCount
+            +char variableNames[64][256]
+            +size_t variableCount
+            +createLiveVariableAnalysis(tacList) LiveVariableAnalysis*
+            +freeLiveVariableAnalysis(analysis) void
+            +isDeadDefinitionInBlock(block, instr) bool
+        }
+
+        class BasicBlock {
+            +int id
+            +TACInstruction* firstInstruction
+            +TACInstruction* lastInstruction
+            +BasicBlock* successors[2]
+            +size_t successorCount
+            +VariableSet use
+            +VariableSet def
+            +VariableSet liveIn
+            +VariableSet liveOut
+        }
+
+        LiveVariableAnalysis "1" *-- "many" BasicBlock : blocks (CFG)
+        BasicBlock "1" o-- "0..2" BasicBlock : successors
+    ```
+
+=== "5. Código Objeto y Stack (x86-64)"
 
     Estructuras para el dimensionamiento del marco de activación (`FunctionFrame`) y la emisión de instrucciones Assembly:
 
@@ -518,12 +614,13 @@ flowchart LR
 
 | Etapa | Estructuras Principales | Enumeraciones Clave | Relación y Conexión con otras Etapas |
 |---|---|---|---|
-| **Control y CLI** | `Options` | `Target` | Conduce el pipeline invocando la etapa correspondiente (`TARGET_SCAN` hasta `TARGET_ASSEMBLY`). |
+| **Control y CLI** | `Options`, `OptimizationSet` | `Target`, `Optimization` | Conduce el pipeline invocando las etapas correspondientes (`TARGET_SCAN` hasta `TARGET_ASSEMBLY`) y configura las pasadas de optimización activas (`-opt`). |
 | **Sintaxis y Parsing** | `NodeArray` | - | Agrupador temporal en Bison que colecta secuencias de nodos (sentencias, declaraciones, listas de argumentos) antes de transferirlos en $O(1)$ a un nodo padre `NodeAST`. |
 | **Árbol de Sintaxis (AST)** | `NodeAST` | `NodeType`, `OperationType` | Estructura universal arbórea. Cada nodo aloja sus hijos en `children`. Enlaza con `Symbol` para identificar variables y métodos, y con `DataType` para su tipo semántico. |
 | **Análisis Semántico** | `Scope`, `Symbol` | `SymbolType`, `DataType` | Organiza los identificadores en un árbol de entornos léxicos (`parent` / `children`). Asigna `uid` único para resolver colisiones por *shadowing*. El `Symbol` de métodos conserva el puntero a su subárbol `parameters` en el AST. |
-| **Código Intermedio (TAC)** | `TACList`, `TACInstruction`, `TACOperand` | `TACOperation`, `OperandKind` | Transforma el AST en una lista enlazada de cuádruplas atómicas. Cada `TACOperand` puede referenciar al `Symbol` original para propagar nombres calificados (`id@uid`) y tipos de datos. |
-| **Código Objeto y Stack** | `FunctionFrame`, `StackSlot` | `OperandLocation` (privado de `object_code.c`) | El backend recorre el TAC: dimensiona el marco de pila (`FunctionFrame`) asignando a cada variable/temporal un `StackSlot` con desplazamiento negativo respecto a `%rbp`, y emite el assembly x86-64 en sintaxis AT&T como texto, instrucción por instrucción. |
+| **Código Intermedio (TAC)** | `TACList`, `TACInstruction`, `TACOperand` | `TACOperation`, `OperandKind` | Transforma el AST en una lista enlazada de cuádruplas atómicas. Cada `TACOperand` puede referenciar al `Symbol` original para propagar nombres calificados (`id@uid`), ámbito (`isGlobal`) y tipos de datos. |
+| **Optimización y Variables Vivas** | `LiveVariableAnalysis`, `BasicBlock`, `VariableSet` | `Optimization` | Particiona el TAC en bloques básicos formando un CFG, calcula conjuntos `use`/`def`/`liveIn`/`liveOut` por punto fijo y reescribe el `TACList` iterativamente según la máscara de `-opt`. |
+| **Código Objeto y Stack** | `FunctionFrame`, `StackSlot` | `OperandLocation` (privado de `object_code.c`) | El backend recorre el TAC: dimensiona el marco de pila (`FunctionFrame`) asignando a cada variable/temporal un `StackSlot` con desplazamiento negativo respecto a `%rbp`, y emite el assembly x86-64 en sintaxis AT&T como texto, instrucción por instrucción (`strength-reduce` incluida). |
 
 ---
 
@@ -534,6 +631,7 @@ flowchart LR
 - **Ámbitos Jerárquicos en Árbol:** Cada bloque delimitado por llaves o firma de función posee su propio entorno léxico (`Scope`) con puntero ascendente a su ámbito contenedor (`parent`), permitiendo resolución de identificadores en tiempo ascendente hacia la raíz.
 - **Identificación Única de Símbolos (`uid`):** Cada variable registrada en la tabla de símbolos obtiene un número secuencial inequívoco, permitiendo al generador TAC calificar variables (`x@uid`) y resolver el *shadowing* sin ambigüedad en el backend.
 - **Linealización Atómica:** El generador intermedio convierte bifurcaciones y expresiones anidadas en instrucciones elementales de a lo sumo tres direcciones (`TACInstruction`), facilitando el mapeo a registros y offsets de memoria en x86-64.
+- **Optimización Iterativa sobre TAC hasta Punto Fijo:** Las optimizaciones independientes de la máquina operan sobre la lista lineal ya tipada de TAC (apoyadas en el análisis de flujo de datos de variables vivas) en rondas sucesivas hasta que ninguna transformación produce cambios, dejando intacto el pipeline cuando no se pasa `-opt`.
 - **Dimensionamiento de Marco en Dos Pasadas:** El backend analiza primero todas las cuádruplas de una función para conocer el espacio exacto de memoria (`FunctionFrame`), alinearlo a 16 bytes según la ABI System V AMD64, y reservar la pila en una única instrucción en el prólogo.
 
 ---

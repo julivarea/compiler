@@ -1,4 +1,8 @@
 %{
+/**
+ * @file lexer.l
+ * @brief Analizador léxico de C-TDS implementado en Flex.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

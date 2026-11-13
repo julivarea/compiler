@@ -3,8 +3,10 @@ site_description: Compilador para C-TDS (TDS26) desarrollado en C con Flex y Bis
 site_url: ""
 repo_url: https://github.com/julivarea/compiler
 repo_name: julivarea/compiler
-docs_dir: documentacion
-edit_uri: edit/main/documentacion/
+docs_dir: docs
+edit_uri: edit/main/docs/
+exclude_docs: |
+  historicos/
 
 extra:
   social:
@@ -73,18 +75,14 @@ nav:
       - Desacoplamiento TAC y Stack Offsets (ADR 001): decisiones/adr-001-desacoplamiento-tac-offsets-stack.md
       - Resolución O(1) de Variables Globales (ADR 002): decisiones/adr-002-resolucion-variables-globales-isglobal.md
       - Fusión de Comparaciones y Saltos (ADR 003): decisiones/adr-003-fusion-comparacion-y-salto-condicional.md
-      - Alcance Análisis Semántico: analisis-semantico.md
-      - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md
-      - Explicación Conflicto Bison: lexico-sintactico/notas/explicacion_conflicto_bison.md
-      - Notas Definición AST: lexico-sintactico/notas/notes_to_ast_definition.md
-      - Algoritmo de Sethi-Ullman: notas/algoritmo_sethi_ullman.md
+      - Explicación Conflicto Bison: decisiones/explicacion_conflicto_bison.md
+      - Algoritmo de Sethi-Ullman: decisiones/algoritmo_sethi_ullman.md
       - Cambios a Etapas Anteriores: cambios-etapas-anteriores.md
   - Convenciones del Código:
-      - Estilo y Organización: refactor.md
-      - Comentarios y Doxygen: convenciones_comentarios.md
+      - Estilo y Organización: convenciones/refactor.md
+      - Comentarios y Doxygen: convenciones/convenciones_comentarios.md
   - Bugs Resueltos:
       - Asignación a un método: bugs/asignacion_de_metodo.md
-      - Doble return: bugs/doble_return.md
       - Redefinición de un parámetro: bugs/redefinicion_parametro_en_metodo.md
       - Casteos en una comparación: bugs/tipos_casteados_en_op_bin.md
 

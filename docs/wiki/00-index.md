@@ -35,9 +35,11 @@ leer.
 
 ---
 
-## Informes y Decisiones de Diseño
+## Decisiones de Diseño y Material Complementario
 
-- [Alcance y Reglas Semánticas](../analisis-semantico.md)
-- [Decisiones de Diseño del AST](../arbol_AST/decisiones_diseno_ast.md)
-- [Resolución del Conflicto en Bison](../lexico-sintactico/notas/explicacion_conflicto_bison.md)
-- [Criterio de Nodos en el AST](../lexico-sintactico/notas/notes_to_ast_definition.md)
+- [ADR 001: Desacoplamiento TAC y Offsets de Stack](../decisiones/adr-001-desacoplamiento-tac-offsets-stack.md)
+- [ADR 002: Resolución O(1) de Variables Globales (`isGlobal`)](../decisiones/adr-002-resolucion-variables-globales-isglobal.md)
+- [ADR 003: Fusión de Comparaciones y Saltos](../decisiones/adr-003-fusion-comparacion-y-salto-condicional.md)
+- [Resolución del Conflicto en Bison](../decisiones/explicacion_conflicto_bison.md)
+- [Algoritmo de Sethi-Ullman vs. Generación Actual](../decisiones/algoritmo_sethi_ullman.md)
+- [Cambios a Etapas Anteriores](../cambios-etapas-anteriores.md)
