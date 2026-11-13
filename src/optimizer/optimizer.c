@@ -48,7 +48,6 @@ static bool isLabelReferenced(const TACList *tacList, const char *labelName);
 static void printTACWithDeletedInRed(const TACList *tacList, TACInstruction **deletedList, size_t deletedCount, const char *reason);
 static int unlinkInstructionList(TACList *tacList, TACInstruction **instructions, size_t count);
 static bool isStructural(TACOperation operation);
-static void printSingleInstruction(FILE *output, const TACInstruction *instruction);
 static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previous, TACInstruction *current);
 
 int optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled) {
@@ -558,10 +557,10 @@ static void printTACWithDeletedInRed(const TACList *tacList,
 
         if (isDeleted) {
             printf("  [ELIMINADA] ");
-            printSingleInstruction(stdout, current);
+            fprintTACInstruction(stdout, current);
         } else {
             printf("              ");
-            printSingleInstruction(stdout, current);
+            fprintTACInstruction(stdout, current);
         }
     }
     printf("======================================================================\n\n");
@@ -606,14 +605,6 @@ static bool isStructural(TACOperation operation) {
         default:
             return false;
     }
-}
-
-static void printSingleInstruction(FILE *output, const TACInstruction *instruction) {
-    if (instruction == NULL) return;
-
-    char line[TAC_INSTRUCTION_TEXT_LENGTH];
-    formatTACInstruction(line, sizeof(line), instruction);
-    fprintf(output, "%s", line);
 }
 
 static TACInstruction *unlinkInstruction(TACList *tacList, TACInstruction *previous, TACInstruction *current) {

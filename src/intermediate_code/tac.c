@@ -148,6 +148,14 @@ void printTACInstruction(const TACInstruction *instruction) {
     buildString(line);
 }
 
+void fprintTACInstruction(FILE *output, const TACInstruction *instruction) {
+    if (output == NULL || instruction == NULL) return;
+
+    char line[TAC_INSTRUCTION_TEXT_LENGTH];
+    formatTACInstruction(line, sizeof(line), instruction);
+    fprintf(output, "%s", line);
+}
+
 void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instruction) {
     if (buffer == NULL || size == 0) return;
 

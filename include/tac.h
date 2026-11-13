@@ -11,6 +11,7 @@
 #include "symbol_table.h"
 
 #include <stddef.h>
+#include <stdio.h>
 
 /* ========================================================================= */
 /* 1. Constantes y Límites                                                   */
@@ -226,6 +227,14 @@ void freeTACInstruction(TACInstruction *instruction);
  * @param instruction Puntero a la instrucción TAC a imprimir (si es NULL no realiza acción).
  */
 void printTACInstruction(const TACInstruction *instruction);
+
+/**
+ * @brief Escribe la representación textual de una instrucción TAC en el flujo de salida indicado.
+ *
+ * @param output Flujo de archivo destino (si es NULL no realiza acción).
+ * @param instruction Puntero a la instrucción TAC a imprimir (si es NULL no realiza acción).
+ */
+void fprintTACInstruction(FILE *output, const TACInstruction *instruction);
 
 /**
  * @brief Renderiza una instrucción TAC como línea de texto sin imprimir.

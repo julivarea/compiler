@@ -18,7 +18,6 @@ static bool isDeclaration(const TACInstruction *instruction);
 static int getOperandVariableIndex(const LiveVariableAnalysis *analysis, const TACOperand *operand);
 static bool instructionReadsVariable(const TACInstruction *instruction, const char *variableName);
 static bool instructionWritesVariable(const TACInstruction *instruction, const char *variableName);
-static void printInstructionText(FILE *output, const TACInstruction *instruction);
 static void printVariableSet(FILE *output, const LiveVariableAnalysis *analysis, VariableSet set);
 static int registerVariable(LiveVariableAnalysis *analysis, const char *name);
 static bool endsBasicBlock(const TACInstruction *instruction);
@@ -259,7 +258,7 @@ static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, 
     fprintf(output, "  Instrucciones:\n");
     for (const TACInstruction *current = block->firstInstruction; current != NULL; current = current->next) {
         fprintf(output, "    ");
-        printInstructionText(output, current);
+        fprintTACInstruction(output, current);
         if (current == block->lastInstruction) break;
     }
 
@@ -336,14 +335,6 @@ static bool instructionReadsVariable(const TACInstruction *instruction, const ch
 static bool instructionWritesVariable(const TACInstruction *instruction, const char *variableName) {
     return isCandidate(&instruction->result) &&
            strcmp(instruction->result.name, variableName) == 0;
-}
-
-static void printInstructionText(FILE *output, const TACInstruction *instruction) {
-    if (instruction == NULL) return;
-
-    char line[TAC_INSTRUCTION_TEXT_LENGTH];
-    formatTACInstruction(line, sizeof(line), instruction);
-    fprintf(output, "%s", line);
 }
 
 static void printVariableSet(FILE *output, const LiveVariableAnalysis *analysis, VariableSet set) {
