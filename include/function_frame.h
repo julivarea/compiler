@@ -20,7 +20,6 @@
  * @brief Capacidad inicial de la pila dinámica de argumentos pendientes.
  */
 #define INITIAL_PENDING_PARAMS_CAPACITY 64
-#define MAX_PENDING_PARAMS INITIAL_PENDING_PARAMS_CAPACITY
 
 /**
  * @brief Representa una posición en el stack frame para una variable o temporal.

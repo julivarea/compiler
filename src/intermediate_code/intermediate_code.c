@@ -6,7 +6,6 @@
 #include <string.h>
 
 static TACList *currentCode = NULL;
-static DataType currentMethodType = TYPE_VOID;
 static bool tacMemoryError = false;
 static bool tacUnsupportedType = false;
 
@@ -14,7 +13,6 @@ static int temporaryCount = 0;
 static int labelCount = 0;
 
 static NodeAST *findUnsupportedType(NodeAST *node);
-static void generateGlobalDeclarationCode(NodeAST *node);
 static void generateStatementCode(NodeAST *node);
 static void generateMethodDeclarationCode(NodeAST *node);
 static void generateBlockCode(NodeAST *node);
@@ -84,7 +82,6 @@ const TACList *generateIntermediateCode(NodeAST *root) {
     }
     temporaryCount = 0;
     labelCount = 0;
-    currentMethodType = TYPE_VOID;
 
     for (int i = 0; i < root->childCount; i++) {
         generateStatementCode(root->children[i]);
@@ -170,9 +167,6 @@ static void generateMethodDeclarationCode(NodeAST *node) {
     int parameterCount = parameters->childCount;
     TACOperand method = tacMethod(node->symbol->id, node->type);
 
-    DataType previousMethodType = currentMethodType;
-    currentMethodType = node->type;
-
     emitBeginFunc(method, parameterCount);
     for (int i = 0; i < parameterCount; i++) {
         emitParamDecl(tacVariable(parameters->children[i]->symbol));
@@ -186,7 +180,6 @@ static void generateMethodDeclarationCode(NodeAST *node) {
     }
 
     emitEndFunc(method);
-    currentMethodType = previousMethodType;
 }
 
 static void generateBlockCode(NodeAST *node) {
