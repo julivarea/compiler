@@ -5,23 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static TACOperand makeOperand(OperandKind kind, DataType type, const char *name) {
-    TACOperand operand;
-    memset(&operand, 0, sizeof(operand));
-
-    operand.kind = kind;
-    operand.type = type;
-    if (name != NULL) {
-        int written = snprintf(operand.name, sizeof(operand.name), "%s", name);
-        if (written < 0 || (size_t)written >= sizeof(operand.name)) {
-            fprintf(stderr,
-                    "\033[1;31mError interno del TAC:\033[0m el nombre del operando '%s' excede el limite de %zu caracteres.\n",
-                    name, sizeof(operand.name) - 1);
-        }
-    }
-
-    return operand;
-}
+static TACOperand makeOperand(OperandKind kind, DataType type, const char *name);
+static const char *getOperatorSymbol(TACOperation operation);
 
 TACOperand tacNone(void) {
     return makeOperand(OPERAND_NONE, TYPE_VOID, NULL);
@@ -82,27 +67,45 @@ TACOperand tacMethod(const char *name, DataType returnType) {
     return makeOperand(OPERAND_METHOD, returnType, name);
 }
 
-const char *getOperandName(const TACOperand *operand) {
-    if (operand == NULL || operand->kind == OPERAND_NONE) {
-        return "";
-    }
-    return operand->name;
+TACList *createTACList(void) {
+    TACList *list = malloc(sizeof(TACList));
+    if (list == NULL) return NULL;
+
+    list->head = NULL;
+    list->tail = NULL;
+    list->count = 0;
+
+    return list;
 }
 
-static const char *getOperatorSymbol(TACOperation operation) {
-    switch (operation) {
-        case TAC_ADD:    return "+";
-        case TAC_SUB:    return "-";
-        case TAC_MUL:    return "*";
-        case TAC_DIV:    return "/";
-        case TAC_MOD:    return "%";
-        case TAC_LT:     return "<";
-        case TAC_GT:     return ">";
-        case TAC_EQ:     return "==";
-        case TAC_UMINUS: return "-";
-        case TAC_NOT:    return "!";
-        default:         return "?";
+void freeTACList(TACList *list) {
+    if (list == NULL) return;
+
+    TACInstruction *current = list->head;
+    while (current != NULL) {
+        TACInstruction *toFree = current;
+        current = current->next;
+        freeTACInstruction(toFree);
     }
+
+    free(list);
+}
+
+void formatTACList(const TACList *list) {
+    if (list == NULL) return;
+
+    for (const TACInstruction *current = list->head; current != NULL; current = current->next) {
+        printTACInstruction(current);
+    }
+}
+
+TACInstruction *appendInstruction(TACList *list, TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
+    if (list == NULL) return NULL;
+
+    TACInstruction *instruction = createTACInstruction(operation, result, firstOperand, secondOperand);
+    if (instruction == NULL) return NULL;
+
+    return appendTACInstruction(list, instruction);
 }
 
 TACInstruction *createTACInstruction(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
@@ -114,6 +117,21 @@ TACInstruction *createTACInstruction(TACOperation operation, TACOperand result, 
     instruction->firstOperand = firstOperand;
     instruction->secondOperand = secondOperand;
     instruction->next = NULL;
+
+    return instruction;
+}
+
+TACInstruction *appendTACInstruction(TACList *list, TACInstruction *instruction) {
+    if (list == NULL || instruction == NULL) return NULL;
+
+    instruction->next = NULL;
+    if (list->tail == NULL) {
+        list->head = instruction;
+    } else {
+        list->tail->next = instruction;
+    }
+    list->tail = instruction;
+    list->count++;
 
     return instruction;
 }
@@ -223,58 +241,43 @@ void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instr
     }
 }
 
-TACList *createTACList(void) {
-    TACList *list = malloc(sizeof(TACList));
-    if (list == NULL) return NULL;
-
-    list->head = NULL;
-    list->tail = NULL;
-    list->count = 0;
-
-    return list;
+const char *getOperandName(const TACOperand *operand) {
+    if (operand == NULL || operand->kind == OPERAND_NONE) {
+        return "";
+    }
+    return operand->name;
 }
 
-void freeTACList(TACList *list) {
-    if (list == NULL) return;
+static TACOperand makeOperand(OperandKind kind, DataType type, const char *name) {
+    TACOperand operand;
+    memset(&operand, 0, sizeof(operand));
 
-    TACInstruction *current = list->head;
-    while (current != NULL) {
-        TACInstruction *toFree = current;
-        current = current->next;
-        freeTACInstruction(toFree);
+    operand.kind = kind;
+    operand.type = type;
+    if (name != NULL) {
+        int written = snprintf(operand.name, sizeof(operand.name), "%s", name);
+        if (written < 0 || (size_t)written >= sizeof(operand.name)) {
+            fprintf(stderr,
+                    "\033[1;31mError interno del TAC:\033[0m el nombre del operando '%s' excede el limite de %zu caracteres.\n",
+                    name, sizeof(operand.name) - 1);
+        }
     }
 
-    free(list);
+    return operand;
 }
 
-void formatTACList(const TACList *list) {
-    if (list == NULL) return;
-
-    for (const TACInstruction *current = list->head; current != NULL; current = current->next) {
-        printTACInstruction(current);
+static const char *getOperatorSymbol(TACOperation operation) {
+    switch (operation) {
+        case TAC_ADD:    return "+";
+        case TAC_SUB:    return "-";
+        case TAC_MUL:    return "*";
+        case TAC_DIV:    return "/";
+        case TAC_MOD:    return "%";
+        case TAC_LT:     return "<";
+        case TAC_GT:     return ">";
+        case TAC_EQ:     return "==";
+        case TAC_UMINUS: return "-";
+        case TAC_NOT:    return "!";
+        default:         return "?";
     }
-}
-
-TACInstruction *appendTACInstruction(TACList *list, TACInstruction *instruction) {
-    if (list == NULL || instruction == NULL) return NULL;
-
-    instruction->next = NULL;
-    if (list->tail == NULL) {
-        list->head = instruction;
-    } else {
-        list->tail->next = instruction;
-    }
-    list->tail = instruction;
-    list->count++;
-
-    return instruction;
-}
-
-TACInstruction *appendInstruction(TACList *list, TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
-    if (list == NULL) return NULL;
-
-    TACInstruction *instruction = createTACInstruction(operation, result, firstOperand, secondOperand);
-    if (instruction == NULL) return NULL;
-
-    return appendTACInstruction(list, instruction);
 }

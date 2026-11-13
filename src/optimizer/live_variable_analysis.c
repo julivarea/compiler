@@ -5,29 +5,26 @@
 #include <string.h>
 
 static void collectVariables(LiveVariableAnalysis *analysis);
-static void collectOperandVariable(LiveVariableAnalysis *analysis, const TACOperand *operand);
 static void partitionBasicBlocks(LiveVariableAnalysis *analysis);
 static void buildControlFlowEdges(LiveVariableAnalysis *analysis);
-static void addSuccessor(BasicBlock *block, BasicBlock *successor);
 static void computeBlockUseAndDef(const LiveVariableAnalysis *analysis, BasicBlock *block);
 static void solveFixedPointLiveness(LiveVariableAnalysis *analysis);
-
-static BasicBlock *findBlockByLabel(const LiveVariableAnalysis *analysis, const char *labelName);
-static int getVariableIndex(const LiveVariableAnalysis *analysis, const char *name);
-static int getOperandVariableIndex(const LiveVariableAnalysis *analysis, const TACOperand *operand);
-static int registerVariable(LiveVariableAnalysis *analysis, const char *name);
-
-static bool isCandidate(const TACOperand *operand);
-static bool isDeclaration(const TACInstruction *instruction);
-static bool endsBasicBlock(const TACInstruction *instruction);
+static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, const BasicBlock *block);
+static void collectOperandVariable(LiveVariableAnalysis *analysis, const TACOperand *operand);
 static bool isLeader(const TACInstruction *instruction, const TACInstruction *previous);
+static void addSuccessor(BasicBlock *block, BasicBlock *successor);
+static BasicBlock *findBlockByLabel(const LiveVariableAnalysis *analysis, const char *labelName);
+static bool isDeclaration(const TACInstruction *instruction);
+static int getOperandVariableIndex(const LiveVariableAnalysis *analysis, const TACOperand *operand);
 static bool instructionReadsVariable(const TACInstruction *instruction, const char *variableName);
 static bool instructionWritesVariable(const TACInstruction *instruction, const char *variableName);
-static bool isVariableInSet(VariableSet set, int variableIndex);
-
 static void printInstructionText(FILE *output, const TACInstruction *instruction);
 static void printVariableSet(FILE *output, const LiveVariableAnalysis *analysis, VariableSet set);
-static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, const BasicBlock *block);
+static int registerVariable(LiveVariableAnalysis *analysis, const char *name);
+static bool endsBasicBlock(const TACInstruction *instruction);
+static bool isCandidate(const TACOperand *operand);
+static bool isVariableInSet(VariableSet set, int variableIndex);
+static int getVariableIndex(const LiveVariableAnalysis *analysis, const char *name);
 
 LiveVariableAnalysis *createLiveVariableAnalysis(const TACList *tacList) {
     if (tacList == NULL || tacList->head == NULL) return NULL;
@@ -54,17 +51,84 @@ LiveVariableAnalysis *createLiveVariableAnalysis(const TACList *tacList) {
     return analysis;
 }
 
+void freeLiveVariableAnalysis(LiveVariableAnalysis *analysis) {
+    if (analysis == NULL) return;
+
+    for (size_t i = 0; i < analysis->blockCount; i++) {
+        free(analysis->blocks[i]);
+    }
+    free(analysis->blocks);
+    free(analysis);
+}
+
+bool isDeadDefinition(const LiveVariableAnalysis *analysis, const TACInstruction *instruction) {
+    if (analysis == NULL || instruction == NULL) return false;
+
+    BasicBlock *block = findInstructionBlock(analysis, instruction);
+    if (block == NULL) return false;
+
+    return isDeadDefinitionInBlock(analysis, block, instruction);
+}
+
+BasicBlock *findInstructionBlock(const LiveVariableAnalysis *analysis, const TACInstruction *instruction) {
+    if (analysis == NULL || instruction == NULL) return NULL;
+
+    for (size_t i = 0; i < analysis->blockCount; i++) {
+        BasicBlock *block = analysis->blocks[i];
+        for (const TACInstruction *current = block->firstInstruction; current != NULL; current = current->next) {
+            if (current == instruction) return block;
+            if (current == block->lastInstruction) break;
+        }
+    }
+    return NULL;
+}
+
+bool isDeadDefinitionInBlock(const LiveVariableAnalysis *analysis, const BasicBlock *block, const TACInstruction *instruction) {
+    if (analysis == NULL || block == NULL || instruction == NULL) return false;
+
+    int variableIndex = getOperandVariableIndex(analysis, &instruction->result);
+    if (variableIndex < 0) return false;
+
+    const char *variableName = instruction->result.name;
+
+    // Dentro del bloque: una lectura conserva el valor; una reescritura lo descarta.
+    if (instruction != block->lastInstruction) {
+        for (const TACInstruction *current = instruction->next; current != NULL; current = current->next) {
+            if (instructionReadsVariable(current, variableName)) return false;
+            if (instructionWritesVariable(current, variableName)) return true;
+            if (current == block->lastInstruction) break;
+        }
+    }
+
+    // Al final del bloque, la definición solo importa si el valor sale vivo.
+    return !isVariableInSet(block->liveOut, variableIndex);
+}
+
+void printLiveVariableAnalysis(const LiveVariableAnalysis *analysis, FILE *output) {
+    if (analysis == NULL) return;
+    if (output == NULL) output = stdout;
+
+    fprintf(output, "\n======================================================================\n");
+    fprintf(output, "Grafo de Flujo de Control (CFG) y Analisis de Variables Vivas\n");
+    fprintf(output, "======================================================================\n");
+    fprintf(output, "Variables candidatas (%zu): ", analysis->variableCount);
+    for (size_t i = 0; i < analysis->variableCount; i++) {
+        fprintf(output, "%s%s", analysis->variableNames[i], (i + 1 < analysis->variableCount) ? ", " : "\n");
+    }
+    if (analysis->variableCount == 0) fprintf(output, "(ninguna)\n");
+    fprintf(output, "Total de bloques basicos: %zu\n\n", analysis->blockCount);
+
+    for (size_t i = 0; i < analysis->blockCount; i++) {
+        printBasicBlock(output, analysis, analysis->blocks[i]);
+    }
+    fprintf(output, "======================================================================\n\n");
+}
+
 static void collectVariables(LiveVariableAnalysis *analysis) {
     for (const TACInstruction *current = analysis->tacList->head; current != NULL; current = current->next) {
         collectOperandVariable(analysis, &current->result);
         collectOperandVariable(analysis, &current->firstOperand);
         collectOperandVariable(analysis, &current->secondOperand);
-    }
-}
-
-static void collectOperandVariable(LiveVariableAnalysis *analysis, const TACOperand *operand) {
-    if (isCandidate(operand)) {
-        registerVariable(analysis, operand->name);
     }
 }
 
@@ -130,11 +194,6 @@ static void buildControlFlowEdges(LiveVariableAnalysis *analysis) {
     }
 }
 
-static void addSuccessor(BasicBlock *block, BasicBlock *successor) {
-    if (successor == NULL) return;
-    block->successors[block->successorCount++] = successor;
-}
-
 static void computeBlockUseAndDef(const LiveVariableAnalysis *analysis, BasicBlock *block) {
     block->use = 0;
     block->def = 0;
@@ -193,79 +252,6 @@ static void solveFixedPointLiveness(LiveVariableAnalysis *analysis) {
     }
 }
 
-void freeLiveVariableAnalysis(LiveVariableAnalysis *analysis) {
-    if (analysis == NULL) return;
-
-    for (size_t i = 0; i < analysis->blockCount; i++) {
-        free(analysis->blocks[i]);
-    }
-    free(analysis->blocks);
-    free(analysis);
-}
-
-BasicBlock *findInstructionBlock(const LiveVariableAnalysis *analysis, const TACInstruction *instruction) {
-    if (analysis == NULL || instruction == NULL) return NULL;
-
-    for (size_t i = 0; i < analysis->blockCount; i++) {
-        BasicBlock *block = analysis->blocks[i];
-        for (const TACInstruction *current = block->firstInstruction; current != NULL; current = current->next) {
-            if (current == instruction) return block;
-            if (current == block->lastInstruction) break;
-        }
-    }
-    return NULL;
-}
-
-bool isDeadDefinitionInBlock(const LiveVariableAnalysis *analysis, const BasicBlock *block, const TACInstruction *instruction) {
-    if (analysis == NULL || block == NULL || instruction == NULL) return false;
-
-    int variableIndex = getOperandVariableIndex(analysis, &instruction->result);
-    if (variableIndex < 0) return false;
-
-    const char *variableName = instruction->result.name;
-
-    // Dentro del bloque: una lectura conserva el valor; una reescritura lo descarta.
-    if (instruction != block->lastInstruction) {
-        for (const TACInstruction *current = instruction->next; current != NULL; current = current->next) {
-            if (instructionReadsVariable(current, variableName)) return false;
-            if (instructionWritesVariable(current, variableName)) return true;
-            if (current == block->lastInstruction) break;
-        }
-    }
-
-    // Al final del bloque, la definición solo importa si el valor sale vivo.
-    return !isVariableInSet(block->liveOut, variableIndex);
-}
-
-bool isDeadDefinition(const LiveVariableAnalysis *analysis, const TACInstruction *instruction) {
-    if (analysis == NULL || instruction == NULL) return false;
-
-    BasicBlock *block = findInstructionBlock(analysis, instruction);
-    if (block == NULL) return false;
-
-    return isDeadDefinitionInBlock(analysis, block, instruction);
-}
-
-void printLiveVariableAnalysis(const LiveVariableAnalysis *analysis, FILE *output) {
-    if (analysis == NULL) return;
-    if (output == NULL) output = stdout;
-
-    fprintf(output, "\n======================================================================\n");
-    fprintf(output, "Grafo de Flujo de Control (CFG) y Analisis de Variables Vivas\n");
-    fprintf(output, "======================================================================\n");
-    fprintf(output, "Variables candidatas (%zu): ", analysis->variableCount);
-    for (size_t i = 0; i < analysis->variableCount; i++) {
-        fprintf(output, "%s%s", analysis->variableNames[i], (i + 1 < analysis->variableCount) ? ", " : "\n");
-    }
-    if (analysis->variableCount == 0) fprintf(output, "(ninguna)\n");
-    fprintf(output, "Total de bloques basicos: %zu\n\n", analysis->blockCount);
-
-    for (size_t i = 0; i < analysis->blockCount; i++) {
-        printBasicBlock(output, analysis, analysis->blocks[i]);
-    }
-    fprintf(output, "======================================================================\n\n");
-}
-
 static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, const BasicBlock *block) {
     fprintf(output, "--------------------------------------------------\n");
     fprintf(output, "[Bloque %d]\n", block->id);
@@ -297,6 +283,61 @@ static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, 
     printVariableSet(output, analysis, block->liveOut);
 }
 
+static void collectOperandVariable(LiveVariableAnalysis *analysis, const TACOperand *operand) {
+    if (isCandidate(operand)) {
+        registerVariable(analysis, operand->name);
+    }
+}
+
+static bool isLeader(const TACInstruction *instruction, const TACInstruction *previous) {
+    if (previous == NULL) return true;
+
+    bool startsBlock = (instruction->operation == TAC_LABEL || instruction->operation == TAC_BEGIN_FUNC);
+    return startsBlock || endsBasicBlock(previous);
+}
+
+static void addSuccessor(BasicBlock *block, BasicBlock *successor) {
+    if (successor == NULL) return;
+    block->successors[block->successorCount++] = successor;
+}
+
+static BasicBlock *findBlockByLabel(const LiveVariableAnalysis *analysis, const char *labelName) {
+    if (analysis == NULL || labelName == NULL) return NULL;
+
+    for (size_t i = 0; i < analysis->blockCount; i++) {
+        BasicBlock *block = analysis->blocks[i];
+        bool startsWithLabel = (block->firstInstruction->operation == TAC_LABEL);
+        if (startsWithLabel && strcmp(block->firstInstruction->result.name, labelName) == 0) {
+            return block;
+        }
+    }
+    return NULL;
+}
+
+static bool isDeclaration(const TACInstruction *instruction) {
+    return instruction->operation == TAC_GLOBAL_DECL ||
+           instruction->operation == TAC_LOCAL_DECL ||
+           instruction->operation == TAC_PARAM_DECL;
+}
+
+static int getOperandVariableIndex(const LiveVariableAnalysis *analysis, const TACOperand *operand) {
+    if (!isCandidate(operand)) return -1;
+    return getVariableIndex(analysis, operand->name);
+}
+
+static bool instructionReadsVariable(const TACInstruction *instruction, const char *variableName) {
+    bool readsFirst = isCandidate(&instruction->firstOperand) &&
+                      strcmp(instruction->firstOperand.name, variableName) == 0;
+    bool readsSecond = isCandidate(&instruction->secondOperand) &&
+                       strcmp(instruction->secondOperand.name, variableName) == 0;
+    return readsFirst || readsSecond;
+}
+
+static bool instructionWritesVariable(const TACInstruction *instruction, const char *variableName) {
+    return isCandidate(&instruction->result) &&
+           strcmp(instruction->result.name, variableName) == 0;
+}
+
 static void printInstructionText(FILE *output, const TACInstruction *instruction) {
     if (instruction == NULL) return;
 
@@ -320,33 +361,6 @@ static void printVariableSet(FILE *output, const LiveVariableAnalysis *analysis,
     fprintf(output, " }\n");
 }
 
-static BasicBlock *findBlockByLabel(const LiveVariableAnalysis *analysis, const char *labelName) {
-    if (analysis == NULL || labelName == NULL) return NULL;
-
-    for (size_t i = 0; i < analysis->blockCount; i++) {
-        BasicBlock *block = analysis->blocks[i];
-        bool startsWithLabel = (block->firstInstruction->operation == TAC_LABEL);
-        if (startsWithLabel && strcmp(block->firstInstruction->result.name, labelName) == 0) {
-            return block;
-        }
-    }
-    return NULL;
-}
-
-static int getVariableIndex(const LiveVariableAnalysis *analysis, const char *name) {
-    if (analysis == NULL || name == NULL) return -1;
-
-    for (size_t i = 0; i < analysis->variableCount; i++) {
-        if (strcmp(analysis->variableNames[i], name) == 0) return (int)i;
-    }
-    return -1;
-}
-
-static int getOperandVariableIndex(const LiveVariableAnalysis *analysis, const TACOperand *operand) {
-    if (!isCandidate(operand)) return -1;
-    return getVariableIndex(analysis, operand->name);
-}
-
 static int registerVariable(LiveVariableAnalysis *analysis, const char *name) {
     int existingIndex = getVariableIndex(analysis, name);
     if (existingIndex >= 0) return existingIndex;
@@ -358,17 +372,6 @@ static int registerVariable(LiveVariableAnalysis *analysis, const char *name) {
     return index;
 }
 
-static bool isCandidate(const TACOperand *operand) {
-    return operand != NULL &&
-           (operand->kind == OPERAND_VARIABLE || operand->kind == OPERAND_TEMP);
-}
-
-static bool isDeclaration(const TACInstruction *instruction) {
-    return instruction->operation == TAC_GLOBAL_DECL ||
-           instruction->operation == TAC_LOCAL_DECL ||
-           instruction->operation == TAC_PARAM_DECL;
-}
-
 static bool endsBasicBlock(const TACInstruction *instruction) {
     return instruction->operation == TAC_GOTO ||
            instruction->operation == TAC_IF_FALSE ||
@@ -377,26 +380,20 @@ static bool endsBasicBlock(const TACInstruction *instruction) {
            instruction->operation == TAC_END_FUNC;
 }
 
-static bool isLeader(const TACInstruction *instruction, const TACInstruction *previous) {
-    if (previous == NULL) return true;
-
-    bool startsBlock = (instruction->operation == TAC_LABEL || instruction->operation == TAC_BEGIN_FUNC);
-    return startsBlock || endsBasicBlock(previous);
-}
-
-static bool instructionReadsVariable(const TACInstruction *instruction, const char *variableName) {
-    bool readsFirst = isCandidate(&instruction->firstOperand) &&
-                      strcmp(instruction->firstOperand.name, variableName) == 0;
-    bool readsSecond = isCandidate(&instruction->secondOperand) &&
-                       strcmp(instruction->secondOperand.name, variableName) == 0;
-    return readsFirst || readsSecond;
-}
-
-static bool instructionWritesVariable(const TACInstruction *instruction, const char *variableName) {
-    return isCandidate(&instruction->result) &&
-           strcmp(instruction->result.name, variableName) == 0;
+static bool isCandidate(const TACOperand *operand) {
+    return operand != NULL &&
+           (operand->kind == OPERAND_VARIABLE || operand->kind == OPERAND_TEMP);
 }
 
 static bool isVariableInSet(VariableSet set, int variableIndex) {
     return (set & (1ULL << variableIndex)) != 0;
+}
+
+static int getVariableIndex(const LiveVariableAnalysis *analysis, const char *name) {
+    if (analysis == NULL || name == NULL) return -1;
+
+    for (size_t i = 0; i < analysis->variableCount; i++) {
+        if (strcmp(analysis->variableNames[i], name) == 0) return (int)i;
+    }
+    return -1;
 }

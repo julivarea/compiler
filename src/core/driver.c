@@ -30,50 +30,15 @@ extern int yylineno;
 
 static int runScan(const Options *options);
 static int runParse(void);
+static int writeASTTo(const Options *options);
 static int runSemantic(void);
+static const TACList *buildIntermediateCode(const Options *options);
 static int runIntermediateCode(const Options *options, const TACList *tacList);
 static int runAssembly(const Options *options, const TACList *tacList);
-
-static int writeASTTo(const Options *options);
-static int writeBuiltStringTo(const char *path);
-static FILE *openOutputFile(const char *path);
-static int assembleAndLink(const Options *options, const char *assemblyPath);
 static const char *getTokenName(int token);
-
-/*
- * Genera el código intermedio y le aplica las optimizaciones que se hayan
- * pedido con -opt. Sin -opt no se aplica ninguna y la lista queda exactamente
- * como la emitió el generador.
- */
-static const TACList *buildIntermediateCode(const Options *options) {
-    OptimizationSet enabled = options->optimizations;
-    bool hasOptimizations = (enabled != OPTIMIZATION_NONE);
-
-    const TACList *tacList = generateIntermediateCode(astRoot);
-    if (tacList == NULL) {
-        // Un tipo fuera de alcance ya se reporto con su linea; no es una falla interna.
-        if (!hasUnsupportedTypeError()) {
-            fprintf(stderr, "Error interno: no se pudo generar el codigo intermedio.\n");
-        }
-        return NULL;
-    }
-
-    if (options->debug) {
-        LiveVariableAnalysis *analysis = createLiveVariableAnalysis(tacList);
-        if (analysis != NULL) {
-            printLiveVariableAnalysis(analysis, stdout);
-            freeLiveVariableAnalysis(analysis);
-        }
-    }
-
-    if (hasOptimizations) {
-        setOptimizerDebug(options->debug);
-        int changes = optimizeIntermediateCode((TACList *)tacList, enabled);
-        debugPrintf(options->debug, "[OPT] Optimizaciones: %d instrucciones transformadas\n\n", changes);
-    }
-
-    return tacList;
-}
+static int writeBuiltStringTo(const char *path);
+static int assembleAndLink(const Options *options, const char *assemblyPath);
+static FILE *openOutputFile(const char *path);
 
 int compile(const Options *options) {
     if (options == NULL) {
@@ -115,7 +80,6 @@ int compile(const Options *options) {
             return 1;
     }
 }
-
 
 static int runScan(const Options *options) {
     FILE *outputFile = openOutputFile(options->output);
@@ -159,6 +123,24 @@ static int runParse(void) {
     return 0;
 }
 
+static int writeASTTo(const Options *options) {
+    FILE *outputFile = openOutputFile(options->output);
+    if (outputFile == NULL) {
+        return 1;
+    }
+
+    fprintAST(outputFile, astRoot, 0);
+    if (fclose(outputFile) != 0) {
+        perror(options->output);
+        return 1;
+    }
+
+    if (options->debug) {
+        printAST(astRoot, 0);
+    }
+    return 0;
+}
+
 static int runSemantic(void) {
     analyzeSemantics(astRoot, NULL);
 
@@ -168,6 +150,41 @@ static int runSemantic(void) {
     }
 
     return 0;
+}
+
+/*
+ * Genera el código intermedio y le aplica las optimizaciones que se hayan
+ * pedido con -opt. Sin -opt no se aplica ninguna y la lista queda exactamente
+ * como la emitió el generador.
+ */
+static const TACList *buildIntermediateCode(const Options *options) {
+    OptimizationSet enabled = options->optimizations;
+    bool hasOptimizations = (enabled != OPTIMIZATION_NONE);
+
+    const TACList *tacList = generateIntermediateCode(astRoot);
+    if (tacList == NULL) {
+        // Un tipo fuera de alcance ya se reporto con su linea; no es una falla interna.
+        if (!hasUnsupportedTypeError()) {
+            fprintf(stderr, "Error interno: no se pudo generar el codigo intermedio.\n");
+        }
+        return NULL;
+    }
+
+    if (options->debug) {
+        LiveVariableAnalysis *analysis = createLiveVariableAnalysis(tacList);
+        if (analysis != NULL) {
+            printLiveVariableAnalysis(analysis, stdout);
+            freeLiveVariableAnalysis(analysis);
+        }
+    }
+
+    if (hasOptimizations) {
+        setOptimizerDebug(options->debug);
+        int changes = optimizeIntermediateCode((TACList *)tacList, enabled);
+        debugPrintf(options->debug, "[OPT] Optimizaciones: %d instrucciones transformadas\n\n", changes);
+    }
+
+    return tacList;
 }
 
 static int runIntermediateCode(const Options *options, const TACList *tacList) {
@@ -227,22 +244,26 @@ static int runAssembly(const Options *options, const TACList *tacList) {
     return result;
 }
 
-static int writeASTTo(const Options *options) {
-    FILE *outputFile = openOutputFile(options->output);
-    if (outputFile == NULL) {
-        return 1;
+static const char *getTokenName(int token) {
+    switch (token) {
+        case VOID:        return "VOID";
+        case INT:         return "INT";
+        case FLOAT:       return "FLOAT";
+        case BOOLEAN:     return "BOOLEAN";
+        case IF:          return "IF";
+        case ELSE:        return "ELSE";
+        case WHILE:       return "WHILE";
+        case RETURN:      return "RETURN";
+        case EQ:          return "EQ";
+        case AND:         return "AND";
+        case OR:          return "OR";
+        case NOT:         return "NOT";
+        case ID:          return "ID";
+        case NUMBER:      return "NUMBER";
+        case BOOL_CONST:  return "BOOL_CONST";
+        case FLOAT_CONST: return "FLOAT_CONST";
+        default:          return NULL;
     }
-
-    fprintAST(outputFile, astRoot, 0);
-    if (fclose(outputFile) != 0) {
-        perror(options->output);
-        return 1;
-    }
-
-    if (options->debug) {
-        printAST(astRoot, 0);
-    }
-    return 0;
 }
 
 static int writeBuiltStringTo(const char *path) {
@@ -263,14 +284,6 @@ static int writeBuiltStringTo(const char *path) {
     }
 
     return 0;
-}
-
-static FILE *openOutputFile(const char *path) {
-    FILE *outputFile = fopen(path, "w");
-    if (outputFile == NULL) {
-        perror(path);
-    }
-    return outputFile;
 }
 
 static int assembleAndLink(const Options *options, const char *assemblyPath) {
@@ -308,24 +321,10 @@ static int assembleAndLink(const Options *options, const char *assemblyPath) {
     return 0;
 }
 
-static const char *getTokenName(int token) {
-    switch (token) {
-        case VOID:        return "VOID";
-        case INT:         return "INT";
-        case FLOAT:       return "FLOAT";
-        case BOOLEAN:     return "BOOLEAN";
-        case IF:          return "IF";
-        case ELSE:        return "ELSE";
-        case WHILE:       return "WHILE";
-        case RETURN:      return "RETURN";
-        case EQ:          return "EQ";
-        case AND:         return "AND";
-        case OR:          return "OR";
-        case NOT:         return "NOT";
-        case ID:          return "ID";
-        case NUMBER:      return "NUMBER";
-        case BOOL_CONST:  return "BOOL_CONST";
-        case FLOAT_CONST: return "FLOAT_CONST";
-        default:          return NULL;
+static FILE *openOutputFile(const char *path) {
+    FILE *outputFile = fopen(path, "w");
+    if (outputFile == NULL) {
+        perror(path);
     }
+    return outputFile;
 }

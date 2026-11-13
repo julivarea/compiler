@@ -12,30 +12,7 @@ static size_t code_len = 0;
 static size_t code_cap = 0;
 static bool builderFailed = false;
 
-static bool sb_ensure_capacity(size_t needed) {
-    if (needed > SIZE_MAX - code_len - 1) {
-        builderFailed = true;
-        return false;
-    }
-    size_t required = code_len + needed + 1;
-    if (required <= code_cap) return true;
-
-    size_t new_cap = code_cap ? code_cap : 64;
-    while (new_cap < required) {
-        if (new_cap > SIZE_MAX / 2) { new_cap = required; break; }
-        new_cap *= 2;
-    }
-
-    char *new_buf = realloc(code_buffer, new_cap);
-    if (!new_buf) {
-        perror("string_builder realloc failed");
-        builderFailed = true;
-        return false;
-    }
-    code_buffer = new_buf;
-    code_cap = new_cap;
-    return true;
-}
+static bool sb_ensure_capacity(size_t needed);
 
 void buildString(const char *string) {
     if (!string) return;
@@ -86,4 +63,29 @@ void resetBuildString(void) {
     code_len = 0;
     code_cap = 0;
     builderFailed = false;
+}
+
+static bool sb_ensure_capacity(size_t needed) {
+    if (needed > SIZE_MAX - code_len - 1) {
+        builderFailed = true;
+        return false;
+    }
+    size_t required = code_len + needed + 1;
+    if (required <= code_cap) return true;
+
+    size_t new_cap = code_cap ? code_cap : 64;
+    while (new_cap < required) {
+        if (new_cap > SIZE_MAX / 2) { new_cap = required; break; }
+        new_cap *= 2;
+    }
+
+    char *new_buf = realloc(code_buffer, new_cap);
+    if (!new_buf) {
+        perror("string_builder realloc failed");
+        builderFailed = true;
+        return false;
+    }
+    code_buffer = new_buf;
+    code_cap = new_cap;
+    return true;
 }

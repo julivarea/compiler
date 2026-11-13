@@ -10,10 +10,9 @@
 
 extern int yylineno;
 
-static void describeNode(FILE *out, const NodeAST *node);
-static NodeAST *newSymbolNode(NodeType nodeType, SymbolType symbolType, DataType dataType,
-                              char *id, NodeAST *parameters, NodeAST *left, NodeAST *mid);
 static NodeAST *newConstantNode(DataType type);
+static NodeAST *newSymbolNode(NodeType nodeType, SymbolType symbolType, DataType dataType, char *id, NodeAST *parameters, NodeAST *left, NodeAST *mid);
+static void describeNode(FILE *out, const NodeAST *node);
 static const char *getOperationName(OperationType operation);
 
 NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid, NodeAST *right) {
@@ -56,28 +55,6 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
     return node;
 }
 
-static NodeAST *newSymbolNode(NodeType nodeType, SymbolType symbolType, DataType dataType,
-                              char *id, NodeAST *parameters, NodeAST *left, NodeAST *mid) {
-    Symbol *symbol = newSymbol(id, symbolType, dataType, parameters);
-    if (symbol == NULL) {
-        free(id);
-        freeAST(left);
-        freeAST(mid);
-        return NULL;
-    }
-
-    NodeAST *node = newNode(nodeType, symbol, left, mid, NULL);
-    if (node == NULL) {
-        freeSymbol(symbol);
-        freeAST(left);
-        freeAST(mid);
-        return NULL;
-    }
-
-    node->type = dataType;
-    return node;
-}
-
 NodeAST *newOperatorNode(OperationType operator, NodeAST *left, NodeAST *right) {
     NodeAST *node = newNode(OPERATOR_NODE, NULL, left, right, NULL);
     if (node == NULL) {
@@ -103,10 +80,6 @@ NodeAST *newAssignmentNode(char *id, NodeAST *expression) {
 
 NodeAST *newMethodCallNode(char *id) {
     return newSymbolNode(METHOD_CALL_NODE, METHOD_SYMBOL, TYPE_VOID, id, NULL, NULL, NULL);
-}
-
-static NodeAST *newConstantNode(DataType type) {
-    return newSymbolNode(CONSTANT_NODE, CONSTANT_SYMBOL, type, NULL, NULL, NULL, NULL);
 }
 
 NodeAST *newIntLiteralNode(int value) {
@@ -147,6 +120,10 @@ void freeAST(NodeAST *node) {
     free(node);
 }
 
+void printAST(NodeAST *node, int level) {
+    fprintAST(stdout, node, level);
+}
+
 void fprintAST(FILE *out, NodeAST *node, int level) {
     if (node == NULL) return;
 
@@ -161,8 +138,41 @@ void fprintAST(FILE *out, NodeAST *node, int level) {
     }
 }
 
-void printAST(NodeAST *node, int level) {
-    fprintAST(stdout, node, level);
+const char *getDataTypeName(DataType type) {
+    switch (type) {
+        case TYPE_INT:   return "INT";
+        case TYPE_BOOL:  return "BOOL";
+        case TYPE_FLOAT: return "FLOAT";
+        case TYPE_VOID:  return "VOID";
+        case TYPE_ERROR: return "ERROR";
+        default:         return "UNKNOWN";
+    }
+}
+
+static NodeAST *newConstantNode(DataType type) {
+    return newSymbolNode(CONSTANT_NODE, CONSTANT_SYMBOL, type, NULL, NULL, NULL, NULL);
+}
+
+static NodeAST *newSymbolNode(NodeType nodeType, SymbolType symbolType, DataType dataType,
+                              char *id, NodeAST *parameters, NodeAST *left, NodeAST *mid) {
+    Symbol *symbol = newSymbol(id, symbolType, dataType, parameters);
+    if (symbol == NULL) {
+        free(id);
+        freeAST(left);
+        freeAST(mid);
+        return NULL;
+    }
+
+    NodeAST *node = newNode(nodeType, symbol, left, mid, NULL);
+    if (node == NULL) {
+        freeSymbol(symbol);
+        freeAST(left);
+        freeAST(mid);
+        return NULL;
+    }
+
+    node->type = dataType;
+    return node;
 }
 
 static void describeNode(FILE *out, const NodeAST *node) {
@@ -210,17 +220,6 @@ static void describeNode(FILE *out, const NodeAST *node) {
             break;
         default:
             fprintf(out, "Nodo Desconocido (Tipo %d)\n", node->nodeType);
-    }
-}
-
-const char *getDataTypeName(DataType type) {
-    switch (type) {
-        case TYPE_INT:   return "INT";
-        case TYPE_BOOL:  return "BOOL";
-        case TYPE_FLOAT: return "FLOAT";
-        case TYPE_VOID:  return "VOID";
-        case TYPE_ERROR: return "ERROR";
-        default:         return "UNKNOWN";
     }
 }
 

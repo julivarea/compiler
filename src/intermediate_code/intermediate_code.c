@@ -15,26 +15,24 @@ static int labelCount = 0;
 static NodeAST *findUnsupportedType(NodeAST *node);
 static void generateStatementCode(NodeAST *node);
 static void generateMethodDeclarationCode(NodeAST *node);
-static void generateBlockCode(NodeAST *node);
-static void generateVariableDeclarationCode(NodeAST *node);
 static void generateAssignmentCode(NodeAST *node);
 static void generateCallStatementCode(NodeAST *node);
 static void generateReturnCode(NodeAST *node);
 static void generateIfElseCode(NodeAST *node);
 static void generateWhileCode(NodeAST *node);
-
-static TACOperand generateExpressionCode(NodeAST *node);
-static TACOperand generateOperatorCode(NodeAST *node);
-static TACOperand generateShortCircuitCode(NodeAST *node);
-static TACOperand generateCallExpressionCode(NodeAST *node);
-static TACOperand generateConstantOperand(NodeAST *node);
-static void generateCallArguments(NodeAST *node);
-
-static TACOperation getTACOperation(OperationType operation);
+static void generateVariableDeclarationCode(NodeAST *node);
+static void generateBlockCode(NodeAST *node);
 static bool lastInstructionIsReturn(void);
-static void emit(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand);
+static TACOperand generateExpressionCode(NodeAST *node);
+static TACOperand generateConstantOperand(NodeAST *node);
+static TACOperand generateOperatorCode(NodeAST *node);
+static TACOperand generateCallExpressionCode(NodeAST *node);
+static TACOperand generateShortCircuitCode(NodeAST *node);
+static TACOperation getTACOperation(OperationType operation);
+static void generateCallArguments(NodeAST *node);
 static TACOperand newTemporary(DataType type);
 static TACOperand newLabel(void);
+static void emit(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand);
 
 const TACList *generateIntermediateCode(NodeAST *root) {
     if (root == NULL) {
@@ -166,17 +164,6 @@ static void generateMethodDeclarationCode(NodeAST *node) {
     emit(TAC_END_FUNC, method, tacNone(), tacNone());
 }
 
-static void generateBlockCode(NodeAST *node) {
-    for (int i = 0; i < node->childCount; i++) {
-        generateStatementCode(node->children[i]);
-    }
-}
-
-static void generateVariableDeclarationCode(NodeAST *node) {
-    TACOperation declOp = node->symbol->isGlobal ? TAC_GLOBAL_DECL : TAC_LOCAL_DECL;
-    emit(declOp, tacVariable(node->symbol), tacNone(), tacNone());
-}
-
 static void generateAssignmentCode(NodeAST *node) {
     TACOperand value = generateExpressionCode(GET_EXPRESSION(node));
     emit(TAC_ASSIGN, tacVariable(node->symbol), value, tacNone());
@@ -230,6 +217,22 @@ static void generateWhileCode(NodeAST *node) {
     emit(TAC_LABEL, endOfWhile, tacNone(), tacNone());
 }
 
+static void generateVariableDeclarationCode(NodeAST *node) {
+    TACOperation declOp = node->symbol->isGlobal ? TAC_GLOBAL_DECL : TAC_LOCAL_DECL;
+    emit(declOp, tacVariable(node->symbol), tacNone(), tacNone());
+}
+
+static void generateBlockCode(NodeAST *node) {
+    for (int i = 0; i < node->childCount; i++) {
+        generateStatementCode(node->children[i]);
+    }
+}
+
+static bool lastInstructionIsReturn(void) {
+    bool hasInstructions = (currentCode != NULL && currentCode->tail != NULL);
+    return hasInstructions && (currentCode->tail->operation == TAC_RETURN);
+}
+
 static TACOperand generateExpressionCode(NodeAST *node) {
     if (node == NULL) {
         return tacNone();
@@ -253,6 +256,17 @@ static TACOperand generateExpressionCode(NodeAST *node) {
     }
 }
 
+static TACOperand generateConstantOperand(NodeAST *node) {
+    switch (node->symbol->type) {
+        case TYPE_INT:
+            return tacConstantInt(node->symbol->value.intValue);
+        case TYPE_BOOL:
+            return tacConstantBool(node->symbol->value.intValue);
+        default:
+            return tacNone();
+    }
+}
+
 static TACOperand generateOperatorCode(NodeAST *node) {
     bool isLogicalShortCircuit = (node->operationType == OP_AND || node->operationType == OP_OR);
     if (isLogicalShortCircuit) {
@@ -265,6 +279,14 @@ static TACOperand generateOperatorCode(NodeAST *node) {
     TACOperand right = (rightNode != NULL) ? generateExpressionCode(rightNode) : tacNone();
 
     emit(getTACOperation(node->operationType), result, left, right);
+    return result;
+}
+
+static TACOperand generateCallExpressionCode(NodeAST *node) {
+    generateCallArguments(node);
+
+    TACOperand result = newTemporary(node->type);
+    emit(TAC_CALL, result, tacMethod(node->symbol->id, node->type), tacConstantInt(node->childCount));
     return result;
 }
 
@@ -283,32 +305,6 @@ static TACOperand generateShortCircuitCode(NodeAST *node) {
 
     emit(TAC_LABEL, endLabel, tacNone(), tacNone());
     return result;
-}
-
-static TACOperand generateCallExpressionCode(NodeAST *node) {
-    generateCallArguments(node);
-
-    TACOperand result = newTemporary(node->type);
-    emit(TAC_CALL, result, tacMethod(node->symbol->id, node->type), tacConstantInt(node->childCount));
-    return result;
-}
-
-static TACOperand generateConstantOperand(NodeAST *node) {
-    switch (node->symbol->type) {
-        case TYPE_INT:
-            return tacConstantInt(node->symbol->value.intValue);
-        case TYPE_BOOL:
-            return tacConstantBool(node->symbol->value.intValue);
-        default:
-            return tacNone();
-    }
-}
-
-static void generateCallArguments(NodeAST *node) {
-    for (int i = 0; i < node->childCount; i++) {
-        TACOperand argument = generateExpressionCode(node->children[i]);
-        emit(TAC_PARAM, tacNone(), argument, tacNone());
-    }
 }
 
 // OP_AND y OP_OR no se mapean aqui porque se traducen a saltos de corto circuito antes de esta funcion.
@@ -332,16 +328,10 @@ static TACOperation getTACOperation(OperationType operation) {
     }
 }
 
-static bool lastInstructionIsReturn(void) {
-    bool hasInstructions = (currentCode != NULL && currentCode->tail != NULL);
-    return hasInstructions && (currentCode->tail->operation == TAC_RETURN);
-}
-
-static void emit(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
-    if (appendInstruction(currentCode, operation, result, firstOperand, secondOperand) == NULL) {
-        fprintf(stderr,
-                "\033[1;31mError interno del TAC:\033[0m no se pudo reservar memoria para una instruccion.\n");
-        tacMemoryError = true;
+static void generateCallArguments(NodeAST *node) {
+    for (int i = 0; i < node->childCount; i++) {
+        TACOperand argument = generateExpressionCode(node->children[i]);
+        emit(TAC_PARAM, tacNone(), argument, tacNone());
     }
 }
 
@@ -355,4 +345,12 @@ static TACOperand newLabel(void) {
     char name[TAC_NAME_LENGTH];
     snprintf(name, sizeof(name), "L%d", labelCount++);
     return tacLabel(name);
+}
+
+static void emit(TACOperation operation, TACOperand result, TACOperand firstOperand, TACOperand secondOperand) {
+    if (appendInstruction(currentCode, operation, result, firstOperand, secondOperand) == NULL) {
+        fprintf(stderr,
+                "\033[1;31mError interno del TAC:\033[0m no se pudo reservar memoria para una instruccion.\n");
+        tacMemoryError = true;
+    }
 }
