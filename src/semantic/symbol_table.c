@@ -24,6 +24,17 @@ Symbol *newSymbol(char *id, SymbolType symbolType, DataType type, struct NodeAST
     return symbol;
 }
 
+void freeSymbol(Symbol *symbol) {
+    if (symbol == NULL) return;
+
+    bool hasId = (symbol->id != NULL);
+    if (hasId) {
+        free(symbol->id);
+    }
+
+    free(symbol);
+}
+
 Scope *createScope(int level, Scope *parent, Symbol *function) {
     Scope *scope = malloc(sizeof(Scope));
     if (scope == NULL) {
@@ -68,17 +79,6 @@ void freeScope(Scope *scope) {
     }
     free(scope->symbols);
     free(scope);
-}
-
-void freeSymbol(Symbol *symbol) {
-    if (symbol == NULL) return;
-
-    bool hasId = (symbol->id != NULL);
-    if (hasId) {
-        free(symbol->id);
-    }
-
-    free(symbol);
 }
 
 void appendSymbol(Scope *scope, Symbol *symbol) {

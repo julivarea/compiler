@@ -36,27 +36,6 @@ DataType analyzeExpression(NodeAST *node, Scope *scope) {
     }
 }
 
-static DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
-    Symbol *symbol = lookupSymbol(scope, node->symbol->id);
-
-    if (symbol == NULL) {
-        semanticError(node->line, "Variable no declarada: %s", node->symbol->id);
-        node->type = TYPE_ERROR;
-        return TYPE_ERROR;
-    }
-
-    if (symbol->symbolType != VARIABLE_SYMBOL) {
-        semanticError(node->line, "El identificador '%s' no es una variable.", node->symbol->id);
-        node->type = TYPE_ERROR;
-        return TYPE_ERROR;
-    }
-
-    node->symbol = symbol;
-    node->type = symbol->type;
-
-    return symbol->type;
-}
-
 DataType analyzeMethodCall(NodeAST *node, Scope *scope, bool isExpression) {
     Symbol *method = lookupSymbol(scope, node->symbol->id);
 
@@ -101,6 +80,33 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, bool isExpression) {
     node->type = method->type;
 
     return method->type;
+}
+
+bool isAssignable(DataType expected, DataType actual) {
+    if (expected == actual) return true;
+    if (expected == TYPE_FLOAT && actual == TYPE_INT) return true;
+    return false;
+}
+
+static DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
+    Symbol *symbol = lookupSymbol(scope, node->symbol->id);
+
+    if (symbol == NULL) {
+        semanticError(node->line, "Variable no declarada: %s", node->symbol->id);
+        node->type = TYPE_ERROR;
+        return TYPE_ERROR;
+    }
+
+    if (symbol->symbolType != VARIABLE_SYMBOL) {
+        semanticError(node->line, "El identificador '%s' no es una variable.", node->symbol->id);
+        node->type = TYPE_ERROR;
+        return TYPE_ERROR;
+    }
+
+    node->symbol = symbol;
+    node->type = symbol->type;
+
+    return symbol->type;
 }
 
 static DataType analyzeOperator(NodeAST *node, Scope *scope) {
@@ -181,12 +187,6 @@ static DataType resolveNumericOperation(DataType left, DataType right) {
         return TYPE_FLOAT;
     }
     return TYPE_INT;
-}
-
-bool isAssignable(DataType expected, DataType actual) {
-    if (expected == actual) return true;
-    if (expected == TYPE_FLOAT && actual == TYPE_INT) return true;
-    return false;
 }
 
 static bool isNumeric(DataType type) {

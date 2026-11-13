@@ -5,6 +5,21 @@
 #include "ast.h"
 #include "symbol_table.h"
 
+NodeArray *createNodeArray(int initialCapacity) {
+    NodeArray *array = malloc(sizeof(NodeArray));
+    if (array == NULL) return NULL;
+
+    int capacity = (initialCapacity > 0) ? initialCapacity : 4;
+    array->items = malloc(capacity * sizeof(NodeAST *));
+    if (array->items == NULL) {
+        free(array);
+        return NULL;
+    }
+    array->count = 0;
+    array->capacity = capacity;
+    return array;
+}
+
 NodeArray *appendNode(NodeArray *array, NodeAST *node) {
     if (node == NULL) return array;
 
@@ -114,19 +129,4 @@ NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers) {
     }
 
     return identifiers;
-}
-
-NodeArray *createNodeArray(int initialCapacity) {
-    NodeArray *array = malloc(sizeof(NodeArray));
-    if (array == NULL) return NULL;
-
-    int capacity = (initialCapacity > 0) ? initialCapacity : 4;
-    array->items = malloc(capacity * sizeof(NodeAST *));
-    if (array->items == NULL) {
-        free(array);
-        return NULL;
-    }
-    array->count = 0;
-    array->capacity = capacity;
-    return array;
 }
