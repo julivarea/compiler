@@ -123,12 +123,12 @@ Statements
 Statement
     : Assignment ';'                            { $$ = $1; }
     | MethodCall ';'                            { $$ = $1; }
-    | RETURN Expression ';'                     { $$ = newNode(RETURN_NODE, NULL, $2, NULL, NULL); }
-    | RETURN ';'                                { $$ = newNode(RETURN_NODE, NULL, NULL, NULL, NULL); }
+    | RETURN Expression ';'                     { $$ = newReturnNode($2); }
+    | RETURN ';'                                { $$ = newReturnNode(NULL); }
     | Block                                     { $$ = $1; }
-    | WHILE '(' Expression ')' Block            { $$ = newNode(WHILE_NODE, NULL, $3, NULL, $5); }
-    | IF '(' Expression ')' Block               { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, NULL); }
-    | IF '(' Expression ')' Block ELSE Block    { $$ = newNode(IF_ELSE_NODE, NULL, $3, $5, $7); }
+    | WHILE '(' Expression ')' Block            { $$ = newWhileNode($3, $5); }
+    | IF '(' Expression ')' Block               { $$ = newIfElseNode($3, $5, NULL); }
+    | IF '(' Expression ')' Block ELSE Block    { $$ = newIfElseNode($3, $5, $7); }
     | ';'                                       { $$ = NULL; }
     ;
 

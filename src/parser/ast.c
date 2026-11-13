@@ -86,6 +86,18 @@ NodeAST *newMethodCallNode(char *id) {
     return newSymbolNode(METHOD_CALL_NODE, METHOD_SYMBOL, TYPE_VOID, id, NULL, NULL, NULL);
 }
 
+NodeAST *newReturnNode(NodeAST *expression) {
+    return newNode(RETURN_NODE, NULL, expression, NULL, NULL);
+}
+
+NodeAST *newWhileNode(NodeAST *condition, NodeAST *body) {
+    return newNode(WHILE_NODE, NULL, condition, body, NULL);
+}
+
+NodeAST *newIfElseNode(NodeAST *condition, NodeAST *ifBlock, NodeAST *elseBlock) {
+    return newNode(IF_ELSE_NODE, NULL, condition, ifBlock, elseBlock);
+}
+
 NodeAST *newIntLiteralNode(int value) {
     NodeAST *node = newConstantNode(TYPE_INT);
     if (node != NULL) node->symbol->value.intValue = value;

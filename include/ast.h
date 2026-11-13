@@ -136,6 +136,33 @@ NodeAST *newAssignmentNode(char *id, NodeAST *expression);
 NodeAST *newMethodCallNode(char *id);
 
 /**
+ * @brief Crea un nodo AST de sentencia de retorno (RETURN_NODE).
+ *
+ * @param expression Subárbol de la expresión retornada (acepta NULL en métodos void).
+ * @return Puntero al nodo creado, o NULL si falló la reserva de memoria.
+ */
+NodeAST *newReturnNode(NodeAST *expression);
+
+/**
+ * @brief Crea un nodo AST de sentencia de iteración (WHILE_NODE).
+ *
+ * @param condition Subárbol de la condición booleana del ciclo.
+ * @param body Bloque de sentencias ejecutado en cada iteración.
+ * @return Puntero al nodo creado, o NULL si falló la reserva de memoria.
+ */
+NodeAST *newWhileNode(NodeAST *condition, NodeAST *body);
+
+/**
+ * @brief Crea un nodo AST de sentencia condicional (IF_ELSE_NODE).
+ *
+ * @param condition Subárbol de la condición booleana.
+ * @param ifBlock Bloque ejecutado cuando la condición es verdadera.
+ * @param elseBlock Bloque alternativo ejecutado cuando la condición es falsa (acepta NULL).
+ * @return Puntero al nodo creado, o NULL si falló la reserva de memoria.
+ */
+NodeAST *newIfElseNode(NodeAST *condition, NodeAST *ifBlock, NodeAST *elseBlock);
+
+/**
  * @brief Crea un nodo AST constante de tipo entero.
  *
  * @param value Valor numérico entero del literal.
