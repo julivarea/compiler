@@ -65,9 +65,7 @@ const TACList *generateIntermediateCode(NodeAST *root) {
     temporaryCount = 0;
     labelCount = 0;
 
-    for (int i = 0; i < root->childCount; i++) {
-        generateStatementCode(root->children[i]);
-    }
+    generateBlockCode(root);
 
     if (tacMemoryError) {
         freeTACList(currentCode);
