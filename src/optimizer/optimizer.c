@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "debug.h"
 #include "live_variable_analysis.h"
 #include "tac.h"
 
@@ -247,9 +246,7 @@ static int removeUnreachableCode(TACList *tacList) {
         }
     }
 
-    if (isOptimizerDebugEnabled && unreachableCount > 0) {
-        printTACWithDeletedInRed(tacList, unreachableList, unreachableCount, "Codigo Inalcanzable (tras ret / goto)");
-    }
+    printTACWithDeletedInRed(tacList, unreachableList, unreachableCount, "Codigo Inalcanzable (tras ret / goto)");
 
     changes += unlinkInstructionList(tacList, unreachableList, unreachableCount);
     return changes;
@@ -290,9 +287,7 @@ static int removeDeadStores(TACList *tacList) {
 
     freeLiveVariableAnalysis(analysis);
 
-    if (isOptimizerDebugEnabled && deadCount > 0) {
-        printTACWithDeletedInRed(tacList, deadInstructions, deadCount, "Variables y Asignaciones Muertas (Live Variables)");
-    }
+    printTACWithDeletedInRed(tacList, deadInstructions, deadCount, "Variables y Asignaciones Muertas (Live Variables)");
 
     return unlinkInstructionList(tacList, deadInstructions, deadCount);
 }
@@ -316,9 +311,7 @@ static int removeSelfAssignments(TACList *tacList) {
         }
     }
 
-    if (isOptimizerDebugEnabled && selfCount > 0) {
-        printTACWithDeletedInRed(tacList, selfList, selfCount, "Autoasignaciones Redundantes (x = x)");
-    }
+    printTACWithDeletedInRed(tacList, selfList, selfCount, "Autoasignaciones Redundantes (x = x)");
 
     return unlinkInstructionList(tacList, selfList, selfCount);
 }
@@ -346,9 +339,7 @@ static int removeRedundantJumps(TACList *tacList) {
         }
     }
 
-    if (isOptimizerDebugEnabled && jumpCount > 0) {
-        printTACWithDeletedInRed(tacList, jumpList, jumpCount, "Saltos Redundantes a la Siguiente Etiqueta");
-    }
+    printTACWithDeletedInRed(tacList, jumpList, jumpCount, "Saltos Redundantes a la Siguiente Etiqueta");
 
     return unlinkInstructionList(tacList, jumpList, jumpCount);
 }
@@ -468,9 +459,7 @@ static int removeUnreferencedLabels(TACList *tacList) {
         }
     }
 
-    if (isOptimizerDebugEnabled && deadLabelCount > 0) {
-        printTACWithDeletedInRed(tacList, deadLabelList, deadLabelCount, "Etiquetas sin Referencias");
-    }
+    printTACWithDeletedInRed(tacList, deadLabelList, deadLabelCount, "Etiquetas sin Referencias");
 
     return unlinkInstructionList(tacList, deadLabelList, deadLabelCount);
 }
@@ -539,12 +528,12 @@ static void printTACWithDeletedInRed(const TACList *tacList,
                                     TACInstruction **deletedList,
                                     size_t deletedCount,
                                     const char *reason) {
-    if (!isOptimizerDebugEnabled || tacList == NULL || deletedCount == 0) {
+    if (!isOptimizerDebugEnabled || deletedCount == 0) {
         return;
     }
 
-    debugPrintf(isOptimizerDebugEnabled, "\n[OPT] === Codigo Intermedio TAC: %s (%zu eliminada%s) ===\n",
-                reason, deletedCount, deletedCount > 1 ? "s" : "");
+    printf("\n[OPT] === Codigo Intermedio TAC: %s (%zu eliminada%s) ===\n",
+           reason, deletedCount, deletedCount > 1 ? "s" : "");
 
     for (const TACInstruction *current = tacList->head; current != NULL; current = current->next) {
         bool isDeleted = false;
