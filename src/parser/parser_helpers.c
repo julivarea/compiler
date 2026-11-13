@@ -115,45 +115,18 @@ NodeAST *newParameterDeclaration(DataType type, char *id) {
 }
 
 NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers) {
-    NodeArray *declarations = createNodeArray(identifiers->count);
-    if (declarations == NULL) {
-        for (int i = 0; i < identifiers->count; i++) {
-            NodeAST *idNode = identifiers->items[i];
-            if (idNode != NULL) {
-                freeSymbol(idNode->symbol);
-                free(idNode);
-            }
-        }
-        free(identifiers->items);
-        free(identifiers);
+    if (identifiers == NULL) {
         return NULL;
     }
 
     for (int i = 0; i < identifiers->count; i++) {
-        NodeAST *idNode = identifiers->items[i];
-        if (idNode == NULL) {
-            continue;
+        NodeAST *node = identifiers->items[i];
+        if (node != NULL && node->symbol != NULL) {
+            node->nodeType = VARIABLE_DECLARATION_NODE;
+            node->type = type;
+            node->symbol->type = type;
         }
-
-        Symbol *varSymbol = idNode->symbol;
-        if (varSymbol == NULL) {
-            free(idNode);
-            continue;
-        }
-        varSymbol->type = type;
-
-        NodeAST *individualDecl = newNode(VARIABLE_DECLARATION_NODE, varSymbol, NULL, NULL, NULL);
-        if (individualDecl != NULL) {
-            individualDecl->type = type;
-            appendNode(declarations, individualDecl);
-        } else {
-            freeSymbol(varSymbol);
-        }
-
-        free(idNode);
     }
 
-    free(identifiers->items);
-    free(identifiers);
-    return declarations;
+    return identifiers;
 }

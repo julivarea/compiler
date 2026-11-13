@@ -1,8 +1,6 @@
 bison.tab.c
 bison.tab.h
 lex.yy.c
-parser
-test_runner
 build/
 .venv/
 site/

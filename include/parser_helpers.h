@@ -61,10 +61,10 @@ NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second);
 NodeAST *newParameterDeclaration(DataType type, char *id);
 
 /**
- * @brief Descompone una lista temporal de identificadores en nodos de declaración de variable y la libera.
+ * @brief Convierte in-place una lista de identificadores en nodos de declaración de variable con el tipo dado.
  *
- * @param identifiers Arreglo de nodos ID_NODE temporales a transformar y liberar (acepta NULL).
- * @return Nuevo arreglo con un VARIABLE_DECLARATION_NODE por cada identificador.
+ * @param identifiers Arreglo de nodos ID_NODE a transformar en VARIABLE_DECLARATION_NODE (acepta NULL).
+ * @return El mismo arreglo @p identifiers con sus nodos y símbolos tipados.
  */
 NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers);
 
