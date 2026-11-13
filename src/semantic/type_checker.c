@@ -1,8 +1,7 @@
 #include "type_checker.h"
 
 #include <stdbool.h>
-#include <stdio.h>
-#include <string.h>
+#include <stddef.h>
 
 #include "error_handler.h"
 

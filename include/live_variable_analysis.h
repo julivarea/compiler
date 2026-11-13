@@ -70,16 +70,6 @@ void freeLiveVariableAnalysis(LiveVariableAnalysis *analysis);
 BasicBlock *findInstructionBlock(const LiveVariableAnalysis *analysis, const TACInstruction *instruction);
 
 /**
- * @brief Indica si una variable o temporal está viva a la entrada del bloque básico (LIVE_IN).
- */
-bool isVariableLiveIn(const LiveVariableAnalysis *analysis, const BasicBlock *block, const char *variableName);
-
-/**
- * @brief Indica si una variable o temporal está viva a la salida del bloque básico (LIVE_OUT).
- */
-bool isVariableLiveOut(const LiveVariableAnalysis *analysis, const BasicBlock *block, const char *variableName);
-
-/**
  * @brief Determina si la definición en una instrucción es código muerto dentro de su bloque básico.
  *
  * Versión optimizada O(1) de isDeadDefinition para recorridos donde el bloque básico

@@ -1,9 +1,7 @@
 #include "semantic_analyzer.h"
 
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stddef.h>
 
 #include "error_handler.h"
 #include "type_checker.h"
@@ -120,8 +118,7 @@ static void analyzeMethodNode(NodeAST *node, Scope *currentScope) {
     bool requiresReturn = (node->type != TYPE_VOID);
     bool hasGuaranteedReturn = guaranteesReturn(body);
     if (requiresReturn && !hasGuaranteedReturn) {
-        const char *methodName = node->symbol->id ? node->symbol->id : "anonimo";
-        semanticError(node->line, "El metodo '%s' no es void: todos sus caminos de ejecucion deben terminar en un return.", methodName);
+        semanticError(node->line, "El metodo '%s' no es void: todos sus caminos de ejecucion deben terminar en un return.", node->symbol->id);
     }
 
     appendChildScope(currentScope, methodScope);
@@ -156,18 +153,12 @@ static void analyzeAssignmentNode(NodeAST *node, Scope *currentScope) {
     node->symbol = resolvedSymbol;
 
     NodeAST *expression = GET_EXPRESSION(node);
-    bool hasExpression = (expression != NULL);
-
-    if (hasExpression) {
-        DataType expressionType = analyzeExpression(expression, currentScope);
-        bool isExpressionValid = (expressionType != TYPE_ERROR);
-        if (isExpressionValid) {
-            bool areTypesCompatible = isAssignable(resolvedSymbol->type, expressionType);
-            if (!areTypesCompatible) {
-                semanticError(node->line, "El tipo de la expresion no coincide con la variable '%s'.", node->symbol->id);
-            } else {
-                node->type = resolvedSymbol->type;
-            }
+    DataType expressionType = analyzeExpression(expression, currentScope);
+    if (expressionType != TYPE_ERROR) {
+        if (!isAssignable(resolvedSymbol->type, expressionType)) {
+            semanticError(node->line, "El tipo de la expresion no coincide con la variable '%s'.", node->symbol->id);
+        } else {
+            node->type = resolvedSymbol->type;
         }
     }
 }
@@ -181,7 +172,7 @@ static void analyzeReturnNode(NodeAST *node, Scope *currentScope) {
 
     Symbol *function = currentScope->function;
     DataType expectedType = function->type;
-    const char *functionName = function->id ? function->id : "anonima";
+    const char *functionName = function->id;
 
     NodeAST *expression = GET_EXPRESSION(node);
     bool hasReturnValue = (expression != NULL);

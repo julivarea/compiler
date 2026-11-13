@@ -216,20 +216,6 @@ BasicBlock *findInstructionBlock(const LiveVariableAnalysis *analysis, const TAC
     return NULL;
 }
 
-bool isVariableLiveIn(const LiveVariableAnalysis *analysis, const BasicBlock *block, const char *variableName) {
-    if (analysis == NULL || block == NULL || variableName == NULL) return false;
-
-    int variableIndex = getVariableIndex(analysis, variableName);
-    return variableIndex >= 0 && isVariableInSet(block->liveIn, variableIndex);
-}
-
-bool isVariableLiveOut(const LiveVariableAnalysis *analysis, const BasicBlock *block, const char *variableName) {
-    if (analysis == NULL || block == NULL || variableName == NULL) return false;
-
-    int variableIndex = getVariableIndex(analysis, variableName);
-    return variableIndex >= 0 && isVariableInSet(block->liveOut, variableIndex);
-}
-
 bool isDeadDefinitionInBlock(const LiveVariableAnalysis *analysis, const BasicBlock *block, const TACInstruction *instruction) {
     if (analysis == NULL || block == NULL || instruction == NULL) return false;
 

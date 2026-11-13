@@ -1,11 +1,6 @@
-#include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include "bison.tab.h"
 #include "ast.h"
 #include "cli.h"
-#include "debug.h"
-#include "error_handler.h"
 #include "driver.h"
 
 NodeAST *astRoot = NULL;

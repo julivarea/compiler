@@ -32,21 +32,7 @@ void semanticError(int line, const char *format, ...);
 void compileAborted(const char *stage, int errorCount);
 
 /**
- * @brief Devuelve la línea del último error informado.
- *
- * @return Número de línea, o 0 si no hubo ningún error.
- */
-int getLastErrorLine(void);
-
-/**
- * @brief Devuelve el mensaje del último error informado, sin prefijos de etapa ni línea.
- *
- * @return Texto del mensaje, o cadena vacía si no hubo ningún error.
- */
-const char *getLastErrorMessage(void);
-
-/**
- * @brief Reinicia los contadores de errores y olvida el último error registrado.
+ * @brief Reinicia los contadores de errores.
  */
 void resetErrorHandler(void);
 
