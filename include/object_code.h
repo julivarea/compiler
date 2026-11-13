@@ -12,7 +12,7 @@
 
 #include "function_frame.h"
 #include "optimizer.h"
-#include "tac_list.h"
+#include "tac.h"
 #include "types.h"
 
 /* ================================================================== */

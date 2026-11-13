@@ -8,7 +8,7 @@
 
 #include <stdbool.h>
 
-#include "tac_operand.h"
+#include "tac.h"
 #include "types.h"
 
 /**

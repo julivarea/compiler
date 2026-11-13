@@ -1,8 +1,6 @@
 # La Representación Intermedia (Cuádruplas TAC)
 
-**Ficha F12** · Archivos: `include/tac_operation.h`, `include/tac_operand.h`,
-`src/tac_operand.c`, `include/tac_instruction.h`, `src/tac_instruction.c`,
-`include/tac_list.h`, `src/tac_list.c` (680 líneas)
+**Ficha F12** · Archivos: `include/tac.h`, `src/intermediate_code/tac.c` (~550 líneas)
 
 La estructura de datos del **Código de Tres Direcciones**: el puente entre el
 front-end y el back-end.

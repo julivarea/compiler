@@ -11,9 +11,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "tac_list.h"
-#include "tac_instruction.h"
-#include "tac_operand.h"
+#include "tac.h"
 
 #define MAX_LIVENESS_VARIABLES 64
 

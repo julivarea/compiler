@@ -7,8 +7,7 @@
 
 #include "debug.h"
 #include "live_variable_analysis.h"
-#include "tac_instruction.h"
-#include "tac_operand.h"
+#include "tac.h"
 
 #define MAX_KNOWN_CONSTANTS 256
 #define MAX_OPTIMIZATION_ROUNDS 16

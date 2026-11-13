@@ -136,7 +136,7 @@ implementaciones en subdirectorios de `src/`:
 | --- | --- | --- |
 | Léxico, sintáctico y AST | `src/parser/` | `lexer.l`, `bison.y`, `parser_helpers`, `ast` (`types.h` en `include/`) |
 | Semántico | `src/semantic/` | `symbol_table`, `type_checker`, `semantic_analyzer` |
-| Código intermedio | `src/intermediate_code/` | `tac_operation`, `tac_operand`, `tac_instruction`, `tac_list`, `intermediate_code` |
+| Código intermedio | `src/intermediate_code/` | `tac`, `intermediate_code` |
 | Optimización | `src/optimizer/` | `optimizer`, `live_variable_analysis` |
 | Código objeto | `src/object_code/` | `function_frame`, `object_code` |
 | Infraestructura | `src/core/` y `src/main.c` | `cli`, `driver`, `main`, `error_handler`, `string_builder`, `debug` |

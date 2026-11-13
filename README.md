@@ -70,10 +70,7 @@ sitio que como archivos sueltos: ver [Documentación](#documentación).
 │   ├── symbol_table.h                               # gestión de scopes y símbolos
 │   ├── type_checker.h                               # inferencia y chequeo de tipos
 │   ├── semantic_analyzer.h                          # análisis semántico
-│   ├── tac_operation.h                              # enumerado de opcodes TAC
-│   ├── tac_operand.h                                # representación y constructores de operandos TAC
-│   ├── tac_instruction.h                            # cuádruplas e instrucciones TAC
-│   ├── tac_list.h                                   # lista enlazada de instrucciones TAC
+│   ├── tac.h                                        # representación intermedia TAC (operaciones, operandos, cuádruplas y lista)
 │   ├── intermediate_code.h                          # generación de código intermedio
 │   ├── optimizer.h                                  # flags y pasadas de optimización sobre el TAC
 │   ├── live_variable_analysis.h                     # CFG y análisis de variables vivas
@@ -98,9 +95,7 @@ sitio que como archivos sueltos: ver [Documentación](#documentación).
 │   │   ├── type_checker.c
 │   │   └── semantic_analyzer.c
 │   ├── intermediate_code/                           # código intermedio de tres direcciones (TAC)
-│   │   ├── tac_operand.c
-│   │   ├── tac_instruction.c
-│   │   ├── tac_list.c
+│   │   ├── tac.c
 │   │   └── intermediate_code.c
 │   ├── optimizer/                                   # optimizaciones sobre TAC y variables vivas
 │   │   ├── live_variable_analysis.c
@@ -155,9 +150,7 @@ El script `build.sh` ejecuta las siguientes operaciones en orden:
    - `src/semantic/semantic_analyzer.c` (Recorrido y validaciones semánticas)
    - `src/core/error_handler.c` (Formateo y reporte de errores)
    - `src/core/string_builder.c` (Buffer dinámico para la salida de cada etapa)
-   - `src/intermediate_code/tac_operand.c` (Estructura y constructores de operandos TAC)
-   - `src/intermediate_code/tac_instruction.c` (Estructura de instrucciones TAC)
-   - `src/intermediate_code/tac_list.c` (Lista enlazada de cuádruplas TAC)
+   - `src/intermediate_code/tac.c` (Estructura, operandos, cuádruplas y lista enlazada TAC)
    - `src/intermediate_code/intermediate_code.c` (Recorrido del AST que construye el TAC)
    - `src/optimizer/optimizer.c` (Pasadas de optimización sobre el TAC)
    - `src/optimizer/live_variable_analysis.c` (CFG y análisis de variables vivas)

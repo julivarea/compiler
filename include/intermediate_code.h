@@ -9,7 +9,7 @@
 #include <stdbool.h>
 
 #include "ast.h"
-#include "tac_list.h"
+#include "tac.h"
 
 /**
  * @brief Genera el código intermedio de tres direcciones para el programa completo.
