@@ -52,6 +52,7 @@ static int unlinkInstructionList(TACList *tacList, TACInstruction **instructions
 static bool endsControlFlow(TACOperation operation);
 static bool isStructural(TACOperation operation);
 static int removeUnreferencedLabels(TACList *tacList);
+static bool isLabelReferenced(const TACList *tacList, const char *labelName);
 static bool isDeadStoreCandidate(const TACList *tacList, const TACInstruction *instruction);
 static bool isGlobalVariable(const TACList *tacList, const char *variableName);
 static void printSingleInstruction(FILE *output, const TACInstruction *instruction);
@@ -452,18 +453,7 @@ static bool evaluateBinary(TACOperation operation, const TACOperand *firstOperan
             return true;
         }
 
-        case TAC_DIV: {
-            int leftValue = asInt(firstOperand);
-            int rightValue = asInt(secondOperand);
-            bool isZeroDivisor = (rightValue == 0);
-            bool isSignedOverflow = (leftValue == INT_MIN && rightValue == -1);
-            if (isZeroDivisor || isSignedOverflow) {
-                return false;
-            }
-            *folded = tacConstantInt(leftValue / rightValue);
-            return true;
-        }
-
+        case TAC_DIV:
         case TAC_MOD: {
             int leftValue = asInt(firstOperand);
             int rightValue = asInt(secondOperand);
@@ -472,7 +462,9 @@ static bool evaluateBinary(TACOperation operation, const TACOperand *firstOperan
             if (isZeroDivisor || isSignedOverflow) {
                 return false;
             }
-            *folded = tacConstantInt(leftValue % rightValue);
+            int resultValue = (operation == TAC_DIV) ? leftValue / rightValue
+                                                     : leftValue % rightValue;
+            *folded = tacConstantInt(resultValue);
             return true;
         }
 
@@ -571,92 +563,38 @@ static bool isStructural(TACOperation operation) {
     }
 }
 
-typedef struct {
-    const char **names;
-    size_t count;
-    size_t capacity;
-} LabelReferenceSet;
-
-static bool isLabelInSet(const LabelReferenceSet *set, const char *name) {
-    if (set == NULL || name == NULL) {
-        return false;
-    }
-
-    for (size_t i = 0; i < set->count; i++) {
-        if (strcmp(set->names[i], name) == 0) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-static bool addReferencedLabel(LabelReferenceSet *set, const char *name) {
-    if (set == NULL || name == NULL) {
-        return false;
-    }
-
-    if (isLabelInSet(set, name)) {
-        return true;
-    }
-
-    if (set->count >= set->capacity) {
-        size_t newCapacity = (set->capacity == 0) ? 64 : set->capacity * 2;
-        const char **reallocatedNames = (const char **)realloc(set->names, sizeof(const char *) * newCapacity);
-        if (reallocatedNames == NULL) {
-            return false;
-        }
-        set->names = reallocatedNames;
-        set->capacity = newCapacity;
-    }
-
-    set->names[set->count++] = name;
-    return true;
-}
-
 static int removeUnreferencedLabels(TACList *tacList) {
-    LabelReferenceSet referencedSet = { .names = NULL, .count = 0, .capacity = 0 };
-
-    for (const TACInstruction *instruction = tacList->head; instruction != NULL; instruction = instruction->next) {
-        const TACOperand *target = NULL;
-
-        if (instruction->operation == TAC_GOTO) {
-            target = &instruction->firstOperand;
-        } else if (instruction->operation == TAC_IF_FALSE || instruction->operation == TAC_IF_TRUE) {
-            target = &instruction->secondOperand;
-        }
-
-        if (target != NULL) {
-            bool wasAdded = addReferencedLabel(&referencedSet, target->name);
-            if (!wasAdded) {
-                free(referencedSet.names);
-                return 0;
-            }
-        }
-    }
-
     TACInstruction **deadLabelList = malloc(sizeof(TACInstruction *) * (size_t)tacList->count);
     if (deadLabelList == NULL) {
-        free(referencedSet.names);
         return 0;
     }
     size_t deadLabelCount = 0;
 
     for (TACInstruction *current = tacList->head; current != NULL; current = current->next) {
         bool isLabel = (current->operation == TAC_LABEL);
-        bool isReferenced = (isLabel && isLabelInSet(&referencedSet, current->result.name));
-        if (isLabel && !isReferenced) {
+        if (isLabel && !isLabelReferenced(tacList, current->result.name)) {
             deadLabelList[deadLabelCount++] = current;
         }
     }
-
-    free(referencedSet.names);
 
     if (isOptimizerDebugEnabled && deadLabelCount > 0) {
         printTACWithDeletedInRed(tacList, deadLabelList, deadLabelCount, "Etiquetas sin Referencias");
     }
 
     return unlinkInstructionList(tacList, deadLabelList, deadLabelCount);
+}
+
+static bool isLabelReferenced(const TACList *tacList, const char *labelName) {
+    for (const TACInstruction *instruction = tacList->head; instruction != NULL; instruction = instruction->next) {
+        if (instruction->operation == TAC_GOTO && strcmp(instruction->firstOperand.name, labelName) == 0) {
+            return true;
+        }
+        if ((instruction->operation == TAC_IF_FALSE || instruction->operation == TAC_IF_TRUE) &&
+            strcmp(instruction->secondOperand.name, labelName) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static bool isGlobalVariable(const TACList *tacList, const char *variableName) {
