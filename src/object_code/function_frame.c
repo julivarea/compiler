@@ -44,15 +44,8 @@ FunctionFrame *createFrame(const char *functionName) {
 void freeFrame(FunctionFrame *frame) {
     if (frame == NULL) return;
 
-    bool hasSlots = (frame->slots != NULL);
-    if (hasSlots) {
-        free(frame->slots);
-        frame->slots = NULL;
-    }
-    if (frame->pendingParamSlots != NULL) {
-        free(frame->pendingParamSlots);
-        frame->pendingParamSlots = NULL;
-    }
+    free(frame->slots);
+    free(frame->pendingParamSlots);
     free(frame);
 }
 
@@ -62,11 +55,9 @@ int addSlot(FunctionFrame *frame, const TACOperand *operand) {
         return 0;
     }
 
-    for (int i = 0; i < frame->slotCount; i++) {
-        bool matchesExistingSlot = (strcmp(frame->slots[i].name, operand->name) == 0);
-        if (matchesExistingSlot) {
-            return frame->slots[i].offset;
-        }
+    int existingOffset = 0;
+    if (getSlotOffset(frame, operand->name, &existingOffset)) {
+        return existingOffset;
     }
 
     bool needsExpansion = (frame->slotCount >= frame->slotCapacity);
