@@ -269,23 +269,20 @@ static bool guaranteesReturn(NodeAST *node) {
 static void checkMainMethodExists(Scope *globalScope) {
     Symbol *mainSymbol = lookupSymbolInScope(globalScope, "main");
 
-    bool hasMainMethod = (mainSymbol != NULL);
-    if (!hasMainMethod) {
+    if (mainSymbol == NULL) {
         semanticError(0, "El programa no contiene la definicion del metodo 'main'.");
         return;
     }
 
-    bool isMethod = (mainSymbol->symbolType == METHOD_SYMBOL);
-    if (!isMethod) {
+    if (mainSymbol->symbolType == METHOD_SYMBOL) {
         semanticError(0, "'main' debe ser un metodo, no una variable.");
         return;
     }
 
     NodeAST *parameters = mainSymbol->parameters;
     int parameterCount = (parameters != NULL) ? parameters->childCount : 0;
-    bool hasParameters = (parameterCount != 0);
 
-    if (hasParameters) {
+    if (parameterCount != 0) {
         semanticError(0, "El metodo 'main' no debe tener parametros.");
     }
 }

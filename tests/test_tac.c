@@ -520,11 +520,11 @@ void test_tac_global_variable_declarations(void) {
     const TACInstruction *g1 = findInstruction(list, TAC_GLOBAL_DECL, 0);
     const TACInstruction *g2 = findInstruction(list, TAC_GLOBAL_DECL, 1);
 
-    TEST_ASSERT_EQUAL_STRING("g@1", g1->firstOperand.name);
-    TEST_ASSERT_EQUAL(TYPE_INT, g1->firstOperand.type);
+    TEST_ASSERT_EQUAL_STRING("g@1", g1->result.name);
+    TEST_ASSERT_EQUAL(TYPE_INT, g1->result.type);
 
-    TEST_ASSERT_EQUAL_STRING("b@2", g2->firstOperand.name);
-    TEST_ASSERT_EQUAL(TYPE_BOOL, g2->firstOperand.type);
+    TEST_ASSERT_EQUAL_STRING("b@2", g2->result.name);
+    TEST_ASSERT_EQUAL(TYPE_BOOL, g2->result.type);
 }
 
 // Variables locales dentro del cuerpo de un método emiten instrucciones TAC_LOCAL_DECL
@@ -538,8 +538,8 @@ void test_tac_local_variable_declarations(void) {
     const TACInstruction *l1 = findInstruction(list, TAC_LOCAL_DECL, 0);
     const TACInstruction *l2 = findInstruction(list, TAC_LOCAL_DECL, 1);
 
-    TEST_ASSERT_EQUAL(TYPE_INT, l1->firstOperand.type);
-    TEST_ASSERT_EQUAL(TYPE_BOOL, l2->firstOperand.type);
+    TEST_ASSERT_EQUAL(TYPE_INT, l1->result.type);
+    TEST_ASSERT_EQUAL(TYPE_BOOL, l2->result.type);
 }
 
 // Sombreado de variable local sobre global genera uids calificados distintos (@1 vs @3)
@@ -562,8 +562,8 @@ void test_tac_variable_shadowing_distinguishes_uids(void) {
     TEST_ASSERT_NOT_NULL(assignInst);
 
     // Global x@1 vs Local x@3
-    TEST_ASSERT_EQUAL_STRING("x@1", globalDecl->firstOperand.name);
-    TEST_ASSERT_EQUAL_STRING("x@3", localDecl->firstOperand.name);
+    TEST_ASSERT_EQUAL_STRING("x@1", globalDecl->result.name);
+    TEST_ASSERT_EQUAL_STRING("x@3", localDecl->result.name);
 
     // La asignación interna debe modificar al local x@3
     TEST_ASSERT_EQUAL_STRING("x@3", assignInst->result.name);
@@ -633,8 +633,8 @@ void test_tac_method_parameters(void) {
     const TACInstruction *p1 = findInstruction(list, TAC_PARAM_DECL, 0);
     const TACInstruction *p2 = findInstruction(list, TAC_PARAM_DECL, 1);
 
-    TEST_ASSERT_EQUAL_STRING("a@2", p1->firstOperand.name);
-    TEST_ASSERT_EQUAL_STRING("b@3", p2->firstOperand.name);
+    TEST_ASSERT_EQUAL_STRING("a@2", p1->result.name);
+    TEST_ASSERT_EQUAL_STRING("b@3", p2->result.name);
 }
 
 // Sentencia de llamada a método void emite paso de argumentos param y call sin temporal de destino
@@ -664,14 +664,14 @@ void test_tac_method_call_expression_with_return_value(void) {
     const TACInstruction *callInst = findInstruction(list, TAC_CALL, 0);
     TEST_ASSERT_NOT_NULL(callInst);
     TEST_ASSERT_EQUAL(OPERAND_TEMP, callInst->result.kind);
-    TEST_ASSERT_EQUAL_STRING("t1", callInst->result.name);
+    TEST_ASSERT_EQUAL_STRING("t0", callInst->result.name);
     TEST_ASSERT_EQUAL_STRING("f", callInst->firstOperand.name);
 
-    // Asignación de x@4 = t1
+    // Asignación de x@4 = t0
     const TACInstruction *assignInst = findInstruction(list, TAC_ASSIGN, 0);
     TEST_ASSERT_NOT_NULL(assignInst);
     TEST_ASSERT_EQUAL_STRING("x@4", assignInst->result.name);
-    TEST_ASSERT_EQUAL_STRING("t1", assignInst->firstOperand.name);
+    TEST_ASSERT_EQUAL_STRING("t0", assignInst->firstOperand.name);
 }
 
 // Múltiples argumentos en una llamada a método se emiten en orden de izquierda a derecha
@@ -710,7 +710,7 @@ void test_tac_canonical_factorial_program(void) {
     const char *expected =
         "global g@1, INT\n"
         "begin_func fact, 1\n"
-        "param_decl n@3\n"
+        "param_decl n@3, INT\n"
         "t0 = n@3 < 2\n"
         "if t0 false goto L0\n"
         "ret 1\n"
@@ -727,15 +727,15 @@ void test_tac_canonical_factorial_program(void) {
         "local i@5, INT\n"
         "i@5 = 0\n"
         "L2:\n"
-        "t4 = i@5 < 3\n"
-        "if t4 false goto L3\n"
-        "t5 = i@5 + 1\n"
-        "i@5 = t5\n"
+        "t0 = i@5 < 3\n"
+        "if t0 false goto L3\n"
+        "t1 = i@5 + 1\n"
+        "i@5 = t1\n"
         "goto L2\n"
         "L3:\n"
         "param i@5\n"
-        "t6 = call fact, 1\n"
-        "g@1 = t6\n"
+        "t2 = call fact, 1\n"
+        "g@1 = t2\n"
         "ret\n"
         "end_func main\n";
 
@@ -755,16 +755,16 @@ void test_tac_canonical_half_and_mixed_operators(void) {
 
     const char *expected =
         "begin_func half, 1\n"
-        "param_decl x@2\n"
+        "param_decl x@2, INT\n"
         "t0 = x@2 / 2\n"
         "ret t0\n"
         "end_func half\n"
         "begin_func main, 0\n"
         "local r@4, INT\n"
         "param 7\n"
-        "t1 = call half, 1\n"
-        "t2 = t1 + 1\n"
-        "r@4 = t2\n"
+        "t0 = call half, 1\n"
+        "t1 = t0 + 1\n"
+        "r@4 = t1\n"
         "ret\n"
         "end_func main\n";
 
@@ -848,7 +848,7 @@ void test_tac_long_variable_name_collision(void) {
 
     TEST_ASSERT_NOT_NULL(firstLocal);
     TEST_ASSERT_NOT_NULL(secondLocal);
-    TEST_ASSERT_NOT_EQUAL_STRING(firstLocal->firstOperand.name, secondLocal->firstOperand.name);
+    TEST_ASSERT_NOT_EQUAL_STRING(firstLocal->result.name, secondLocal->result.name);
 }
 
 // Invocación de generación de código intermedio con raíz AST nula retorna NULL con seguridad

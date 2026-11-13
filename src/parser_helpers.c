@@ -115,8 +115,6 @@ NodeAST *newParameterDeclaration(DataType type, char *id) {
 }
 
 NodeArray *resolveVariableDefinition(DataType type, NodeArray *identifiers) {
-    if (identifiers == NULL) return NULL;
-
     NodeArray *declarations = createNodeArray(identifiers->count);
     if (declarations == NULL) {
         for (int i = 0; i < identifiers->count; i++) {

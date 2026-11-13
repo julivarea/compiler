@@ -124,7 +124,6 @@ void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
         instruction = instruction->next;
     }
 
-    // Seccion note.GNU-stack para evitar stack ejecutable
     buildStringf("\n.section .note.GNU-stack,\"\",@progbits\n");
 
     resetGlobalVariables();
@@ -151,7 +150,7 @@ static void allocateLocalSlots(FunctionFrame *frame, const TACInstruction *funct
         switch (current->operation) {
             case TAC_PARAM_DECL:
             case TAC_LOCAL_DECL:
-                addSlot(frame, &current->firstOperand);
+                addSlot(frame, &current->result);
                 break;
 
             case TAC_ASSIGN:
@@ -344,7 +343,7 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
 
 static void emitParamDeclaration(const TACInstruction *instruction, FunctionFrame *frame) {
     int offset = 0;
-    bool hasOffset = getSlotOffset(frame, instruction->firstOperand.name, &offset);
+    bool hasOffset = getSlotOffset(frame, instruction->result.name, &offset);
 
     if (hasOffset) {
         bool fitsInGeneralRegister = (frame->integerParamCount < MAX_ARG_REGISTERS);
@@ -718,7 +717,13 @@ static void resetGlobalVariables(void) {
 }
 
 static bool isDeclaredGlobal(const TACOperand *operand) {
-    if (operand == NULL || operand->name[0] == '\0' || globalVariableNames == NULL) {
+    if (operand == NULL) {
+        return false;
+    }
+    if (operand->symbol != NULL) {
+        return operand->symbol->isGlobal;
+    }
+    if (operand->name[0] == '\0' || globalVariableNames == NULL) {
         return false;
     }
     for (int i = 0; i < globalVariableCount; i++) {
@@ -766,9 +771,9 @@ static void emitGlobals(const TACList *tacList) {
                 buildStringf(".data\n");
                 hasGlobals = true;
             }
-            registerGlobalVariable(&instruction->firstOperand);
+            registerGlobalVariable(&instruction->result);
 
-            const char *name = getGlobalName(&instruction->firstOperand);
+            const char *name = getGlobalName(&instruction->result);
             buildStringf(".globl %s\n", name);
             buildStringf(".align 4\n");
             buildStringf("%s:\n", name);

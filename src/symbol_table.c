@@ -37,8 +37,7 @@ void freeSymbol(Symbol *symbol) {
 
 Scope *createScope(int level, Scope *parent, Symbol *function) {
     Scope *scope = malloc(sizeof(Scope));
-    bool allocationFailed = (scope == NULL);
-    if (allocationFailed) {
+    if (scope == NULL) {
         return NULL;
     }
 

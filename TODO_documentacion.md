@@ -183,8 +183,10 @@ Las secciones que venían después se renumeraron (F15: 9→10, 10→11, 11→12
 - **`forgetConstant` borra pisando con el último elemento**, no desplazando. Es
   correcto porque la tabla es un conjunto y nadie depende de su orden, y
   convierte un borrado O(n) en O(1).
-- **`isGlobalVariable` corta en el primer `begin_func`**, lo que codifica el
-  orden de emisión del generador de TAC (globales antes que funciones).
+- **`isGlobalVariable` y resolución de globales:** el optimizador y el
+  generador de código objeto resuelven variables globales directamente en O(1)
+  vía `symbol->isGlobal` en el operando, y el fallback de escaneo en el TAC ya no
+  asume un orden posicional cortando en `begin_func`.
 - Quedó documentado el límite ya conocido: las guardas de desborde están en
   `/` y `%` pero **no** en `+`, `-` y `*`.
 

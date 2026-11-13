@@ -376,10 +376,9 @@ Queda abierto, en orden de urgencia: el **desborde con signo en `+`, `-` y `*` d
     `analyzeSemantics()` en `src/bison.y`.
 
 ### 3.6
-- [ ] **Los contadores de temporales son globales a todo el programa**
-  - **Problema:** `resetTempAndLabelCounters()` se invoca una sola vez en `generateIntermediateCode()`, así que la numeración `t0..tN` y `L0..LN` es continua a lo largo de todos los métodos.
-  - **Impacto:** No es incorrecto, pero para dimensionar el stack frame de cada función hay que saber cuántos temporales usa *esa* función, lo que obliga a recorrer su rango de instrucciones.
-  - **Acción:** Decidir si los temporales se reinician por método (lo que simplifica el cálculo del frame) o si se lleva la cuenta por función de otra forma. Las etiquetas conviene que sigan siendo únicas globalmente, para no colisionar entre funciones.
+- [x] **Los contadores de temporales son locales por método (reseteados por función)**
+  - **Problema previo:** `temporaryCount` se reiniciaba solo al inicio de todo el archivo en `generateIntermediateCode()`, por lo que la numeración `t0..tN` era continua a través de diferentes métodos.
+  - **Solución:** Se resetea `temporaryCount = 0` al inicio de `generateMethodDeclarationCode()`, manteniendo `labelCount` global para evitar colisiones de etiquetas en ensamblador. Cada función arranca limpiamente en `t0`, simplificando el marco de stack. Además, `param_decl` emite explícitamente su tipo (`param_decl <nombre>, <tipo>`) para mantener uniformidad con `global` y `local`.
 
 ### 3.7
 - [ ] **El desborde con signo en `+`, `-` y `*` sigue siendo comportamiento indefinido**

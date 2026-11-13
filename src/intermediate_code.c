@@ -103,7 +103,6 @@ bool hasUnsupportedTypeError(void) {
     return tacUnsupportedType;
 }
 
-// Primer nodo del arbol cuyo tipo, o el de su simbolo, sea real. NULL si no hay.
 static NodeAST *findUnsupportedType(NodeAST *node) {
     if (node == NULL) {
         return NULL;
@@ -166,6 +165,7 @@ static void generateStatementCode(NodeAST *node) {
 }
 
 static void generateMethodDeclarationCode(NodeAST *node) {
+    temporaryCount = 0;
     NodeAST *parameters = GET_LEFT(node);
     int parameterCount = parameters->childCount;
     TACOperand method = tacMethod(node->symbol->id, node->type);
@@ -196,8 +196,7 @@ static void generateBlockCode(NodeAST *node) {
 }
 
 static void generateVariableDeclarationCode(NodeAST *node) {
-    bool isGlobal = (node != NULL && node->symbol != NULL && node->symbol->isGlobal);
-    if (isGlobal) {
+    if (node->symbol->isGlobal) {
         emitGlobalDecl(tacVariable(node->symbol));
     } else {
         emitLocalDecl(tacVariable(node->symbol));
@@ -388,11 +387,11 @@ static void emit(TACOperation operation, TACOperand result, TACOperand firstOper
 }
 
 static void emitGlobalDecl(TACOperand variable) {
-    emit(TAC_GLOBAL_DECL, tacNone(), variable, tacNone());
+    emit(TAC_GLOBAL_DECL, variable, tacNone(), tacNone());
 }
 
 static void emitLocalDecl(TACOperand variable) {
-    emit(TAC_LOCAL_DECL, tacNone(), variable, tacNone());
+    emit(TAC_LOCAL_DECL, variable, tacNone(), tacNone());
 }
 
 static void emitBeginFunc(TACOperand method, int parameterCount) {
@@ -404,7 +403,7 @@ static void emitEndFunc(TACOperand method) {
 }
 
 static void emitParamDecl(TACOperand parameter) {
-    emit(TAC_PARAM_DECL, tacNone(), parameter, tacNone());
+    emit(TAC_PARAM_DECL, parameter, tacNone(), tacNone());
 }
 
 static void emitParam(TACOperand argument) {

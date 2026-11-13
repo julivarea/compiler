@@ -659,8 +659,8 @@ void test_asm_unit_tac_param_decl_register(void) {
 
     TACInstruction inst = {
         .operation = TAC_PARAM_DECL,
-        .result = tacNone(),
-        .firstOperand = param,
+        .result = param,
+        .firstOperand = tacNone(),
         .secondOperand = tacNone(),
         .next = NULL
     };
@@ -684,8 +684,8 @@ void test_asm_unit_tac_param_decl_stack(void) {
 
     TACInstruction inst = {
         .operation = TAC_PARAM_DECL,
-        .result = tacNone(),
-        .firstOperand = param,
+        .result = param,
+        .firstOperand = tacNone(),
         .secondOperand = tacNone(),
         .next = NULL
     };
@@ -799,7 +799,7 @@ void test_asm_flow_short_circuit_and_labels(void) {
     appendInstruction(list, TAC_BEGIN_FUNC, mainFunc, tacConstantInt(0), tacNone());
 
     TACOperand t0 = tacTemp("t0", TYPE_BOOL);
-    appendInstruction(list, TAC_LOCAL_DECL, tacNone(), t0, tacNone());
+    appendInstruction(list, TAC_LOCAL_DECL, t0, tacNone(), tacNone());
     appendInstruction(list, TAC_ASSIGN, t0, tacConstantBool(0), tacNone());
 
     TACOperand labelL0 = tacLabel("L0");
@@ -839,7 +839,7 @@ void test_asm_flow_while_loop(void) {
     appendInstruction(list, TAC_BEGIN_FUNC, mainFunc, tacConstantInt(0), tacNone());
 
     TACOperand i = tacTemp("t0", TYPE_INT);
-    appendInstruction(list, TAC_LOCAL_DECL, tacNone(), i, tacNone());
+    appendInstruction(list, TAC_LOCAL_DECL, i, tacNone(), tacNone());
     appendInstruction(list, TAC_ASSIGN, i, tacConstantInt(0), tacNone());
 
     TACOperand loopStart = tacLabel("L_loop");
@@ -847,7 +847,7 @@ void test_asm_flow_while_loop(void) {
     appendInstruction(list, TAC_LABEL, loopStart, tacNone(), tacNone());
 
     TACOperand cmp = tacTemp("t1", TYPE_BOOL);
-    appendInstruction(list, TAC_LOCAL_DECL, tacNone(), cmp, tacNone());
+    appendInstruction(list, TAC_LOCAL_DECL, cmp, tacNone(), tacNone());
     appendInstruction(list, TAC_LT, cmp, i, tacConstantInt(10));
     appendInstruction(list, TAC_IF_FALSE, tacNone(), cmp, loopEnd);
 
@@ -883,7 +883,7 @@ void test_asm_flow_caller_stack_padding(void) {
 
     TACOperand callee = tacMethod("target_func", TYPE_INT);
     TACOperand res = tacTemp("t0", TYPE_INT);
-    appendInstruction(list, TAC_LOCAL_DECL, tacNone(), res, tacNone());
+    appendInstruction(list, TAC_LOCAL_DECL, res, tacNone(), tacNone());
     appendInstruction(list, TAC_CALL, res, callee, tacConstantInt(7));
 
     appendInstruction(list, TAC_RETURN, tacNone(), res, tacNone());

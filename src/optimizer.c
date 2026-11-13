@@ -16,6 +16,8 @@
 typedef struct {
     char name[TAC_NAME_LENGTH];
     OperandKind destinationKind;
+    bool hasSymbol;
+    bool isGlobal;
     TACOperand value;
 } KnownConstant;
 
@@ -394,6 +396,8 @@ static void rememberConstant(KnownConstantTable *table, const TACOperand *destin
     KnownConstant *entry = &table->entries[table->count];
     snprintf(entry->name, sizeof(entry->name), "%s", destination->name);
     entry->destinationKind = destination->kind;
+    entry->hasSymbol = (destination->symbol != NULL);
+    entry->isGlobal = (destination->symbol != NULL && destination->symbol->isGlobal);
     entry->value = *value;
     table->count++;
 }
@@ -401,8 +405,14 @@ static void rememberConstant(KnownConstantTable *table, const TACOperand *destin
 static void forgetGlobalVariables(KnownConstantTable *table, const TACList *tacList) {
     int keptEntriesCount = 0;
     for (int i = 0; i < table->count; i++) {
-        bool isGlobal = (table->entries[i].destinationKind == OPERAND_VARIABLE &&
-                         isGlobalVariable(tacList, table->entries[i].name));
+        bool isGlobal = false;
+        if (table->entries[i].destinationKind == OPERAND_VARIABLE) {
+            if (table->entries[i].hasSymbol) {
+                isGlobal = table->entries[i].isGlobal;
+            } else {
+                isGlobal = isGlobalVariable(tacList, table->entries[i].name);
+            }
+        }
         if (!isGlobal) {
             table->entries[keptEntriesCount++] = table->entries[i];
         }
@@ -651,14 +661,15 @@ static int removeUnreferencedLabels(TACList *tacList) {
 }
 
 static bool isGlobalVariable(const TACList *tacList, const char *variableName) {
+    if (tacList == NULL || variableName == NULL) {
+        return false;
+    }
     for (const TACInstruction *current = tacList->head; current != NULL; current = current->next) {
         if (current->operation == TAC_GLOBAL_DECL) {
-            bool matchesName = (strcmp(current->firstOperand.name, variableName) == 0);
+            bool matchesName = (strcmp(current->result.name, variableName) == 0);
             if (matchesName) {
                 return true;
             }
-        } else if (current->operation == TAC_BEGIN_FUNC) {
-            break;
         }
     }
     return false;
@@ -683,8 +694,14 @@ static bool isDeadStoreCandidate(const TACList *tacList, const TACInstruction *i
         return false;
     }
 
-    bool isGlobal = (instruction->result.kind == OPERAND_VARIABLE &&
-                     isGlobalVariable(tacList, instruction->result.name));
+    bool isGlobal = false;
+    if (instruction->result.kind == OPERAND_VARIABLE) {
+        if (instruction->result.symbol != NULL) {
+            isGlobal = instruction->result.symbol->isGlobal;
+        } else {
+            isGlobal = isGlobalVariable(tacList, instruction->result.name);
+        }
+    }
     if (isGlobal) {
         return false;
     }

@@ -39,7 +39,6 @@ void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instr
     buffer[0] = '\0';
     if (instruction == NULL) return;
 
-    /* getOperandName apunta al nombre interno del operando, estable mientras dura el llamado */
     switch (instruction->operation) {
         case TAC_BEGIN_FUNC:
             snprintf(buffer, size, "begin_func %s, %s\n",
@@ -51,15 +50,17 @@ void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instr
             break;
 
         case TAC_PARAM_DECL:
-            snprintf(buffer, size, "param_decl %s\n", getOperandName(&instruction->firstOperand));
+            snprintf(buffer, size, "param_decl %s, %s\n",
+                     getOperandName(&instruction->result),
+                     getDataTypeName(instruction->result.type));
             break;
 
         case TAC_GLOBAL_DECL:
         case TAC_LOCAL_DECL:
             snprintf(buffer, size, "%s %s, %s\n",
                      instruction->operation == TAC_GLOBAL_DECL ? "global" : "local",
-                     getOperandName(&instruction->firstOperand),
-                     getDataTypeName(instruction->firstOperand.type));
+                     getOperandName(&instruction->result),
+                     getDataTypeName(instruction->result.type));
             break;
 
         case TAC_LABEL:

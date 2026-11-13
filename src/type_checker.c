@@ -66,15 +66,17 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, bool isExpression) {
         return TYPE_ERROR;
     }
 
+    if (method->symbolType != METHOD_SYMBOL) {
+        semanticError(node->line, "El simbolo encontrado pertenece a una variable no a una llamada de un metodo");
+        return TYPE_ERROR;
+    }
+
+
     if (isExpression && method->type == TYPE_VOID) {
         semanticError(node->line, "El metodo '%s' es void y no puede usarse como expresion.", node->symbol->id);
         return TYPE_ERROR;
     }
     
-    if (method->symbolType != METHOD_SYMBOL) {
-        semanticError(node->line, "El simbolo encontrado pertenece a una variable no a una llamada de un metodo");
-        return TYPE_ERROR;
-    }
 
     NodeAST *parametersNode = method->parameters;
     int expectedArgumentCount = parametersNode->childCount;
