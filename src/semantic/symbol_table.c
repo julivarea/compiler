@@ -9,8 +9,7 @@ static int nextSymbolUid = 1;
 
 Symbol *newSymbol(char *id, SymbolType symbolType, DataType type, struct NodeAST *parameters) {
     Symbol *symbol = malloc(sizeof(Symbol));
-    bool allocationFailed = (symbol == NULL);
-    if (allocationFailed) {
+    if (symbol == NULL) {
         return NULL;
     }
 
@@ -27,11 +26,7 @@ Symbol *newSymbol(char *id, SymbolType symbolType, DataType type, struct NodeAST
 void freeSymbol(Symbol *symbol) {
     if (symbol == NULL) return;
 
-    bool hasId = (symbol->id != NULL);
-    if (hasId) {
-        free(symbol->id);
-    }
-
+    free(symbol->id);
     free(symbol);
 }
 
@@ -82,8 +77,7 @@ void freeScope(Scope *scope) {
 }
 
 void appendSymbol(Scope *scope, Symbol *symbol) {
-    bool isInvalidInput = (scope == NULL || symbol == NULL);
-    if (isInvalidInput) return;
+    if (scope == NULL || symbol == NULL) return;
 
     bool isUndeclared = (symbol->uid == 0);
     if (isUndeclared) {
@@ -92,12 +86,10 @@ void appendSymbol(Scope *scope, Symbol *symbol) {
 
     symbol->isGlobal = (scope->parent == NULL);
 
-    bool needsExpansion = (scope->symbolCount >= scope->symbolCapacity);
-    if (needsExpansion) {
+    if (scope->symbolCount >= scope->symbolCapacity) {
         int newCapacity = scope->symbolCapacity * 2;
         Symbol **newSymbols = realloc(scope->symbols, sizeof(Symbol *) * newCapacity);
-        bool allocationFailed = (newSymbols == NULL);
-        if (allocationFailed) {
+        if (newSymbols == NULL) {
             return;
         }
 
@@ -109,15 +101,12 @@ void appendSymbol(Scope *scope, Symbol *symbol) {
 }
 
 void appendChildScope(Scope *parent, Scope *child) {
-    bool isInvalidInput = (parent == NULL || child == NULL);
-    if (isInvalidInput) return;
+    if (parent == NULL || child == NULL) return;
 
-    bool needsExpansion = (parent->childrenCount >= parent->childrenCapacity);
-    if (needsExpansion) {
+    if (parent->childrenCount >= parent->childrenCapacity) {
         int newCapacity = parent->childrenCapacity * 2;
         Scope **newChildren = realloc(parent->children, sizeof(Scope *) * newCapacity);
-        bool allocationFailed = (newChildren == NULL);
-        if (allocationFailed) {
+        if (newChildren == NULL) {
             return;
         }
 
@@ -129,14 +118,12 @@ void appendChildScope(Scope *parent, Scope *child) {
 }
 
 Symbol *lookupSymbol(Scope *scope, const char *id) {
-    bool isInvalidInput = (scope == NULL || id == NULL);
-    if (isInvalidInput) {
+    if (scope == NULL || id == NULL) {
         return NULL;
     }
 
     Symbol *symbol = lookupSymbolInScope(scope, id);
-    bool isFoundInCurrentScope = (symbol != NULL);
-    if (isFoundInCurrentScope) {
+    if (symbol != NULL) {
         return symbol;
     }
 
@@ -144,8 +131,7 @@ Symbol *lookupSymbol(Scope *scope, const char *id) {
 }
 
 Symbol *lookupSymbolInScope(Scope *scope, const char *id) {
-    bool isInvalidInput = (scope == NULL || id == NULL);
-    if (isInvalidInput) {
+    if (scope == NULL || id == NULL) {
         return NULL;
     }
 

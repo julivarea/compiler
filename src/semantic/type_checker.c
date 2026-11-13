@@ -164,7 +164,7 @@ static DataType resolveOperation(OperationType operator, DataType left, DataType
             return TYPE_ERROR;
 
         case OP_UMINUS:
-            if (left == TYPE_INT || left == TYPE_FLOAT)
+            if (isNumeric(left))
                 return left;
             return TYPE_ERROR;
 
