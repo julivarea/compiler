@@ -253,6 +253,16 @@ void test_asm_strength_reduction_multiplication_by_power_of_two(void) {
     TEST_ASSERT_NOT_NULL(strstr(assembly, "sall $2, %eax"));
 }
 
+// Fusion de condicion relacional y salto condicional (Peephole) emite cmpl + jcc directo
+void test_asm_fused_relational_branch_peephole(void) {
+    const char *source = "int main() { int a; a = 10; if (a < 20) { return 1; } return 0; }";
+    const char *assembly = compileToAssembly(source, OPTIMIZATION_PEEPHOLE);
+    TEST_ASSERT_NOT_NULL(assembly);
+    TEST_ASSERT_NOT_NULL(strstr(assembly, "cmpl %edx, %eax"));
+    TEST_ASSERT_NOT_NULL(strstr(assembly, "jge ."));
+    TEST_ASSERT_NULL(strstr(assembly, "setl %al"));
+}
+
 /* ========================================================================
  * Grupo 2: Pruebas unitarias de traduccion aislada TAC -> Assembly (generateInstruction)
  * ======================================================================== */
@@ -1041,6 +1051,7 @@ int main(void) {
     RUN_TEST(test_asm_sections_gnu_stack);
     RUN_TEST(test_asm_emit_prologue_and_epilogue);
     RUN_TEST(test_asm_strength_reduction_multiplication_by_power_of_two);
+    RUN_TEST(test_asm_fused_relational_branch_peephole);
 
     /* Grupo 2: Pruebas unitarias de traduccion aislada TAC -> Assembly (generateInstruction) */
     /* Subgrupo 2.1: Asignacion y Aritmetica Entera */

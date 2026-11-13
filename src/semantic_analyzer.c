@@ -274,7 +274,7 @@ static void checkMainMethodExists(Scope *globalScope) {
         return;
     }
 
-    if (mainSymbol->symbolType == METHOD_SYMBOL) {
+    if (mainSymbol->symbolType != METHOD_SYMBOL) {
         semanticError(0, "'main' debe ser un metodo, no una variable.");
         return;
     }

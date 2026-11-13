@@ -71,6 +71,9 @@ nav:
       - 19. Marco de Pila: wiki/06.5-stack-frame.md
       - 20. Generación de Código Objeto: wiki/06-object-code.md
   - Documentación Técnica:
+      - Desacoplamiento TAC y Stack Offsets (ADR 001): decisiones/adr-001-desacoplamiento-tac-offsets-stack.md
+      - Resolución O(1) de Variables Globales (ADR 002): decisiones/adr-002-resolucion-variables-globales-isglobal.md
+      - Fusión de Comparaciones y Saltos (ADR 003): decisiones/adr-003-fusion-comparacion-y-salto-condicional.md
       - Alcance Análisis Semántico: analisis-semantico.md
       - Decisiones de Diseño AST: arbol_AST/decisiones_diseno_ast.md
       - Explicación Conflicto Bison: lexico-sintactico/notas/explicacion_conflicto_bison.md

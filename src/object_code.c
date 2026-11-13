@@ -49,16 +49,16 @@ static void emitLabel(const TACInstruction *instruction);
 static void emitGoto(const TACInstruction *instruction);
 static void emitIfFalse(const TACInstruction *instruction, const FunctionFrame *frame);
 static void emitIfTrue(const TACInstruction *instruction, const FunctionFrame *frame);
+static bool canFuseConditionAndJump(const TACInstruction *inst, const TACInstruction *next);
+static void emitFusedComparisonAndJump(const TACInstruction *relInst,
+                                      const TACInstruction *jumpInst,
+                                      const FunctionFrame *frame);
 static void emitParam(const TACInstruction *instruction, FunctionFrame *frame);
 static void emitCall(const TACInstruction *instruction, FunctionFrame *frame);
 static void emitReturn(const TACInstruction *instruction, const FunctionFrame *frame);
 
-static void classifyCallArguments(int argumentCount, int *registerIndex,
-                                  int *goesToStack, int *outStackArguments);
-static void emitCallStackArguments(const FunctionFrame *frame, int base, int argumentCount,
-                                   const int *goesToStack);
-static void emitCallRegisterArguments(const FunctionFrame *frame, int base, int argumentCount,
-                                      const int *registerIndex, const int *goesToStack);
+static void emitCallStackArguments(const FunctionFrame *frame, int base, int argumentCount);
+static void emitCallRegisterArguments(const FunctionFrame *frame, int base, int registerArguments);
 static void emitCallResult(const TACInstruction *instruction, const FunctionFrame *frame);
 
 static void emitBinaryOp(const TACInstruction *instruction, const char *opMnemonic, const FunctionFrame *frame);
@@ -213,8 +213,13 @@ static const TACInstruction *emitFunction(FunctionFrame *frame, const TACInstruc
 
     const TACInstruction *current = functionStart->next;
     while (current != NULL && current->operation != TAC_END_FUNC) {
-        generateInstruction(current, frame);
-        current = current->next;
+        if (canFuseConditionAndJump(current, current->next)) {
+            emitFusedComparisonAndJump(current, current->next, frame);
+            current = current->next->next;
+        } else {
+            generateInstruction(current, frame);
+            current = current->next;
+        }
     }
 
     emitEpilogue(frame);
@@ -438,6 +443,51 @@ static void emitIfTrue(const TACInstruction *instruction, const FunctionFrame *f
     buildStringf("    jne .%s\n", instruction->secondOperand.name);
 }
 
+static bool canFuseConditionAndJump(const TACInstruction *inst, const TACInstruction *next) {
+    bool isEnabled = isOptimizationEnabled(activeOptimizations, OPTIMIZATION_PEEPHOLE);
+    if (!isEnabled) return false;
+
+    if (inst == NULL || next == NULL) return false;
+
+    bool isRelational = (inst->operation == TAC_LT ||
+                         inst->operation == TAC_GT ||
+                         inst->operation == TAC_EQ);
+    bool isConditionalJump = (next->operation == TAC_IF_FALSE ||
+                              next->operation == TAC_IF_TRUE);
+
+    if (!isRelational || !isConditionalJump) return false;
+
+    return (inst->result.kind == OPERAND_TEMP &&
+            strcmp(inst->result.name, next->firstOperand.name) == 0);
+}
+
+static void emitFusedComparisonAndJump(const TACInstruction *relInst,
+                                      const TACInstruction *jumpInst,
+                                      const FunctionFrame *frame) {
+    loadOperand(&relInst->firstOperand, "%eax", frame);
+    loadOperand(&relInst->secondOperand, "%edx", frame);
+    buildStringf("    cmpl %%edx, %%eax\n");
+
+    const char *jumpMnemonic = NULL;
+    bool isIfFalse = (jumpInst->operation == TAC_IF_FALSE);
+
+    switch (relInst->operation) {
+        case TAC_LT:
+            jumpMnemonic = isIfFalse ? "jge" : "jl";
+            break;
+        case TAC_GT:
+            jumpMnemonic = isIfFalse ? "jle" : "jg";
+            break;
+        case TAC_EQ:
+            jumpMnemonic = isIfFalse ? "jne" : "je";
+            break;
+        default:
+            return;
+    }
+
+    buildStringf("    %s .%s\n", jumpMnemonic, jumpInst->secondOperand.name);
+}
+
 static void emitParam(const TACInstruction *instruction, FunctionFrame *frame) {
     if (!ensurePendingParamCapacity(frame, frame->pendingParamCount + 1)) {
         fprintf(stderr,
@@ -472,25 +522,8 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
     }
 
     int base = frame->pendingParamCount - argumentCount;
-    int *registerIndex = NULL;
-    int *goesToStack = NULL;
-    int stackArguments = 0;
-
-    if (argumentCount > 0) {
-        registerIndex = (int *)malloc(sizeof(int) * (size_t)argumentCount);
-        goesToStack = (int *)malloc(sizeof(int) * (size_t)argumentCount);
-        if (registerIndex == NULL || goesToStack == NULL) {
-            free(registerIndex);
-            free(goesToStack);
-            fprintf(stderr,
-                    "\033[1;31mError interno del generador de codigo objeto:\033[0m"
-                    " no se pudo reservar memoria para clasificar los argumentos de '%s'.\n",
-                    instruction->firstOperand.name);
-            objectCodeErrors++;
-            return;
-        }
-        classifyCallArguments(argumentCount, registerIndex, goesToStack, &stackArguments);
-    }
+    int stackArguments = (argumentCount > MAX_ARG_REGISTERS) ? (argumentCount - MAX_ARG_REGISTERS) : 0;
+    int registerArguments = (argumentCount > MAX_ARG_REGISTERS) ? MAX_ARG_REGISTERS : argumentCount;
 
     bool needsAlignmentPadding = (stackArguments % 2 == 1);
     int padding = needsAlignmentPadding ? 8 : 0;
@@ -498,8 +531,8 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
         buildStringf("    subq $%d, %%rsp\n", padding);
     }
 
-    emitCallStackArguments(frame, base, argumentCount, goesToStack);
-    emitCallRegisterArguments(frame, base, argumentCount, registerIndex, goesToStack);
+    emitCallStackArguments(frame, base, argumentCount);
+    emitCallRegisterArguments(frame, base, registerArguments);
 
     buildStringf("    call %s\n", instruction->firstOperand.name);
 
@@ -510,51 +543,20 @@ static void emitCall(const TACInstruction *instruction, FunctionFrame *frame) {
 
     frame->pendingParamCount = base;
 
-    if (registerIndex != NULL) free(registerIndex);
-    if (goesToStack != NULL) free(goesToStack);
-
     emitCallResult(instruction, frame);
 }
 
-static void classifyCallArguments(int argumentCount, int *registerIndex,
-                                  int *goesToStack, int *outStackArguments) {
-    int integerIndex = 0;
-    int stackArguments = 0;
-
-    for (int i = 0; i < argumentCount; i++) {
-        goesToStack[i] = (integerIndex >= MAX_ARG_REGISTERS);
-        registerIndex[i] = goesToStack[i] ? -1 : integerIndex++;
-        if (goesToStack[i]) {
-            stackArguments++;
-        }
-    }
-
-    if (outStackArguments != NULL) {
-        *outStackArguments = stackArguments;
-    }
-}
-
-static void emitCallStackArguments(const FunctionFrame *frame, int base, int argumentCount,
-                                   const int *goesToStack) {
-    if (goesToStack == NULL) return;
-
-    for (int i = argumentCount - 1; i >= 0; i--) {
-        if (!goesToStack[i]) continue;
-
+static void emitCallStackArguments(const FunctionFrame *frame, int base, int argumentCount) {
+    for (int i = argumentCount - 1; i >= MAX_ARG_REGISTERS; i--) {
         buildStringf("    movl %d(%%rbp), %%eax\n", frame->pendingParamSlots[base + i]);
         buildStringf("    pushq %%rax\n");
     }
 }
 
-static void emitCallRegisterArguments(const FunctionFrame *frame, int base, int argumentCount,
-                                      const int *registerIndex, const int *goesToStack) {
-    if (registerIndex == NULL || goesToStack == NULL) return;
-
-    for (int i = 0; i < argumentCount; i++) {
-        if (goesToStack[i]) continue;
-
+static void emitCallRegisterArguments(const FunctionFrame *frame, int base, int registerArguments) {
+    for (int i = 0; i < registerArguments; i++) {
         int slot = frame->pendingParamSlots[base + i];
-        buildStringf("    movl %d(%%rbp), %s\n", slot, ARG_REGISTERS_32[registerIndex[i]]);
+        buildStringf("    movl %d(%%rbp), %s\n", slot, ARG_REGISTERS_32[i]);
     }
 }
 
