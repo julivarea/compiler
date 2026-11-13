@@ -55,7 +55,7 @@ extern NodeAST *astRoot;
 %%
 
 Program
-    : Declarations                              { $$ = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL); resolveNodeArray($$, $1); astRoot = $$; }
+    : Declarations                              { $$ = newBlockNode($1); astRoot = $$; }
     ;
 
 Declarations
@@ -89,12 +89,8 @@ MethodDeclaration
     ;
 
 ParameterList
-    : %empty                                    { $$ = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL); }
-    | Parameters {
-        NodeAST *parameters = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL);
-        resolveNodeArray(parameters, $1);
-        $$ = parameters;
-    }
+    : %empty                                    { $$ = newParametersNode(NULL); }
+    | Parameters                                { $$ = newParametersNode($1); }
     ;
 
 Parameters
@@ -103,11 +99,7 @@ Parameters
     ;
 
 Block
-    : '{' VariableDeclarations Statements '}' {
-        NodeAST *block = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL);
-        resolveNodeArray(block, mergeNodeArrays($2, $3));
-        $$ = block;
-    }
+    : '{' VariableDeclarations Statements '}'   { $$ = newBlockNode(mergeNodeArrays($2, $3)); }
     ;
 
 VariableDeclarations
@@ -137,12 +129,8 @@ Assignment
     ;
 
 MethodCall
-    : ID '(' ')'                                { $$ = newMethodCallNode($1); }
-    | ID '(' ArgumentList ')' {
-        NodeAST *call = newMethodCallNode($1);
-        resolveNodeArray(call, $3);
-        $$ = call;
-    }
+    : ID '(' ')'                                { $$ = newMethodCallNode($1, NULL); }
+    | ID '(' ArgumentList ')'                   { $$ = newMethodCallNode($1, $3); }
     ;
 
 ArgumentList

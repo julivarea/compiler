@@ -6,12 +6,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "parser_helpers.h"
 #include "symbol_table.h"
 
 extern int yylineno;
 
 static NodeAST *newConstantNode(DataType type);
 static NodeAST *newSymbolNode(NodeType nodeType, SymbolType symbolType, DataType dataType, char *id, NodeAST *parameters, NodeAST *left, NodeAST *mid);
+static void resolveNodeArray(NodeAST *parent, NodeArray *array);
 static void describeNode(FILE *out, const NodeAST *node);
 static const char *getOperationName(OperationType operation);
 
@@ -82,8 +84,22 @@ NodeAST *newAssignmentNode(char *id, NodeAST *expression) {
     return newSymbolNode(ASSIGNMENT_NODE, VARIABLE_SYMBOL, TYPE_VOID, id, NULL, expression, NULL);
 }
 
-NodeAST *newMethodCallNode(char *id) {
-    return newSymbolNode(METHOD_CALL_NODE, METHOD_SYMBOL, TYPE_VOID, id, NULL, NULL, NULL);
+NodeAST *newMethodCallNode(char *id, NodeArray *arguments) {
+    NodeAST *node = newSymbolNode(METHOD_CALL_NODE, METHOD_SYMBOL, TYPE_VOID, id, NULL, NULL, NULL);
+    resolveNodeArray(node, arguments);
+    return node;
+}
+
+NodeAST *newBlockNode(NodeArray *items) {
+    NodeAST *node = newNode(BLOCK_NODE, NULL, NULL, NULL, NULL);
+    resolveNodeArray(node, items);
+    return node;
+}
+
+NodeAST *newParametersNode(NodeArray *parameters) {
+    NodeAST *node = newNode(PARAMETERS_NODE, NULL, NULL, NULL, NULL);
+    resolveNodeArray(node, parameters);
+    return node;
 }
 
 NodeAST *newReturnNode(NodeAST *expression) {
@@ -189,6 +205,27 @@ static NodeAST *newSymbolNode(NodeType nodeType, SymbolType symbolType, DataType
 
     node->type = dataType;
     return node;
+}
+
+static void resolveNodeArray(NodeAST *parent, NodeArray *array) {
+    if (array == NULL) return;
+
+    if (parent == NULL) {
+        for (int i = 0; i < array->count; i++) {
+            freeAST(array->items[i]);
+        }
+        free(array->items);
+        free(array);
+        return;
+    }
+
+    if (array->count > 0) {
+        parent->children = array->items;
+        parent->childCount = array->count;
+    } else {
+        free(array->items);
+    }
+    free(array);
 }
 
 static void describeNode(FILE *out, const NodeAST *node) {

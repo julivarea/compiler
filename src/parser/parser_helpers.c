@@ -46,30 +46,6 @@ NodeArray *appendNode(NodeArray *array, NodeAST *node) {
     return array;
 }
 
-void resolveNodeArray(NodeAST *parent, NodeArray *array) {
-    if (parent == NULL) {
-        if (array != NULL) {
-            free(array->items);
-            free(array);
-        }
-        return;
-    }
-
-    if (array == NULL || array->count == 0) {
-        parent->children = NULL;
-        parent->childCount = 0;
-        if (array != NULL) {
-            free(array->items);
-            free(array);
-        }
-        return;
-    }
-
-    parent->children = array->items;
-    parent->childCount = array->count;
-    free(array);
-}
-
 NodeArray *mergeNodeArrays(NodeArray *first, NodeArray *second) {
     if (first == NULL) return second;
     if (second == NULL) return first;

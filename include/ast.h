@@ -12,6 +12,8 @@
 #include "symbol_table.h"
 #include "types.h"
 
+struct NodeArray;
+
 /**
  * @brief Categorías de nodos que conforman el Árbol de Sintaxis Abstracta.
  */
@@ -128,12 +130,29 @@ NodeAST *newIdentifierNode(char *id);
 NodeAST *newAssignmentNode(char *id, NodeAST *expression);
 
 /**
- * @brief Crea un nodo AST de invocación a método (METHOD_CALL_NODE) sin argumentos iniciales.
+ * @brief Crea un nodo AST de invocación a método (METHOD_CALL_NODE) con sus argumentos.
  *
  * @param id Nombre del método invocado cedido en propiedad al símbolo.
+ * @param arguments Arreglo de expresiones argumento a transferir al nodo (acepta NULL).
  * @return Puntero al nodo creado, o NULL si falló la reserva de memoria.
  */
-NodeAST *newMethodCallNode(char *id);
+NodeAST *newMethodCallNode(char *id, struct NodeArray *arguments);
+
+/**
+ * @brief Crea un nodo AST de bloque léxico (BLOCK_NODE) transfiriendo sus declaraciones y sentencias.
+ *
+ * @param items Arreglo de nodos hijos del bloque a transferir y liberar (acepta NULL).
+ * @return Puntero al nodo creado, o NULL si falló la reserva de memoria.
+ */
+NodeAST *newBlockNode(struct NodeArray *items);
+
+/**
+ * @brief Crea un nodo AST contenedor de parámetros formales (PARAMETERS_NODE).
+ *
+ * @param parameters Arreglo de declaraciones de parámetros a transferir y liberar (acepta NULL).
+ * @return Puntero al nodo creado, o NULL si falló la reserva de memoria.
+ */
+NodeAST *newParametersNode(struct NodeArray *parameters);
 
 /**
  * @brief Crea un nodo AST de sentencia de retorno (RETURN_NODE).

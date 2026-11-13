@@ -36,14 +36,6 @@ NodeArray *createNodeArray(int initialCapacity);
 NodeArray *appendNode(NodeArray *array, NodeAST *node);
 
 /**
- * @brief Transfiere la propiedad del buffer de nodos al nodo padre en O(1) y libera el contenedor.
- *
- * @param parent Nodo AST que recibirá los hijos (si es NULL, se libera el arreglo completo).
- * @param array Arreglo temporal a transferir y liberar (acepta NULL).
- */
-void resolveNodeArray(NodeAST *parent, NodeArray *array);
-
-/**
  * @brief Concatena el segundo arreglo al final del primero y libera la estructura del segundo.
  *
  * @param first Primer arreglo dinámico (acepta NULL).
