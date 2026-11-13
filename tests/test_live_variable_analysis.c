@@ -1,47 +1,21 @@
+/**
+ * @file test_live_variable_analysis.c
+ * @brief Pruebas unitarias del análisis de variables vivas (bloques básicos y ecuaciones de flujo).
+ *
+ * La entrada de cada test es TAC: construido instrucción por instrucción o escrito en el
+ * formato del `.ci` con buildTAC (ver support/tac_builder.h). Ninguna etapa anterior del
+ * compilador participa, así que un fallo acá apunta al análisis de variables vivas.
+ */
+
 #include "unity.h"
 #include "live_variable_analysis.h"
-#include "optimizer.h"
 #include "tac.h"
-#include "ast.h"
-#include "symbol_table.h"
-#include "semantic_analyzer.h"
-#include "intermediate_code.h"
-#include "error_handler.h"
-#include "string_builder.h"
+#include "tac_builder.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-extern int yyparse(void);
-typedef struct yy_buffer_state *YY_BUFFER_STATE;
-extern YY_BUFFER_STATE yy_scan_string(const char *str);
-extern void yy_delete_buffer(YY_BUFFER_STATE buffer);
-extern int yylineno;
-extern NodeAST *astRoot;
-extern int semantic_errors;
-extern int lexical_errors;
-
-static const TACList *compileToTAC(const char *source) {
-    resetErrorHandler();
-    resetSymbolUids();
-    resetBuildString();
-    semantic_errors = 0;
-    lexical_errors = 0;
-    yylineno = 1;
-    astRoot = NULL;
-
-    YY_BUFFER_STATE buffer = yy_scan_string(source);
-    int parseResult = yyparse();
-    yy_delete_buffer(buffer);
-
-    if (parseResult != 0 || lexical_errors > 0) return NULL;
-
-    analyzeSemantics(astRoot, NULL);
-    if (semantic_errors > 0) return NULL;
-
-    return generateIntermediateCode(astRoot);
-}
 
 static TACInstruction *unlinkInstruction(TACList *list, TACInstruction *prev, TACInstruction *curr) {
     TACInstruction *next = curr->next;
@@ -59,11 +33,9 @@ static TACInstruction *unlinkInstruction(TACList *list, TACInstruction *prev, TA
 }
 
 void setUp(void) {}
+
 void tearDown(void) {
-    if (astRoot != NULL) {
-        freeAST(astRoot);
-        astRoot = NULL;
-    }
+    releaseTACSymbols();
 }
 
 void test_algebraic_bitmask_equations(void) {
@@ -197,17 +169,16 @@ void test_dead_definition_detected_when_never_read_globally(void) {
     freeTACList(list);
 }
 
-void test_compiled_program_unused_variable_detected_and_removed(void) {
-    const char *source =
-        "int main() {\n"
-        "    int unused;\n"
-        "    int used;\n"
-        "    unused = 100;\n"
-        "    used = 200;\n"
-        "    return used;\n"
-        "}\n";
-
-    TACList *list = (TACList *)compileToTAC(source);
+void test_program_unused_variable_detected_and_removed(void) {
+    /* int main() { int unused; int used; unused = 100; used = 200; return used; } */
+    TACList *list = buildTAC(
+        "begin_func main, 0\n"
+        "local unused@2, INT\n"
+        "local used@3, INT\n"
+        "unused@2 = 100\n"
+        "used@3 = 200\n"
+        "ret used@3\n"
+        "end_func main\n");
     TEST_ASSERT_NOT_NULL(list);
 
     LiveVariableAnalysis *analysis = createLiveVariableAnalysis(list);
@@ -254,76 +225,7 @@ void test_compiled_program_unused_variable_detected_and_removed(void) {
     }
 
     freeLiveVariableAnalysis(analysis);
-}
-
-void test_self_assignment_removed_on_tac(void) {
-    const char *source =
-        "int main() {\n"
-        "    int x;\n"
-        "    x = 42;\n"
-        "    x = x;\n"
-        "    return x;\n"
-        "}\n";
-
-    const TACList *tac = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(tac);
-    TACList *list = (TACList *)tac;
-
-    /* Verificar que inicialmente x = x está presente en el TAC */
-    bool foundSelfAssign = false;
-    for (TACInstruction *curr = list->head; curr != NULL; curr = curr->next) {
-        if (curr->operation == TAC_ASSIGN &&
-            curr->firstOperand.kind == OPERAND_VARIABLE &&
-            strcmp(curr->result.name, curr->firstOperand.name) == 0) {
-            foundSelfAssign = true;
-            break;
-        }
-    }
-    TEST_ASSERT_TRUE(foundSelfAssign);
-
-    /* Optimizar con OPTIMIZATION_SELF_ASSIGN */
-    int changes = optimizeIntermediateCode(list, OPTIMIZATION_SELF_ASSIGN);
-    TEST_ASSERT_GREATER_THAN(0, changes);
-
-    /* Verificar que ya no existe la autoasignación */
-    for (TACInstruction *curr = list->head; curr != NULL; curr = curr->next) {
-        if (curr->operation == TAC_ASSIGN &&
-            curr->firstOperand.kind == OPERAND_VARIABLE &&
-            strcmp(curr->result.name, curr->firstOperand.name) == 0) {
-            TEST_FAIL_MESSAGE("Self-assignment was not removed from TAC");
-        }
-    }
-}
-
-void test_optimizer_dead_store_elimination_removes_unused_variable(void) {
-    const char *source =
-        "int main() {\n"
-        "    int deadVar;\n"
-        "    int liveVar;\n"
-        "    deadVar = 999;\n"
-        "    liveVar = 42;\n"
-        "    return liveVar;\n"
-        "}\n";
-
-    TACList *list = (TACList *)compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    bool hasDeadVarAssign = false;
-    for (TACInstruction *curr = list->head; curr != NULL; curr = curr->next) {
-        if (curr->operation == TAC_ASSIGN && strstr(curr->result.name, "deadVar@") != NULL) {
-            hasDeadVarAssign = true;
-            break;
-        }
-    }
-    TEST_ASSERT_TRUE(hasDeadVarAssign);
-
-    int changes = optimizeIntermediateCode(list, OPTIMIZATION_DEAD_CODE);
-    TEST_ASSERT_GREATER_THAN(0, changes);
-
-    for (TACInstruction *curr = list->head; curr != NULL; curr = curr->next) {
-        bool isDeadVarAssign = (curr->operation == TAC_ASSIGN && strstr(curr->result.name, "deadVar@") != NULL);
-        TEST_ASSERT_FALSE(isDeadVarAssign);
-    }
+    freeTACList(list);
 }
 
 int main(void) {
@@ -333,8 +235,6 @@ int main(void) {
     RUN_TEST(test_live_variables_in_if_else_control_flow);
     RUN_TEST(test_live_variables_in_while_loop_back_edge);
     RUN_TEST(test_dead_definition_detected_when_never_read_globally);
-    RUN_TEST(test_compiled_program_unused_variable_detected_and_removed);
-    RUN_TEST(test_self_assignment_removed_on_tac);
-    RUN_TEST(test_optimizer_dead_store_elimination_removes_unused_variable);
+    RUN_TEST(test_program_unused_variable_detected_and_removed);
     return UNITY_END();
 }

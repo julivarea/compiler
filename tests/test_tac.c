@@ -3,7 +3,7 @@
  * @brief Pruebas unitarias de la generación de Código de Tres Direcciones (TAC).
  *
  * Valida la traducción completa del AST a instrucciones intermedias TAC:
- *  - Expresiones aritméticas y precedencia de operadores (* antes que +).
+ *  - Expresiones aritméticas y orden de emisión de subexpresiones.
  *  - Expresiones unarias (negación aritmética y lógica).
  *  - Operaciones relacionales y de igualdad.
  *  - Lógica de cortocircuito (&& y ||) con saltos condicionales y etiquetas.
@@ -14,62 +14,40 @@
  *  - Llamadas a métodos con pasaje ordenado de argumentos (param y call).
  *  - Rechazo de los tipos fuera del alcance de la etapa (`float`).
  *  - Instantáneas canónicas exactas de programas completos (.ci).
+ *
+ * Cada test arma a mano el AST anotado que entrega el análisis semántico: símbolos
+ * resueltos con su uid, alcance global/local y tipo de cada expresión (ver
+ * support/ast_builder.h). Así solo ejercita el generador de código intermedio; ni el
+ * front-end ni el analizador semántico pueden hacer fallar esta suite. El comentario de
+ * cada test muestra el programa C-TDS equivalente.
  */
 
 #include "unity.h"
 #include "ast.h"
+#include "ast_builder.h"
 #include "symbol_table.h"
-#include "semantic_analyzer.h"
 #include "intermediate_code.h"
 #include "tac.h"
 #include "string_builder.h"
-#include "error_handler.h"
 #include "types.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-extern int yyparse(void);
-typedef struct yy_buffer_state *YY_BUFFER_STATE;
-extern YY_BUFFER_STATE yy_scan_string(const char *str);
-extern void yy_delete_buffer(YY_BUFFER_STATE buffer);
-extern int yylineno;
-extern NodeAST *astRoot;
-extern int semantic_errors;
-extern int lexical_errors;
-
 /* ------------------------------------------------------------------------
  * Funciones auxiliares del arnés de pruebas
  * ------------------------------------------------------------------------ */
 
-static const TACList *compileToTAC(const char *source) {
-    resetErrorHandler();
-    resetSymbolUids();
-    resetBuildString();
-    semantic_errors = 0;
-    lexical_errors = 0;
-    yylineno = 1;
-    astRoot = NULL;
+static NodeAST *program = NULL;
 
-    YY_BUFFER_STATE buffer = yy_scan_string(source);
-    int parseResult = yyparse();
-    yy_delete_buffer(buffer);
-
-    if (parseResult != 0 || lexical_errors > 0) {
-        return NULL;
-    }
-
-    analyzeSemantics(astRoot, NULL);
-    if (semantic_errors > 0) {
-        return NULL;
-    }
-
-    return generateIntermediateCode(astRoot);
+static const TACList *generate(NodeAST *root) {
+    program = root;
+    return generateIntermediateCode(root);
 }
 
-static const char *compileToTACText(const char *source) {
-    const TACList *list = compileToTAC(source);
+static const char *generateText(NodeAST *root) {
+    const TACList *list = generate(root);
     if (list == NULL) {
         return NULL;
     }
@@ -77,6 +55,37 @@ static const char *compileToTACText(const char *source) {
     resetBuildString();
     formatTACList(list);
     return getBuiltString();
+}
+
+/* void main() con el uid dado; el cuerpo se completa con astAppend. */
+static NodeAST *mainMethod(int uid) {
+    return astMethodDeclaration(TYPE_VOID, "main", uid, astParameters(0));
+}
+
+/* void main() { int a; int b; <type> c; a = 1; b = 2; c = a <op> b; } */
+static const TACList *generateBinaryInMain(OperationType op, DataType resultType) {
+    NodeAST *main = mainMethod(1);
+    NodeAST *a = astLocal(TYPE_INT, "a", 2);
+    NodeAST *b = astLocal(TYPE_INT, "b", 3);
+    NodeAST *c = astLocal(resultType, "c", 4);
+    astAppend(main, 6, a, b, c,
+              astStore(a, astInt(1)),
+              astStore(b, astInt(2)),
+              astStore(c, astBinary(op, astUse(a), astUse(b))));
+    return generate(astProgram(1, main));
+}
+
+/* void main() { boolean a; boolean b; boolean r; a = true; b = false; r = a <op> b; } */
+static const TACList *generateLogicalInMain(OperationType op) {
+    NodeAST *main = mainMethod(1);
+    NodeAST *a = astLocal(TYPE_BOOL, "a", 2);
+    NodeAST *b = astLocal(TYPE_BOOL, "b", 3);
+    NodeAST *r = astLocal(TYPE_BOOL, "r", 4);
+    astAppend(main, 6, a, b, r,
+              astStore(a, astBool(1)),
+              astStore(b, astBool(0)),
+              astStore(r, astBinary(op, astUse(a), astUse(b))));
+    return generate(astProgram(1, main));
 }
 
 static const TACInstruction *findInstruction(const TACList *list, TACOperation op, int occurrence) {
@@ -104,29 +113,33 @@ static int countInstructions(const TACList *list, TACOperation op) {
     return count;
 }
 
+static bool precedes(const TACList *list, const TACInstruction *first, const TACInstruction *second) {
+    for (const TACInstruction *inst = list->head; inst != NULL; inst = inst->next) {
+        if (inst == first) return true;
+        if (inst == second) return false;
+    }
+    return false;
+}
+
 void setUp(void) {
-    resetErrorHandler();
     resetSymbolUids();
     resetBuildString();
-    semantic_errors = 0;
-    lexical_errors = 0;
-    yylineno = 1;
-    astRoot = NULL;
+    program = NULL;
 }
 
 void tearDown(void) {
-    freeAST(astRoot);
-    astRoot = NULL;
+    freeAST(program);
+    program = NULL;
 }
 
 /* ------------------------------------------------------------------------
- * Grupo 1: Expresiones Aritméticas, Unarias y Precedencia
+ * Grupo 1: Expresiones Aritméticas, Unarias y Orden de Emisión
  * ------------------------------------------------------------------------ */
 
 // Suma binaria entera genera instrucción TAC_ADD asignando el resultado a un nuevo temporal
+// void main() { int a; int b; int c; a = 1; b = 2; c = a + b; }
 void test_tac_binary_addition(void) {
-    const char *source = "void main() { int a; int b; int c; a = 1; b = 2; c = a + b; }";
-    const TACList *list = compileToTAC(source);
+    const TACList *list = generateBinaryInMain(OP_ADD, TYPE_INT);
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *addInst = findInstruction(list, TAC_ADD, 0);
@@ -140,57 +153,49 @@ void test_tac_binary_addition(void) {
 }
 
 // Resta binaria entera genera instrucción TAC_SUB con temporal de destino
+// void main() { ... c = a - b; }
 void test_tac_binary_subtraction(void) {
-    const char *source = "void main() { int a; int b; int c; a = 5; b = 2; c = a - b; }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *subInst = findInstruction(list, TAC_SUB, 0);
+    const TACInstruction *subInst = findInstruction(generateBinaryInMain(OP_SUB, TYPE_INT), TAC_SUB, 0);
     TEST_ASSERT_NOT_NULL(subInst);
     TEST_ASSERT_EQUAL(OPERAND_TEMP, subInst->result.kind);
     TEST_ASSERT_EQUAL_STRING("t0", subInst->result.name);
 }
 
 // Multiplicación binaria genera instrucción TAC_MUL
+// void main() { ... c = a * b; }
 void test_tac_binary_multiplication(void) {
-    const char *source = "void main() { int a; int b; int c; a = 3; b = 4; c = a * b; }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *mulInst = findInstruction(list, TAC_MUL, 0);
+    const TACInstruction *mulInst = findInstruction(generateBinaryInMain(OP_MUL, TYPE_INT), TAC_MUL, 0);
     TEST_ASSERT_NOT_NULL(mulInst);
     TEST_ASSERT_EQUAL(OPERAND_TEMP, mulInst->result.kind);
     TEST_ASSERT_EQUAL_STRING("t0", mulInst->result.name);
 }
 
 // División binaria entera genera instrucción TAC_DIV
+// void main() { ... c = a / b; }
 void test_tac_binary_division(void) {
-    const char *source = "void main() { int a; int b; int c; a = 10; b = 2; c = a / b; }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *divInst = findInstruction(list, TAC_DIV, 0);
+    const TACInstruction *divInst = findInstruction(generateBinaryInMain(OP_DIV, TYPE_INT), TAC_DIV, 0);
     TEST_ASSERT_NOT_NULL(divInst);
     TEST_ASSERT_EQUAL(OPERAND_TEMP, divInst->result.kind);
     TEST_ASSERT_EQUAL_STRING("t0", divInst->result.name);
 }
 
 // Operación módulo entera genera instrucción TAC_MOD
+// void main() { ... c = a % b; }
 void test_tac_binary_modulo(void) {
-    const char *source = "void main() { int a; int b; int c; a = 10; b = 3; c = a % b; }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *modInst = findInstruction(list, TAC_MOD, 0);
+    const TACInstruction *modInst = findInstruction(generateBinaryInMain(OP_MOD, TYPE_INT), TAC_MOD, 0);
     TEST_ASSERT_NOT_NULL(modInst);
     TEST_ASSERT_EQUAL(OPERAND_TEMP, modInst->result.kind);
     TEST_ASSERT_EQUAL_STRING("t0", modInst->result.name);
 }
 
 // Negación aritmética unaria genera instrucción TAC_UMINUS con segundo operando nulo
+// void main() { int a; int b; a = 5; b = -a; }
 void test_tac_unary_minus(void) {
-    const char *source = "void main() { int a; int b; a = 5; b = -a; }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    NodeAST *a = astLocal(TYPE_INT, "a", 2);
+    NodeAST *b = astLocal(TYPE_INT, "b", 3);
+    astAppend(main, 4, a, b, astStore(a, astInt(5)), astStore(b, astUnary(OP_UMINUS, astUse(a))));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *negInst = findInstruction(list, TAC_UMINUS, 0);
@@ -203,9 +208,13 @@ void test_tac_unary_minus(void) {
 }
 
 // Negación lógica unaria genera instrucción TAC_NOT con operando booleano
+// void main() { boolean a; boolean b; a = true; b = !a; }
 void test_tac_unary_not(void) {
-    const char *source = "void main() { boolean a; boolean b; a = true; b = !a; }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    NodeAST *a = astLocal(TYPE_BOOL, "a", 2);
+    NodeAST *b = astLocal(TYPE_BOOL, "b", 3);
+    astAppend(main, 4, a, b, astStore(a, astBool(1)), astStore(b, astUnary(OP_NOT, astUse(a))));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *notInst = findInstruction(list, TAC_NOT, 0);
@@ -217,10 +226,18 @@ void test_tac_unary_not(void) {
     TEST_ASSERT_EQUAL(OPERAND_NONE, notInst->secondOperand.kind);
 }
 
-// Precedencia aritmética: multiplicación se emite antes que la suma
+// Un subárbol derecho (*) se emite antes que el operador que lo contiene (+)
+// void main() { int a; int b; int c; a = 1; b = 2; c = a + b * 3; }
 void test_tac_operator_precedence_multiplication_before_addition(void) {
-    const char *source = "void main() { int a; int b; int c; a = 1; b = 2; c = a + b * 3; }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    NodeAST *a = astLocal(TYPE_INT, "a", 2);
+    NodeAST *b = astLocal(TYPE_INT, "b", 3);
+    NodeAST *c = astLocal(TYPE_INT, "c", 4);
+    astAppend(main, 6, a, b, c,
+              astStore(a, astInt(1)),
+              astStore(b, astInt(2)),
+              astStore(c, astBinary(OP_ADD, astUse(a), astBinary(OP_MUL, astUse(b), astInt(3)))));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *mulInst = findInstruction(list, TAC_MUL, 0);
@@ -240,20 +257,25 @@ void test_tac_operator_precedence_multiplication_before_addition(void) {
     TEST_ASSERT_EQUAL_STRING("t1", addInst->secondOperand.name);
 
     // mulInst debe preceder en orden a addInst en la lista
-    bool mulBeforeAdd = false;
-    for (const TACInstruction *inst = list->head; inst != NULL; inst = inst->next) {
-        if (inst == mulInst) mulBeforeAdd = true;
-        if (inst == addInst) {
-            TEST_ASSERT_TRUE(mulBeforeAdd);
-            break;
-        }
-    }
+    TEST_ASSERT_TRUE(precedes(list, mulInst, addInst));
 }
 
 // Expresión compuesta con subárboles genera temporales secuenciales t0, t1 y t2
+// void main() { int a; int b; int c; int d; int r; ... r = (a + b) * (c - d); }
 void test_tac_complex_expression_temporaries_sequential(void) {
-    const char *source = "void main() { int a; int b; int c; int d; int r; a = 1; b = 2; c = 3; d = 4; r = (a + b) * (c - d); }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    NodeAST *a = astLocal(TYPE_INT, "a", 2);
+    NodeAST *b = astLocal(TYPE_INT, "b", 3);
+    NodeAST *c = astLocal(TYPE_INT, "c", 4);
+    NodeAST *d = astLocal(TYPE_INT, "d", 5);
+    NodeAST *r = astLocal(TYPE_INT, "r", 6);
+    NodeAST *product = astBinary(OP_MUL,
+                                 astBinary(OP_ADD, astUse(a), astUse(b)),
+                                 astBinary(OP_SUB, astUse(c), astUse(d)));
+    astAppend(main, 10, a, b, c, d, r,
+              astStore(a, astInt(1)), astStore(b, astInt(2)), astStore(c, astInt(3)), astStore(d, astInt(4)),
+              astStore(r, product));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *addInst = findInstruction(list, TAC_ADD, 0);
@@ -281,12 +303,9 @@ void test_tac_complex_expression_temporaries_sequential(void) {
  * ------------------------------------------------------------------------ */
 
 // Comparación menor que genera instrucción TAC_LT con resultado booleano
+// void main() { int a; int b; boolean c; a = 1; b = 2; c = a < b; }
 void test_tac_relational_less_than(void) {
-    const char *source = "void main() { int a; int b; boolean r; a = 1; b = 2; r = a < b; }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *ltInst = findInstruction(list, TAC_LT, 0);
+    const TACInstruction *ltInst = findInstruction(generateBinaryInMain(OP_LT, TYPE_BOOL), TAC_LT, 0);
     TEST_ASSERT_NOT_NULL(ltInst);
     TEST_ASSERT_EQUAL(TYPE_BOOL, ltInst->result.type);
     TEST_ASSERT_EQUAL_STRING("t0", ltInst->result.name);
@@ -295,24 +314,18 @@ void test_tac_relational_less_than(void) {
 }
 
 // Comparación mayor que genera instrucción TAC_GT con resultado booleano
+// void main() { ... c = a > b; }
 void test_tac_relational_greater_than(void) {
-    const char *source = "void main() { int a; int b; boolean r; a = 2; b = 1; r = a > b; }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *gtInst = findInstruction(list, TAC_GT, 0);
+    const TACInstruction *gtInst = findInstruction(generateBinaryInMain(OP_GT, TYPE_BOOL), TAC_GT, 0);
     TEST_ASSERT_NOT_NULL(gtInst);
     TEST_ASSERT_EQUAL(TYPE_BOOL, gtInst->result.type);
     TEST_ASSERT_EQUAL_STRING("t0", gtInst->result.name);
 }
 
 // Comparación de igualdad genera instrucción TAC_EQ con resultado booleano
+// void main() { ... c = a == b; }
 void test_tac_relational_equality(void) {
-    const char *source = "void main() { int a; int b; boolean r; a = 1; b = 1; r = a == b; }";
-    const TACList *list = compileToTAC(source);
-    TEST_ASSERT_NOT_NULL(list);
-
-    const TACInstruction *eqInst = findInstruction(list, TAC_EQ, 0);
+    const TACInstruction *eqInst = findInstruction(generateBinaryInMain(OP_EQ, TYPE_BOOL), TAC_EQ, 0);
     TEST_ASSERT_NOT_NULL(eqInst);
     TEST_ASSERT_EQUAL(TYPE_BOOL, eqInst->result.type);
     TEST_ASSERT_EQUAL_STRING("t0", eqInst->result.name);
@@ -323,9 +336,9 @@ void test_tac_relational_equality(void) {
  * ------------------------------------------------------------------------ */
 
 // Operador lógico && genera salto condicional if_false hacia etiqueta de salida
+// void main() { boolean a; boolean b; boolean r; a = true; b = false; r = a && b; }
 void test_tac_short_circuit_and(void) {
-    const char *source = "void main() { boolean a; boolean b; boolean r; a = true; b = false; r = a && b; }";
-    const TACList *list = compileToTAC(source);
+    const TACList *list = generateLogicalInMain(OP_AND);
     TEST_ASSERT_NOT_NULL(list);
 
     // a && b debe emitir:
@@ -344,9 +357,9 @@ void test_tac_short_circuit_and(void) {
 }
 
 // Operador lógico || genera salto condicional if_true hacia etiqueta de salida
+// void main() { boolean a; boolean b; boolean r; a = true; b = false; r = a || b; }
 void test_tac_short_circuit_or(void) {
-    const char *source = "void main() { boolean a; boolean b; boolean r; a = false; b = true; r = a || b; }";
-    const TACList *list = compileToTAC(source);
+    const TACList *list = generateLogicalInMain(OP_OR);
     TEST_ASSERT_NOT_NULL(list);
 
     // a || b debe emitir:
@@ -364,12 +377,21 @@ void test_tac_short_circuit_or(void) {
     TEST_ASSERT_EQUAL_STRING("L0", labelInst->result.name);
 }
 
+/* boolean f() { return true; } */
+static NodeAST *booleanMethodF(int uid) {
+    NodeAST *f = astMethodDeclaration(TYPE_BOOL, "f", uid, astParameters(0));
+    astAppend(f, 1, astReturn(astBool(1)));
+    return f;
+}
+
 // Cortocircuito omite llamada a método derecho cuando el operando izquierdo determina el resultado
+// boolean f() { return true; } void main() { boolean a; a = false && f(); }
 void test_tac_short_circuit_skips_call_when_first_operand_determines_result(void) {
-    const char *source =
-        "boolean f() { return true; }\n"
-        "void main() { boolean a; a = false && f(); }\n";
-    const TACList *list = compileToTAC(source);
+    NodeAST *f = booleanMethodF(1);
+    NodeAST *main = mainMethod(2);
+    NodeAST *a = astLocal(TYPE_BOOL, "a", 3);
+    astAppend(main, 2, a, astStore(a, astBinary(OP_AND, astBool(0), astInvoke(f, 0))));
+    const TACList *list = generate(astProgram(2, f, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *ifFalseInst = findInstruction(list, TAC_IF_FALSE, 0);
@@ -378,20 +400,22 @@ void test_tac_short_circuit_skips_call_when_first_operand_determines_result(void
     TEST_ASSERT_NOT_NULL(callInst);
 
     // ifFalse debe preceder en el código al call f
-    bool jumpBeforeCall = false;
-    for (const TACInstruction *inst = list->head; inst != NULL; inst = inst->next) {
-        if (inst == ifFalseInst) jumpBeforeCall = true;
-        if (inst == callInst) {
-            TEST_ASSERT_TRUE(jumpBeforeCall);
-            break;
-        }
-    }
+    TEST_ASSERT_TRUE(precedes(list, ifFalseInst, callInst));
 }
 
 // Operaciones de cortocircuito encadenadas generan etiquetas y saltos condicionales sucesivos
+// void main() { boolean a; boolean b; boolean c; boolean r; ... r = a && b && c; }
 void test_tac_short_circuit_chained(void) {
-    const char *source = "void main() { boolean a; boolean b; boolean c; boolean r; a = true; b = true; c = false; r = a && b && c; }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    NodeAST *a = astLocal(TYPE_BOOL, "a", 2);
+    NodeAST *b = astLocal(TYPE_BOOL, "b", 3);
+    NodeAST *c = astLocal(TYPE_BOOL, "c", 4);
+    NodeAST *r = astLocal(TYPE_BOOL, "r", 5);
+    NodeAST *chain = astBinary(OP_AND, astBinary(OP_AND, astUse(a), astUse(b)), astUse(c));
+    astAppend(main, 8, a, b, c, r,
+              astStore(a, astBool(1)), astStore(b, astBool(1)), astStore(c, astBool(0)),
+              astStore(r, chain));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     // Dos operaciones && encadenadas generan 2 saltos condicionales if_false y 2 etiquetas
@@ -403,10 +427,20 @@ void test_tac_short_circuit_chained(void) {
  * Grupo 4: Estructuras de Control (If, Else, While)
  * ------------------------------------------------------------------------ */
 
+/* void main() { int x; x = 0; if (x < 1) { x = 2; } [else { x = 3; }] } */
+static const TACList *generateIfInMain(bool withElse) {
+    NodeAST *main = mainMethod(1);
+    NodeAST *x = astLocal(TYPE_INT, "x", 2);
+    NodeAST *elseBlock = withElse ? astBlock(1, astStore(x, astInt(3))) : NULL;
+    astAppend(main, 3, x, astStore(x, astInt(0)),
+              astIf(astBinary(OP_LT, astUse(x), astInt(1)), astBlock(1, astStore(x, astInt(2))), elseBlock));
+    return generate(astProgram(1, main));
+}
+
 // Sentencia if simple emite condición, salto if_false y etiqueta de cierre sin goto
+// void main() { int x; x = 0; if (x < 1) { x = 2; } }
 void test_tac_if_without_else(void) {
-    const char *source = "void main() { int x; x = 0; if (x < 1) { x = 2; } }";
-    const TACList *list = compileToTAC(source);
+    const TACList *list = generateIfInMain(false);
     TEST_ASSERT_NOT_NULL(list);
 
     // Estructura esperada:
@@ -428,9 +462,9 @@ void test_tac_if_without_else(void) {
 }
 
 // Sentencia if-else emite bifurcación condicional, salto incondicional goto y etiquetas correspondientes
+// void main() { int x; x = 0; if (x < 1) { x = 2; } else { x = 3; } }
 void test_tac_if_with_else(void) {
-    const char *source = "void main() { int x; x = 0; if (x < 1) { x = 2; } else { x = 3; } }";
-    const TACList *list = compileToTAC(source);
+    const TACList *list = generateIfInMain(true);
     TEST_ASSERT_NOT_NULL(list);
 
     // Estructura esperada:
@@ -451,10 +485,19 @@ void test_tac_if_with_else(void) {
     TEST_ASSERT_EQUAL_INT(2, countInstructions(list, TAC_LABEL));
 }
 
+/* while (<var> < <limit>) { <var> = <var> + 1; } */
+static NodeAST *countingLoop(NodeAST *var, int limit, NodeAST *bodyPrefix) {
+    NodeAST *body = astBlock(2, bodyPrefix, astStore(var, astBinary(OP_ADD, astUse(var), astInt(1))));
+    return astWhile(astBinary(OP_LT, astUse(var), astInt(limit)), body);
+}
+
 // Bucle while emite etiqueta de inicio, evaluación de condición, salto if_false y goto de retorno
+// void main() { int i; i = 0; while (i < 5) { i = i + 1; } }
 void test_tac_while_loop(void) {
-    const char *source = "void main() { int i; i = 0; while (i < 5) { i = i + 1; } }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    NodeAST *i = astLocal(TYPE_INT, "i", 2);
+    astAppend(main, 3, i, astStore(i, astInt(0)), countingLoop(i, 5, NULL));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     // Estructura esperada:
@@ -482,18 +525,15 @@ void test_tac_while_loop(void) {
 }
 
 // Bucles while anidados generan pares de etiquetas independientes y saltos debidamente anidados
+// void main() { int i; int j; i = 0;
+//               while (i < 3) { j = 0; while (j < 3) { j = j + 1; } i = i + 1; } }
 void test_tac_nested_while_loops(void) {
-    const char *source =
-        "void main() {\n"
-        "  int i; int j;\n"
-        "  i = 0;\n"
-        "  while (i < 3) {\n"
-        "    j = 0;\n"
-        "    while (j < 3) { j = j + 1; }\n"
-        "    i = i + 1;\n"
-        "  }\n"
-        "}\n";
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    NodeAST *i = astLocal(TYPE_INT, "i", 2);
+    NodeAST *j = astLocal(TYPE_INT, "j", 3);
+    NodeAST *inner = astBlock(2, astStore(j, astInt(0)), countingLoop(j, 3, NULL));
+    astAppend(main, 4, i, j, astStore(i, astInt(0)), countingLoop(i, 3, inner));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     // Dos bucles while anidados generan 4 etiquetas (inicio y fin para cada uno)
@@ -507,9 +547,10 @@ void test_tac_nested_while_loops(void) {
  * ------------------------------------------------------------------------ */
 
 // Variables globales emiten instrucciones TAC_GLOBAL_DECL con sus tipos respectivos
+// int g; boolean b; void main() { }
 void test_tac_global_variable_declarations(void) {
-    const char *source = "int g; boolean b; void main() { }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *root = astProgram(3, astGlobal(TYPE_INT, "g", 1), astGlobal(TYPE_BOOL, "b", 2), mainMethod(3));
+    const TACList *list = generate(root);
     TEST_ASSERT_NOT_NULL(list);
 
     TEST_ASSERT_EQUAL_INT(2, countInstructions(list, TAC_GLOBAL_DECL));
@@ -525,9 +566,11 @@ void test_tac_global_variable_declarations(void) {
 }
 
 // Variables locales dentro del cuerpo de un método emiten instrucciones TAC_LOCAL_DECL
+// void main() { int x; boolean z; }
 void test_tac_local_variable_declarations(void) {
-    const char *source = "void main() { int x; boolean z; }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    astAppend(main, 2, astLocal(TYPE_INT, "x", 2), astLocal(TYPE_BOOL, "z", 3));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     TEST_ASSERT_EQUAL_INT(2, countInstructions(list, TAC_LOCAL_DECL));
@@ -540,14 +583,13 @@ void test_tac_local_variable_declarations(void) {
 }
 
 // Sombreado de variable local sobre global genera uids calificados distintos (@1 vs @3)
+// int x; void main() { int x; x = 5; }
 void test_tac_variable_shadowing_distinguishes_uids(void) {
-    const char *source =
-        "int x;\n"
-        "void main() {\n"
-        "  int x;\n"
-        "  x = 5;\n"
-        "}\n";
-    const TACList *list = compileToTAC(source);
+    NodeAST *globalX = astGlobal(TYPE_INT, "x", 1);
+    NodeAST *main = mainMethod(2);
+    NodeAST *localX = astLocal(TYPE_INT, "x", 3);
+    astAppend(main, 2, localX, astStore(localX, astInt(5)));
+    const TACList *list = generate(astProgram(2, globalX, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *globalDecl = findInstruction(list, TAC_GLOBAL_DECL, 0);
@@ -567,9 +609,12 @@ void test_tac_variable_shadowing_distinguishes_uids(void) {
 }
 
 // Asignación simple emite instrucción TAC_ASSIGN hacia el identificador calificado
+// void main() { int x; x = 42; }
 void test_tac_assignment_variable(void) {
-    const char *source = "void main() { int x; x = 42; }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    NodeAST *x = astLocal(TYPE_INT, "x", 2);
+    astAppend(main, 2, x, astStore(x, astInt(42)));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *assignInst = findInstruction(list, TAC_ASSIGN, 0);
@@ -586,9 +631,9 @@ void test_tac_assignment_variable(void) {
  * ------------------------------------------------------------------------ */
 
 // Declaración de método void sin return explícito emite instrucción ret implícita
+// void main() { }
 void test_tac_method_declaration_and_implicit_void_return(void) {
-    const char *source = "void main() { }";
-    const TACList *list = compileToTAC(source);
+    const TACList *list = generate(astProgram(1, mainMethod(1)));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *beginFunc = findInstruction(list, TAC_BEGIN_FUNC, 0);
@@ -606,19 +651,30 @@ void test_tac_method_declaration_and_implicit_void_return(void) {
 }
 
 // Método void con return explícito no genera una instrucción ret implícita duplicada
+// void main() { return; }
 void test_tac_method_explicit_return_void_has_no_duplicate_ret(void) {
-    const char *source = "void main() { return; }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    astAppend(main, 1, astReturn(NULL));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     // Solo debe haber un ret, no debe agregarse uno redundante
     TEST_ASSERT_EQUAL_INT(1, countInstructions(list, TAC_RETURN));
 }
 
+/* int <name>(int a, int b) { return a <op> b; } con uids name=1, a=2, b=3 */
+static NodeAST *binaryIntMethod(const char *name, OperationType op) {
+    NodeAST *a = astLocal(TYPE_INT, "a", 2);
+    NodeAST *b = astLocal(TYPE_INT, "b", 3);
+    NodeAST *method = astMethodDeclaration(TYPE_INT, name, 1, astParameters(2, a, b));
+    astAppend(method, 1, astReturn(astBinary(op, astUse(a), astUse(b))));
+    return method;
+}
+
 // Declaración de parámetros formales emite instrucciones TAC_PARAM_DECL en orden de recepción
+// int add(int a, int b) { return a + b; } void main() { }
 void test_tac_method_parameters(void) {
-    const char *source = "int add(int a, int b) { return a + b; } void main() { }";
-    const TACList *list = compileToTAC(source);
+    const TACList *list = generate(astProgram(2, binaryIntMethod("add", OP_ADD), mainMethod(4)));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *beginFunc = findInstruction(list, TAC_BEGIN_FUNC, 0);
@@ -635,9 +691,12 @@ void test_tac_method_parameters(void) {
 }
 
 // Sentencia de llamada a método void emite paso de argumentos param y call sin temporal de destino
+// void proc(int x) { } void main() { proc(10); }
 void test_tac_method_call_statement_void(void) {
-    const char *source = "void proc(int x) { } void main() { proc(10); }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *proc = astMethodDeclaration(TYPE_VOID, "proc", 1, astParameters(1, astLocal(TYPE_INT, "x", 2)));
+    NodeAST *main = mainMethod(3);
+    astAppend(main, 1, astInvoke(proc, 1, astInt(10)));
+    const TACList *list = generate(astProgram(2, proc, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *paramInst = findInstruction(list, TAC_PARAM, 0);
@@ -653,9 +712,15 @@ void test_tac_method_call_statement_void(void) {
 }
 
 // Llamada a método con retorno en expresión asigna el resultado de la llamada a un temporal
+// int f(int a) { return a + 1; } void main() { int x; x = f(2); }
 void test_tac_method_call_expression_with_return_value(void) {
-    const char *source = "int f(int a) { return a + 1; } void main() { int x; x = f(2); }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *a = astLocal(TYPE_INT, "a", 2);
+    NodeAST *f = astMethodDeclaration(TYPE_INT, "f", 1, astParameters(1, a));
+    astAppend(f, 1, astReturn(astBinary(OP_ADD, astUse(a), astInt(1))));
+    NodeAST *main = mainMethod(3);
+    NodeAST *x = astLocal(TYPE_INT, "x", 4);
+    astAppend(main, 2, x, astStore(x, astInvoke(f, 1, astInt(2))));
+    const TACList *list = generate(astProgram(2, f, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *callInst = findInstruction(list, TAC_CALL, 0);
@@ -672,9 +737,13 @@ void test_tac_method_call_expression_with_return_value(void) {
 }
 
 // Múltiples argumentos en una llamada a método se emiten en orden de izquierda a derecha
+// int diff(int a, int b) { return a - b; } void main() { int x; x = diff(10, 3); }
 void test_tac_method_call_arguments_left_to_right(void) {
-    const char *source = "int diff(int a, int b) { return a - b; } void main() { int x; x = diff(10, 3); }";
-    const TACList *list = compileToTAC(source);
+    NodeAST *diff = binaryIntMethod("diff", OP_SUB);
+    NodeAST *main = mainMethod(4);
+    NodeAST *x = astLocal(TYPE_INT, "x", 5);
+    astAppend(main, 2, x, astStore(x, astInvoke(diff, 2, astInt(10), astInt(3))));
+    const TACList *list = generate(astProgram(2, diff, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *p1 = findInstruction(list, TAC_PARAM, 0);
@@ -687,22 +756,27 @@ void test_tac_method_call_arguments_left_to_right(void) {
 }
 
 /* ------------------------------------------------------------------------
- * Grupo 8: Instantáneas Canónicas de Programas Completos y Colisión de Nombres
+ * Grupo 7: Instantáneas Canónicas de Programas Completos y Colisión de Nombres
  * ------------------------------------------------------------------------ */
 
 // Programa factorial completo con globales, if/else recursivo y while valida salida .ci exacta
+// int g;
+// int fact(int n) { if (n < 2) { return 1; } else { return n * fact(n - 1); } }
+// void main() { int i; i = 0; while (i < 3) { i = i + 1; } g = fact(i); }
 void test_tac_canonical_factorial_program(void) {
-    const char *source =
-        "int g;\n"
-        "int fact(int n) {\n"
-        "  if (n < 2) { return 1; } else { return n * fact(n - 1); }\n"
-        "}\n"
-        "void main() {\n"
-        "  int i;\n"
-        "  i = 0;\n"
-        "  while (i < 3) { i = i + 1; }\n"
-        "  g = fact(i);\n"
-        "}\n";
+    NodeAST *g = astGlobal(TYPE_INT, "g", 1);
+
+    NodeAST *n = astLocal(TYPE_INT, "n", 3);
+    NodeAST *fact = astMethodDeclaration(TYPE_INT, "fact", 2, astParameters(1, n));
+    NodeAST *recursion = astBinary(OP_MUL, astUse(n), astInvoke(fact, 1, astBinary(OP_SUB, astUse(n), astInt(1))));
+    astAppend(fact, 1, astIf(astBinary(OP_LT, astUse(n), astInt(2)),
+                             astBlock(1, astReturn(astInt(1))),
+                             astBlock(1, astReturn(recursion))));
+
+    NodeAST *main = mainMethod(4);
+    NodeAST *i = astLocal(TYPE_INT, "i", 5);
+    astAppend(main, 4, i, astStore(i, astInt(0)), countingLoop(i, 3, NULL),
+              astStore(g, astInvoke(fact, 1, astUse(i))));
 
     const char *expected =
         "global g@1, INT\n"
@@ -736,19 +810,21 @@ void test_tac_canonical_factorial_program(void) {
         "ret\n"
         "end_func main\n";
 
-    const char *actual = compileToTACText(source);
+    const char *actual = generateText(astProgram(3, g, fact, main));
     TEST_ASSERT_NOT_NULL(actual);
     TEST_ASSERT_EQUAL_STRING(expected, actual);
 }
 
 // Programa con operadores mixtos, llamada y aritmética valida salida .ci exacta
+// int half(int x) { return x / 2; } void main() { int r; r = half(7) + 1; }
 void test_tac_canonical_half_and_mixed_operators(void) {
-    const char *source =
-        "int half(int x) { return x / 2; }\n"
-        "void main() {\n"
-        "  int r;\n"
-        "  r = half(7) + 1;\n"
-        "}\n";
+    NodeAST *x = astLocal(TYPE_INT, "x", 2);
+    NodeAST *half = astMethodDeclaration(TYPE_INT, "half", 1, astParameters(1, x));
+    astAppend(half, 1, astReturn(astBinary(OP_DIV, astUse(x), astInt(2))));
+
+    NodeAST *main = mainMethod(3);
+    NodeAST *r = astLocal(TYPE_INT, "r", 4);
+    astAppend(main, 2, r, astStore(r, astBinary(OP_ADD, astInvoke(half, 1, astInt(7)), astInt(1))));
 
     const char *expected =
         "begin_func half, 1\n"
@@ -765,41 +841,50 @@ void test_tac_canonical_half_and_mixed_operators(void) {
         "ret\n"
         "end_func main\n";
 
-    const char *actual = compileToTACText(source);
+    const char *actual = generateText(astProgram(2, half, main));
     TEST_ASSERT_NOT_NULL(actual);
     TEST_ASSERT_EQUAL_STRING(expected, actual);
 }
 
 // El enunciado acota la etapa a tipos enteros y logicos: un programa con float se rechaza
+// void main() { float f; f = 1.5; }
 void test_tac_rejects_float_program(void) {
-    const char *source = "void main() { float f; f = 1.5; }";
-    TEST_ASSERT_NULL(compileToTAC(source));
+    NodeAST *main = mainMethod(1);
+    NodeAST *f = astLocal(TYPE_FLOAT, "f", 2);
+    astAppend(main, 2, f, astStore(f, astFloat(1.5f)));
+    TEST_ASSERT_NULL(generate(astProgram(1, main)));
     TEST_ASSERT_TRUE(hasUnsupportedTypeError());
 }
 
 // El rechazo alcanza al tipo de retorno de un metodo, no solo a las variables
+// float f() { return 1; } void main() { }
 void test_tac_rejects_float_return_type(void) {
-    const char *source = "float f() { return 1; } void main() { }";
-    TEST_ASSERT_NULL(compileToTAC(source));
+    NodeAST *f = astMethodDeclaration(TYPE_FLOAT, "f", 1, astParameters(0));
+    astAppend(f, 1, astReturn(astInt(1)));
+    TEST_ASSERT_NULL(generate(astProgram(2, f, mainMethod(2))));
     TEST_ASSERT_TRUE(hasUnsupportedTypeError());
 }
 
 // Un programa sin float no activa la bandera de tipo no soportado
+// void main() { int x; x = 1; }
 void test_tac_integer_program_is_supported(void) {
-    TEST_ASSERT_NOT_NULL(compileToTAC("void main() { int x; x = 1; }"));
+    NodeAST *main = mainMethod(1);
+    NodeAST *x = astLocal(TYPE_INT, "x", 2);
+    astAppend(main, 2, x, astStore(x, astInt(1)));
+    TEST_ASSERT_NOT_NULL(generate(astProgram(1, main)));
     TEST_ASSERT_FALSE(hasUnsupportedTypeError());
 }
 
 // Cadena booleana con cortocircuito a && f() || false valida salida .ci exacta
+// boolean f() { return true; }
+// void main() { boolean a; boolean b; a = true; b = a && f() || false; }
 void test_tac_canonical_short_circuit_boolean_chain(void) {
-    const char *source =
-        "boolean f() { return true; }\n"
-        "void main() {\n"
-        "  boolean a;\n"
-        "  boolean b;\n"
-        "  a = true;\n"
-        "  b = a && f() || false;\n"
-        "}\n";
+    NodeAST *f = booleanMethodF(1);
+    NodeAST *main = mainMethod(2);
+    NodeAST *a = astLocal(TYPE_BOOL, "a", 3);
+    NodeAST *b = astLocal(TYPE_BOOL, "b", 4);
+    NodeAST *chain = astBinary(OP_OR, astBinary(OP_AND, astUse(a), astInvoke(f, 0)), astBool(0));
+    astAppend(main, 4, a, b, astStore(a, astBool(1)), astStore(b, chain));
 
     const char *expected =
         "begin_func f, 0\n"
@@ -822,22 +907,18 @@ void test_tac_canonical_short_circuit_boolean_chain(void) {
         "ret\n"
         "end_func main\n";
 
-    const char *actual = compileToTACText(source);
+    const char *actual = generateText(astProgram(2, f, main));
     TEST_ASSERT_NOT_NULL(actual);
     TEST_ASSERT_EQUAL_STRING(expected, actual);
 }
 
 // Variables con nombres largos (> 64 caracteres) no deben colisionar en TAC por truncamiento
 void test_tac_long_variable_name_collision(void) {
-    const char *source =
-        "void main() {\n"
-        "  int variableConNombreExtremadamenteLargoParaProbarQueNoHayaColisionEnElBuffer1;\n"
-        "  int variableConNombreExtremadamenteLargoParaProbarQueNoHayaColisionEnElBuffer2;\n"
-        "  variableConNombreExtremadamenteLargoParaProbarQueNoHayaColisionEnElBuffer1 = 1;\n"
-        "  variableConNombreExtremadamenteLargoParaProbarQueNoHayaColisionEnElBuffer2 = 2;\n"
-        "}\n";
-
-    const TACList *list = compileToTAC(source);
+    NodeAST *main = mainMethod(1);
+    NodeAST *first = astLocal(TYPE_INT, "variableConNombreExtremadamenteLargoParaProbarQueNoHayaColisionEnElBuffer1", 2);
+    NodeAST *second = astLocal(TYPE_INT, "variableConNombreExtremadamenteLargoParaProbarQueNoHayaColisionEnElBuffer2", 3);
+    astAppend(main, 4, first, second, astStore(first, astInt(1)), astStore(second, astInt(2)));
+    const TACList *list = generate(astProgram(1, main));
     TEST_ASSERT_NOT_NULL(list);
 
     const TACInstruction *firstLocal = findInstruction(list, TAC_LOCAL_DECL, 0);
@@ -907,7 +988,7 @@ void test_tac_helper_append_tac_instruction(void) {
 int main(void) {
     UNITY_BEGIN();
 
-    /* Grupo 1: Expresiones Aritméticas, Unarias y Precedencia */
+    /* Grupo 1: Expresiones Aritméticas, Unarias y Orden de Emisión */
     RUN_TEST(test_tac_binary_addition);
     RUN_TEST(test_tac_binary_subtraction);
     RUN_TEST(test_tac_binary_multiplication);
@@ -949,9 +1030,7 @@ int main(void) {
     RUN_TEST(test_tac_method_call_expression_with_return_value);
     RUN_TEST(test_tac_method_call_arguments_left_to_right);
 
-    /* Grupo 7: Coerciones de Tipos */
-
-    /* Grupo 8: Instantáneas Canónicas de Programas Completos */
+    /* Grupo 7: Instantáneas Canónicas de Programas Completos */
     RUN_TEST(test_tac_canonical_factorial_program);
     RUN_TEST(test_tac_canonical_half_and_mixed_operators);
     RUN_TEST(test_tac_rejects_float_program);

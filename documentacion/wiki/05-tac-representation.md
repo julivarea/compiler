@@ -555,7 +555,8 @@ instrucción por tres, porque hay tres operandos.
 
 - **Suite:** `tests/test_tac.c` verifica las cuádruplas que produce
   cada construcción del lenguaje, comparando la lista generada instrucción por
-  instrucción.
+  instrucción. La entrada de cada caso es el AST anotado armado a mano, sin
+  parser ni análisis semántico.
 - **A mano:** el `.ci` es el volcado textual de la lista, así que leerlo es
   inspeccionar la estructura directamente:
 

@@ -1,6 +1,12 @@
 /**
  * @file test_object_code.c
- * @brief Suite de pruebas unitarias y de integracion para codigo objeto (Assembly x86-64).
+ * @brief Pruebas unitarias del generador de código objeto (assembly x86-64).
+ *
+ * La entrada de cada test es TAC: instrucciones construidas a mano o un listado en el
+ * formato del `.ci` (ver support/tac_builder.h), y las aserciones inspeccionan el
+ * assembly emitido sin ensamblarlo. Así un test solo puede fallar por un defecto del
+ * generador de código objeto. La ejecución de programas completos está en
+ * test_integration.c.
  */
 
 #include "unity.h"
@@ -8,162 +14,37 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/wait.h>
 
-#include "ast.h"
 #include "symbol_table.h"
-#include "semantic_analyzer.h"
-#include "intermediate_code.h"
 #include "tac.h"
+#include "tac_builder.h"
 #include "object_code.h"
 #include "function_frame.h"
 #include "string_builder.h"
-#include "error_handler.h"
 #include "types.h"
 
-extern int yyparse(void);
-typedef struct yy_buffer_state *YY_BUFFER_STATE;
-extern YY_BUFFER_STATE yy_scan_string(const char *str);
-extern void yy_delete_buffer(YY_BUFFER_STATE buffer);
-extern int yylineno;
-extern NodeAST *astRoot;
-extern int semantic_errors;
-extern int lexical_errors;
-
 /* ========================================================================
- * Helpers del arnes de pruebas y ejecucion
+ * Helpers del arnés de pruebas
  * ======================================================================== */
 
-static const char *compileToAssembly(const char *source, OptimizationSet optimizations) {
-    resetErrorHandler();
-    resetSymbolUids();
+/* Emite el assembly del TAC descrito por @p tac (formato .ci) y lo devuelve. */
+static const char *emitAssembly(const char *tac, OptimizationSet optimizations) {
+    TACList *list = buildTAC(tac);
+    if (list == NULL) {
+        return NULL;
+    }
     resetBuildString();
-    semantic_errors = 0;
-    lexical_errors = 0;
-    yylineno = 1;
-    astRoot = NULL;
-
-    YY_BUFFER_STATE buffer = yy_scan_string(source);
-    int parseResult = yyparse();
-    yy_delete_buffer(buffer);
-
-    if (parseResult != 0 || lexical_errors > 0) {
-        return NULL;
-    }
-
-    analyzeSemantics(astRoot, NULL);
-    if (semantic_errors > 0) {
-        return NULL;
-    }
-
-    const TACList *tacList = generateIntermediateCode(astRoot);
-    if (tacList == NULL) {
-        return NULL;
-    }
-
-    resetBuildString();
-    generateAssembly(tacList, optimizations);
+    generateAssembly(list, optimizations);
+    freeTACList(list);
     return getBuiltString();
 }
 
-static int runAssembly(const char *assemblyCode) {
-    if (assemblyCode == NULL || assemblyCode[0] == '\0') {
-        return -999;
-    }
-
-    char assemblyFile[] = "/tmp/test_asm_XXXXXX.s";
-    int asmFd = mkstemps(assemblyFile, 2);
-    if (asmFd < 0) return -998;
-    write(asmFd, assemblyCode, strlen(assemblyCode));
-    close(asmFd);
-
-    char binaryFile[] = "/tmp/test_bin_XXXXXX";
-    int binFd = mkstemp(binaryFile);
-    if (binFd < 0) {
-        unlink(assemblyFile);
-        return -997;
-    }
-    close(binFd);
-
-    char compileCommand[512];
-    snprintf(compileCommand, sizeof(compileCommand), "gcc -no-pie %s -o %s >/dev/null 2>&1", assemblyFile, binaryFile);
-    int compileResult = system(compileCommand);
-    unlink(assemblyFile);
-
-    if (compileResult != 0) {
-        unlink(binaryFile);
-        return -996;
-    }
-
-    int processStatus = system(binaryFile);
-    unlink(binaryFile);
-
-    if (WIFEXITED(processStatus)) {
-        return WEXITSTATUS(processStatus);
-    }
-    return -995;
-}
-
-static int compileAndRun(const char *source) {
-    const char *assemblyCode = compileToAssembly(source, OPTIMIZATION_NONE);
-    return runAssembly(assemblyCode);
-}
-
-static int compileAndRunFile(const char *filePath) {
-    FILE *file = fopen(filePath, "r");
-    if (file == NULL) return -999;
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    char *buffer = malloc(length + 1);
-    if (buffer == NULL) {
-        fclose(file);
-        return -998;
-    }
-    size_t readBytes = fread(buffer, 1, length, file);
-    buffer[readBytes] = '\0';
-    fclose(file);
-    int result = compileAndRun(buffer);
-    free(buffer);
-    return result;
-}
-
-static char *generate70ParamsProgram(void) {
-    char *buffer = malloc(8192);
-    int offset = snprintf(buffer, 8192, "int f(");
-    for (int i = 1; i <= 70; i++) {
-        offset += snprintf(buffer + offset, 8192 - offset, "int p%d%s", i, (i == 70) ? "" : ", ");
-    }
-    offset += snprintf(buffer + offset, 8192 - offset, ") { return p70; }\nint main() { return f(");
-    for (int i = 1; i <= 70; i++) {
-        offset += snprintf(buffer + offset, 8192 - offset, "%d%s", i, (i == 70) ? "" : ", ");
-    }
-    snprintf(buffer + offset, 8192 - offset, "); }\n");
-    return buffer;
-}
-
-static char *generate300GlobalVariablesProgram(void) {
-    char *buffer = malloc(16384);
-    int offset = 0;
-    for (int i = 0; i < 300; i++) {
-        offset += snprintf(buffer + offset, 16384 - offset, "int g%d;\n", i);
-    }
-    snprintf(buffer + offset, 16384 - offset, "int main() {\n  g299 = 7;\n  return g299;\n}\n");
-    return buffer;
-}
-
 void setUp(void) {
-    resetErrorHandler();
-    resetSymbolUids();
     resetBuildString();
-    semantic_errors = 0;
-    lexical_errors = 0;
-    yylineno = 1;
-    astRoot = NULL;
 }
 
 void tearDown(void) {
+    releaseTACSymbols();
 }
 
 /* ========================================================================
@@ -204,8 +85,12 @@ void test_asm_frame_allocation_alignment_and_null_safety(void) {
 
 // Emision de seccion .note.GNU-stack
 void test_asm_sections_gnu_stack(void) {
-    const char *source = "int main() { return 0; }";
-    const char *assembly = compileToAssembly(source, OPTIMIZATION_NONE);
+    // int main() { return 0; }
+    const char *tac =
+        "begin_func main, 0\n"
+        "ret 0\n"
+        "end_func main\n";
+    const char *assembly = emitAssembly(tac, OPTIMIZATION_NONE);
     TEST_ASSERT_NOT_NULL(assembly);
     TEST_ASSERT_NOT_NULL(strstr(assembly, ".section .note.GNU-stack,\"\",@progbits"));
 
@@ -244,20 +129,116 @@ void test_asm_emit_prologue_and_epilogue(void) {
 
 // Reduccion de fuerza reemplaza multiplicacion entera por potencia de 2 por sall
 void test_asm_strength_reduction_multiplication_by_power_of_two(void) {
-    const char *source = "int main() { int x; x = 5; return x * 4; }";
-    const char *assembly = compileToAssembly(source, OPTIMIZATION_STRENGTH);
+    // int main() { int x; x = 5; return x * 4; }
+    const char *tac =
+        "begin_func main, 0\n"
+        "local x@2, INT\n"
+        "x@2 = 5\n"
+        "t0 = x@2 * 4\n"
+        "ret t0\n"
+        "end_func main\n";
+    const char *assembly = emitAssembly(tac, OPTIMIZATION_STRENGTH);
     TEST_ASSERT_NOT_NULL(assembly);
     TEST_ASSERT_NOT_NULL(strstr(assembly, "sall $2, %eax"));
 }
 
 // Fusion de condicion relacional y salto condicional (Peephole) emite cmpl + jcc directo
 void test_asm_fused_relational_branch_peephole(void) {
-    const char *source = "int main() { int a; a = 10; if (a < 20) { return 1; } return 0; }";
-    const char *assembly = compileToAssembly(source, OPTIMIZATION_PEEPHOLE);
+    // int main() { int a; a = 10; if (a < 20) { return 1; } return 0; }
+    const char *tac =
+        "begin_func main, 0\n"
+        "local a@2, INT\n"
+        "a@2 = 10\n"
+        "t0 = a@2 < 20\n"
+        "if t0 false goto L0\n"
+        "ret 1\n"
+        "L0:\n"
+        "ret 0\n"
+        "end_func main\n";
+    const char *assembly = emitAssembly(tac, OPTIMIZATION_PEEPHOLE);
     TEST_ASSERT_NOT_NULL(assembly);
     TEST_ASSERT_NOT_NULL(strstr(assembly, "cmpl %edx, %eax"));
     TEST_ASSERT_NOT_NULL(strstr(assembly, "jge ."));
     TEST_ASSERT_NULL(strstr(assembly, "setl %al"));
+}
+
+// Multiplicacion por potencias de dos se reduce a desplazamientos aritmeticos
+void test_asm_strength_reduction_powers_of_two(void) {
+    // int main() {
+    const char *tac =
+        "begin_func main, 0\n"
+        "local x@2, INT\n"
+        "x@2 = 3\n"
+        "t0 = x@2 * 2\n"
+        "t2 = x@2 * 4\n"
+        "t1 = t0 + t2\n"
+        "t4 = x@2 * 8\n"
+        "t3 = t1 + t4\n"
+        "ret t3\n"
+        "end_func main\n";
+    const char *assembly = emitAssembly(tac, OPTIMIZATION_NONE);
+    TEST_ASSERT_NOT_NULL(assembly);
+    TEST_ASSERT_TRUE(strstr(assembly, "imull") != NULL);
+
+    assembly = emitAssembly(tac, OPTIMIZATION_STRENGTH);
+    TEST_ASSERT_NOT_NULL(assembly);
+    // En assembly se emitieron desplazamientos sall/shll
+    TEST_ASSERT_TRUE(strstr(assembly, "sall") != NULL || strstr(assembly, "shll") != NULL);
+    // No permanecen imull con multiplicadores potencia de 2
+    TEST_ASSERT_NULL(strstr(assembly, "imull $2"));
+    TEST_ASSERT_NULL(strstr(assembly, "imull $4"));
+    TEST_ASSERT_NULL(strstr(assembly, "imull $8"));
+}
+
+// Multiplicacion conmutativa (constante a izquierda o derecha) se reduce por igual
+void test_asm_strength_reduction_commutative(void) {
+    // int main() {
+    const char *tac =
+        "begin_func main, 0\n"
+        "local x@2, INT\n"
+        "x@2 = 5\n"
+        "t0 = 2 * x@2\n"
+        "t2 = 4 * x@2\n"
+        "t1 = t0 + t2\n"
+        "ret t1\n"
+        "end_func main\n";
+    const char *assembly = emitAssembly(tac, OPTIMIZATION_STRENGTH);
+    TEST_ASSERT_NOT_NULL(assembly);
+    TEST_ASSERT_TRUE(strstr(assembly, "sall") != NULL || strstr(assembly, "shll") != NULL);
+}
+
+// Multiplicacion por cero y por uno se reducen a xor o asignacion
+void test_asm_strength_reduction_zero_and_one(void) {
+    // int main() {
+    const char *tac =
+        "begin_func main, 0\n"
+        "local x@2, INT\n"
+        "x@2 = 33\n"
+        "t0 = x@2 * 1\n"
+        "t2 = x@2 * 0\n"
+        "t1 = t0 + t2\n"
+        "ret t1\n"
+        "end_func main\n";
+    const char *assembly = emitAssembly(tac, OPTIMIZATION_STRENGTH);
+    TEST_ASSERT_NOT_NULL(assembly);
+    // Multiplicacion por 0 se reduce a xorl
+    TEST_ASSERT_TRUE(strstr(assembly, "xorl") != NULL);
+}
+
+// Multiplicacion por factores que no son potencia de dos preserva instruccion imull
+void test_asm_strength_reduction_non_power_of_two_preserves_imull(void) {
+    // int main() {
+    const char *tac =
+        "begin_func main, 0\n"
+        "local x@2, INT\n"
+        "x@2 = 7\n"
+        "t0 = x@2 * 5\n"
+        "ret t0\n"
+        "end_func main\n";
+    const char *assembly = emitAssembly(tac, OPTIMIZATION_STRENGTH);
+    TEST_ASSERT_NOT_NULL(assembly);
+    // Multiplicacion por 5 preserva instruccion imull
+    TEST_ASSERT_TRUE(strstr(assembly, "imull") != NULL);
 }
 
 /* ========================================================================
@@ -909,134 +890,6 @@ void test_asm_flow_caller_stack_padding(void) {
 }
 
 /* ========================================================================
- * Grupo 4: Suite de integracion y ejecucion con GCC (Minima y Rigurosa)
- * ======================================================================== */
-
-// Compilacion y ejecucion completa de los programas canonicos examples/factorial y programa_sin_error
-void test_asm_exec_canonical_programs(void) {
-    TEST_ASSERT_EQUAL_INT(0, compileAndRunFile("examples/factorial.ctds"));
-    TEST_ASSERT_EQUAL_INT(0, compileAndRunFile("examples/programa_sin_error.ctds"));
-}
-
-// Convencion de llamada y llamadas anidadas exhaustivas (reproduccion y cierre de Bug 1.2 callArgIndex)
-void test_asm_exec_calling_convention_and_nested_calls(void) {
-    const char *source = "int doble(int x) { return x * 2; }\n"
-                         "int triple(int x) { return x * 3; }\n"
-                         "int sumar(int a, int b) { return a + b; }\n"
-                         "int main() {\n"
-                         "    int r1, r2, r3, r4;\n"
-                         "    r1 = sumar(3, doble(2));\n"
-                         "    r2 = sumar(doble(2), 3);\n"
-                         "    r3 = sumar(doble(2), triple(3));\n"
-                         "    r4 = doble(doble(doble(2)));\n"
-                         "    if (r1 == 7 && r2 == 7 && r3 == 13 && r4 == 16) { return 42; }\n"
-                         "    return 0;\n"
-                         "}";
-    TEST_ASSERT_EQUAL_INT(42, compileAndRun(source));
-}
-
-// Pasaje de parametros por pila segun System V AMD64 para enteros (>6)
-void test_asm_exec_system_v_stack_parameters(void) {
-    const char *intSource = "int s(int a, int b, int c, int d, int e, int f, int g, int h) {\n"
-                            "    return a + b + c + d + e + f + g + h;\n"
-                            "}\n"
-                            "int main() {\n"
-                            "    return s(1, 2, 3, 4, 5, 6, 7, 8); /* 36 */\n"
-                            "}";
-    TEST_ASSERT_EQUAL_INT(36, compileAndRun(intSource));
-}
-
-// Sombreado de variables y resolucion de ambitos en bloques anidados y parametros
-void test_asm_exec_variable_shadowing_and_scopes(void) {
-    const char *source = "int g;\n"
-                         "int f(int g) { return g + 1; }\n"
-                         "int main() {\n"
-                         "    int r1, a, x;\n"
-                         "    g = 100;\n"
-                         "    r1 = f(4);\n"
-                         "    a = 1;\n"
-                         "    { int b; b = 2; { int c; c = 3; a = a + b + c; } }\n"
-                         "    x = 1;\n"
-                         "    { int x; x = 2; }\n"
-                         "    if (r1 == 5 && a == 6 && x == 1 && g == 100) { return 1; }\n"
-                         "    return 0;\n"
-                         "}";
-    TEST_ASSERT_EQUAL_INT(1, compileAndRun(source));
-}
-
-// Division y modulo con signo respetan truncamiento a cero y signo de resto con idivl
-void test_asm_exec_runtime_signed_division_and_modulo(void) {
-    const char *source = "int main() {\n"
-                         "    int d1, m1, d2, m2;\n"
-                         "    d1 = -7 / 2;  /* -3 */\n"
-                         "    m1 = -7 % 3;  /* -1 */\n"
-                         "    d2 = 7 / -2;  /* -3 */\n"
-                         "    m2 = 7 % -3;  /* 1 */\n"
-                         "    if (d1 == -3 && m1 == -1 && d2 == -3 && m2 == 1) { return 1; }\n"
-                         "    return 0;\n"
-                         "}";
-    TEST_ASSERT_EQUAL_INT(1, compileAndRun(source));
-}
-
-// Cortocircuito booleano no ejecuta efectos colaterales y respeta evaluacion izquierda a derecha
-void test_asm_exec_runtime_short_circuit_and_eval_order(void) {
-    const char *source = "int c;\n"
-                         "boolean inc() { c = c + 1; return true; }\n"
-                         "int next() { c = c + 1; return c; }\n"
-                         "int sub(int a, int b) { return a - b; }\n"
-                         "int main() {\n"
-                         "    boolean b1, b2, b3, b4;\n"
-                         "    int ord;\n"
-                         "    c = 0;\n"
-                         "    b1 = false && inc();\n"
-                         "    b2 = true || inc();\n"
-                         "    b3 = true && inc();\n"
-                         "    b4 = false || inc();\n"
-                         "    ord = sub(next(), next());\n"
-                         "    if (c == 4 && ord == -1 && !b1 && b2 && b3 && b4) { return 1; }\n"
-                         "    return 0;\n"
-                         "}";
-    TEST_ASSERT_EQUAL_INT(1, compileAndRun(source));
-}
-
-// Doble recursion de fibonacci valida anidamiento de marcos y puntero de pila en ejecucion
-void test_asm_exec_recursion_fibonacci(void) {
-    const char *source = "int fib(int n) { if (n < 2) { return n; } else { return fib(n - 1) + fib(n - 2); } }\n"
-                         "int main() { return fib(10); }";
-    TEST_ASSERT_EQUAL_INT(55, compileAndRun(source));
-}
-
-// Bucle while con if/else anidados y salida anticipada por return
-void test_asm_exec_while_with_nested_if_and_return(void) {
-    const char *source = "int f(int n) {\n"
-                         "    int i; i = 0;\n"
-                         "    while (i < 100) {\n"
-                         "        if (i == n) { return i * 2; }\n"
-                         "        else { i = i + 1; }\n"
-                         "    }\n"
-                         "    return 0;\n"
-                         "}\n"
-                         "int main() { return f(21); }";
-    TEST_ASSERT_EQUAL_INT(42, compileAndRun(source));
-}
-
-// E21: 70 argumentos salientes acumulados con pasaje por pila
-void test_asm_exec_limit_70_arguments(void) {
-    char *source = generate70ParamsProgram();
-    int result = compileAndRun(source);
-    free(source);
-    TEST_ASSERT_EQUAL_INT(70, result);
-}
-
-// E23: 300 variables globales con almacenamiento estatico
-void test_asm_exec_limit_300_global_variables(void) {
-    char *source = generate300GlobalVariablesProgram();
-    int result = compileAndRun(source);
-    free(source);
-    TEST_ASSERT_EQUAL_INT(7, result);
-}
-
-/* ========================================================================
  * Runner principal de la suite
  * ======================================================================== */
 
@@ -1049,6 +902,10 @@ int main(void) {
     RUN_TEST(test_asm_emit_prologue_and_epilogue);
     RUN_TEST(test_asm_strength_reduction_multiplication_by_power_of_two);
     RUN_TEST(test_asm_fused_relational_branch_peephole);
+    RUN_TEST(test_asm_strength_reduction_powers_of_two);
+    RUN_TEST(test_asm_strength_reduction_commutative);
+    RUN_TEST(test_asm_strength_reduction_zero_and_one);
+    RUN_TEST(test_asm_strength_reduction_non_power_of_two_preserves_imull);
 
     /* Grupo 2: Pruebas unitarias de traduccion aislada TAC -> Assembly (generateInstruction) */
     /* Subgrupo 2.1: Asignacion y Aritmetica Entera */
@@ -1083,18 +940,6 @@ int main(void) {
     RUN_TEST(test_asm_flow_short_circuit_and_labels);
     RUN_TEST(test_asm_flow_while_loop);
     RUN_TEST(test_asm_flow_caller_stack_padding);
-
-    /* Grupo 4: Suite de integracion y ejecucion con GCC (Minima y Rigurosa) */
-    RUN_TEST(test_asm_exec_canonical_programs);
-    RUN_TEST(test_asm_exec_calling_convention_and_nested_calls);
-    RUN_TEST(test_asm_exec_system_v_stack_parameters);
-    RUN_TEST(test_asm_exec_variable_shadowing_and_scopes);
-    RUN_TEST(test_asm_exec_runtime_signed_division_and_modulo);
-    RUN_TEST(test_asm_exec_runtime_short_circuit_and_eval_order);
-    RUN_TEST(test_asm_exec_recursion_fibonacci);
-    RUN_TEST(test_asm_exec_while_with_nested_if_and_return);
-    RUN_TEST(test_asm_exec_limit_70_arguments);
-    RUN_TEST(test_asm_exec_limit_300_global_variables);
 
     return UNITY_END();
 }

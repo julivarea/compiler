@@ -636,7 +636,8 @@ exactamente lo que el diseño actual evita a propósito.
 
 ## 15. Cómo se valida
 
-- **Suite:** `tests/test_object_code.c`, una de las más grandes del proyecto. Verifica el assembly emitido por cada instrucción TAC.
+- **Suite:** `tests/test_object_code.c`, una de las más grandes del proyecto. Verifica el assembly emitido por cada instrucción TAC, partiendo siempre de TAC (instrucciones sueltas o un listado `.ci` con `buildTAC`), sin ensamblar ni ejecutar.
+- **Suite de integración:** `tests/test_integration.c` compila programas completos, los ensambla con `gcc`, los ejecuta y compara el código de salida.
 - **A mano:** el `.ass` es la salida directa:
 
 ```bash
@@ -646,8 +647,8 @@ exactamente lo que el diseño actual evita a propósito.
 - **La validación que importa es ejecutar.** Un error de esta fase casi nunca se
   manifiesta como un error de ensamblado: se manifiesta como un **resultado
   incorrecto**, porque el assembly es sintácticamente válido y hace algo distinto
-  de lo pedido. Por eso cada construcción necesita un test que **compile, ejecute
-  y compare**:
+  de lo pedido. Por eso cada construcción necesita, además del test unitario, un
+  caso en la suite de integración que **compile, ejecute y compare**:
 
 ```bash
 ./mi_compilador -o /tmp/f examples/dead_code.ctds && /tmp/f; echo $?   # espera 10

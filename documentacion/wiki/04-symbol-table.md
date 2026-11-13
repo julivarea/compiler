@@ -301,10 +301,11 @@ bloque interno ya está fuera de alcance. El programa devuelve 10.
 ### `resetSymbolUids`
 
 Reinicia el contador. **Lo llaman únicamente las suites de tests**
-(`test_tac.c`, `test_object_code.c`, `test_optimizer.c`,
-`test_live_variable_analysis.c`), para que los `uid` sean deterministas y se
-pueda comparar el TAC esperado carácter por carácter. El compilador no la usa:
-procesa un archivo y termina.
+(`test_semantic.c`, `test_tac.c`, `test_integration.c`), para que cada caso
+empiece con los `uid` desde 1. Las suites que parten de TAC no la necesitan: ahí
+el `uid` viene escrito en el propio texto (`x@3`), y `test_tac.c` fija el de cada
+declaración al armar el AST anotado. El compilador no la usa: procesa un archivo
+y termina.
 
 ---
 

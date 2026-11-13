@@ -552,7 +552,9 @@ Es la extensión más chica que amplía el conjunto de programas aceptados.
 ## 12. Cómo se valida
 
 - **Suite:** `tests/test_semantic.c`, con un caso válido y uno
-  inválido por regla.
+  inválido por regla. Cada caso arma a mano el AST sin anotar que entregaría el
+  parser (`tests/support/ast_builder.h`), así que la suite no enlaza ni el lexer
+  ni el parser: solo puede fallar por un defecto del análisis semántico.
 - **A mano:** la etapa escribe el AST **anotado** en un `.sem`, que comparado con
   el `.sint` del mismo programa muestra exactamente lo que resolvió:
 

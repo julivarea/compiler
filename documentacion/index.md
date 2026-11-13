@@ -120,12 +120,12 @@ extensión no se podía producir.
 .
 ├── include/              # archivos de cabecera (.h), uno por módulo
 ├── src/                  # implementaciones (.c), más lexer.l y bison.y
-├── tests/                # tests unitarios con Unity, una suite por módulo
+├── tests/                # tests con Unity: una suite por etapa más una de integración
 ├── examples/             # programas .ctds de ejemplo, válidos e inválidos
 ├── documentacion/        # las páginas de este sitio
 ├── build/                # artefactos de Flex, Bison y los binarios de test
 ├── build.sh              # compilar el proyecto
-├── test_suite.sh         # correr las diez suites de tests
+├── test_suite.sh         # correr las once suites de tests
 └── mkdocs.yml            # configuración de este sitio
 ```
 

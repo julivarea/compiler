@@ -103,7 +103,7 @@ sitio que como archivos sueltos: ver [Documentación](#documentación).
 │   └── object_code/                                 # generación de código objeto x86-64
 │       ├── function_frame.c
 │       └── object_code.c
-├── tests/                                           # diez suites de tests unitarios con Unity
+├── tests/                                           # suites de tests con Unity: una por etapa + integración
 ├── examples/                                        # programas .ctds de ejemplo, válidos e inválidos
 ├── build/                                           # archivos de compilacion
 ├── documentacion/                                   # páginas del sitio de documentación (ver "Documentación")
@@ -253,7 +253,9 @@ coinciden: sin `-target` se recorre todo y queda el ejecutable
 bash test_suite.sh
 ```
 
-Compila y corre **diez suites** con Unity, una por módulo, **322 tests** en total:
+Compila y corre **once suites** con Unity, **294 tests** en total. Las unitarias prueban una sola etapa:
+el test arma a mano la salida de la etapa anterior (AST o TAC, con `tests/support/`), así que un defecto
+de una etapa previa no las hace fallar. La de integración es la única de punta a punta:
 
 | Suite | Qué cubre |
 | --- | --- |
@@ -261,11 +263,12 @@ Compila y corre **diez suites** con Unity, una por módulo, **322 tests** en tot
 | `tests/test_parser.c` | Programas que `yyparse()` debe aceptar o rechazar según la gramática |
 | `tests/test_ast.c` | Forma del árbol que construyen las acciones de Bison |
 | `tests/test_symbol_table.c` | Scopes anidados, shadowing y asignación de `uid` |
-| `tests/test_semantic.c` | Las reglas semánticas del lenguaje, caso válido e inválido por regla |
-| `tests/test_tac.c` | Cuádruplas generadas por cada construcción, incluido el corto circuito |
+| `tests/test_semantic.c` | Las reglas semánticas del lenguaje, caso válido e inválido por regla, sobre un AST armado a mano |
+| `tests/test_tac.c` | Cuádruplas generadas por cada construcción, incluido el corto circuito, desde un AST anotado armado a mano |
 | `tests/test_live_variable_analysis.c` | Construcción del CFG y convergencia de `LIVE_IN`/`LIVE_OUT` |
+| `tests/test_optimizer.c` | Que cada optimización transforme lo que debe y no toque el resto, partiendo de TAC |
 | `tests/test_object_code.c` | Assembly emitido por cada instrucción TAC |
-| `tests/test_optimizer.c` | Que cada optimización transforme lo que debe y no toque el resto |
+| `tests/test_integration.c` | Fuente → ejecutable: equivalencia con y sin optimizaciones y ejecución de programas completos |
 | `tests/test_cli.c` | Parseo de argumentos, extensiones de salida y códigos de retorno |
 
 La salida muestra una línea `[PASS]`/`[FAIL]` por test, agrupada por suite. Si un
