@@ -14,6 +14,7 @@ static void analyzeAssignmentNode(NodeAST *node, Scope *currentScope);
 static void analyzeReturnNode(NodeAST *node, Scope *currentScope);
 static void analyzeIfElseNode(NodeAST *node, Scope *currentScope);
 static void analyzeWhileNode(NodeAST *node, Scope *currentScope);
+static void analyzeBooleanCondition(NodeAST *node, Scope *currentScope, const char *statementName);
 
 static bool guaranteesReturn(NodeAST *node);
 static void checkMainMethodExists(Scope *globalScope);
@@ -199,35 +200,24 @@ static void analyzeReturnNode(NodeAST *node, Scope *currentScope) {
 }
 
 static void analyzeIfElseNode(NodeAST *node, Scope *currentScope) {
-    NodeAST *condition = GET_CONDITION(node);
-    DataType conditionType = analyzeExpression(condition, currentScope);
-
-    bool isInvalidConditionType = (conditionType != TYPE_ERROR && conditionType != TYPE_BOOL);
-    if (isInvalidConditionType) {
-        semanticError(node->line, "La condicion del if debe ser de tipo BOOL, pero es %s.", getDataTypeName(conditionType));
-    }
-
-    NodeAST *ifBlock = GET_IF_BLOCK(node);
-    analyzeNodeSemantics(ifBlock, currentScope);
-
-    NodeAST *elseBlock = GET_ELSE_BLOCK(node);
-    bool hasElseBlock = (elseBlock != NULL);
-    if (hasElseBlock) {
-        analyzeNodeSemantics(elseBlock, currentScope);
-    }
+    analyzeBooleanCondition(node, currentScope, "if");
+    analyzeNodeSemantics(GET_IF_BLOCK(node), currentScope);
+    analyzeNodeSemantics(GET_ELSE_BLOCK(node), currentScope);
 }
 
 static void analyzeWhileNode(NodeAST *node, Scope *currentScope) {
-    NodeAST *condition = GET_CONDITION(node);
-    DataType conditionType = analyzeExpression(condition, currentScope);
+    analyzeBooleanCondition(node, currentScope, "while");
+    analyzeNodeSemantics(GET_WHILE_BLOCK(node), currentScope);
+}
+
+static void analyzeBooleanCondition(NodeAST *node, Scope *currentScope, const char *statementName) {
+    DataType conditionType = analyzeExpression(GET_CONDITION(node), currentScope);
 
     bool isInvalidConditionType = (conditionType != TYPE_ERROR && conditionType != TYPE_BOOL);
     if (isInvalidConditionType) {
-        semanticError(node->line, "La condicion del while debe ser de tipo BOOL, pero es %s.", getDataTypeName(conditionType));
+        semanticError(node->line, "La condicion del %s debe ser de tipo BOOL, pero es %s.",
+                      statementName, getDataTypeName(conditionType));
     }
-
-    NodeAST *body = GET_WHILE_BLOCK(node);
-    analyzeNodeSemantics(body, currentScope);
 }
 
 static bool guaranteesReturn(NodeAST *node) {
