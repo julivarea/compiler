@@ -180,8 +180,7 @@ static bool parsePositionalArgument(const char *argument, Options *options, cons
         return false;
     }
 
-    bool hasMultipleInputs = (options->input != NULL);
-    if (hasMultipleInputs) {
+    if (options->input != NULL) {
         fprintf(stderr, "Error: se recibio mas de un archivo de entrada ('%s' y '%s').\n",
                 options->input, argument);
         printUsage(program);
@@ -193,8 +192,7 @@ static bool parsePositionalArgument(const char *argument, Options *options, cons
 }
 
 static bool validateInputFile(const Options *options, const char *program) {
-    bool hasMissingInput = (options->input == NULL);
-    if (hasMissingInput) {
+    if (options->input == NULL) {
         fprintf(stderr, "Error: falta el archivo de entrada.\n");
         printUsage(program);
         return false;
@@ -211,15 +209,13 @@ static bool validateInputFile(const Options *options, const char *program) {
 }
 
 static bool resolveOutputPath(Options *options, const char *requestedOutput) {
-    bool hasCustomOutput = (requestedOutput != NULL);
-    if (hasCustomOutput) {
+    if (requestedOutput != NULL) {
         options->output = strdup(requestedOutput);
     } else {
         options->output = buildOutputName(options->input, getTargetExtension(options));
     }
 
-    bool hasAllocationError = (options->output == NULL);
-    if (hasAllocationError) {
+    if (options->output == NULL) {
         fprintf(stderr, "Error: no se pudo reservar memoria para el nombre de salida.\n");
         return false;
     }
@@ -309,8 +305,7 @@ static char *buildOutputName(const char *input, const char *extension) {
     size_t extensionLength = strlen(extension);
 
     char *output = malloc(baseLength + extensionLength + 1);
-    bool hasAllocationError = (output == NULL);
-    if (hasAllocationError) return NULL;
+    if (output == NULL) return NULL;
 
     memcpy(output, input, baseLength);
     memcpy(output + baseLength, extension, extensionLength + 1);

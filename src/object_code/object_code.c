@@ -59,8 +59,7 @@ static const char *getGlobalName(const TACOperand *operand);
 static bool isDeclaredGlobal(const TACOperand *operand);
 
 void generateAssembly(const TACList *tacList, OptimizationSet enabled) {
-    bool isNullList = (tacList == NULL);
-    if (isNullList) return;
+    if (tacList == NULL) return;
 
     objectCodeErrors = 0;
     activeOptimizations = enabled;

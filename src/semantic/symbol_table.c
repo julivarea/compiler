@@ -48,8 +48,7 @@ Scope *createScope(int level, Scope *parent, Symbol *function) {
     scope->childrenCount = 0;
     scope->children = malloc(sizeof(Scope *) * scope->childrenCapacity);
 
-    bool internalAllocationFailed = (scope->symbols == NULL || scope->children == NULL);
-    if (internalAllocationFailed) {
+    if (scope->symbols == NULL || scope->children == NULL) {
         free(scope->symbols);
         free(scope->children);
         free(scope);

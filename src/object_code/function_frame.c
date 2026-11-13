@@ -10,8 +10,7 @@ FunctionFrame *createFrame(const char *functionName) {
         return NULL;
     }
 
-    bool hasFunctionName = (functionName != NULL);
-    if (hasFunctionName) {
+    if (functionName != NULL) {
         strncpy(frame->functionName, functionName, TAC_NAME_LENGTH - 1);
         frame->functionName[TAC_NAME_LENGTH - 1] = '\0';
     } else {
@@ -31,9 +30,7 @@ FunctionFrame *createFrame(const char *functionName) {
     frame->integerParamCount = 0;
     frame->stackParamCount = 0;
 
-    bool allocationFailed = (frame->slots == NULL ||
-                             frame->pendingParamSlots == NULL);
-    if (allocationFailed) {
+    if (frame->slots == NULL || frame->pendingParamSlots == NULL) {
         freeFrame(frame);
         return NULL;
     }
@@ -90,8 +87,7 @@ int addAnonymousSlot(FunctionFrame *frame) {
 }
 
 bool getSlotOffset(const FunctionFrame *frame, const char *name, int *outOffset) {
-    bool isInvalidQuery = (frame == NULL || name == NULL);
-    if (isInvalidQuery) return false;
+    if (frame == NULL || name == NULL) return false;
 
     for (int i = 0; i < frame->slotCount; i++) {
         bool matchesSlot = (strcmp(frame->slots[i].name, name) == 0);
