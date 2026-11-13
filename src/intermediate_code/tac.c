@@ -206,20 +206,19 @@ void formatTACInstruction(char *buffer, size_t size, const TACInstruction *instr
                      getOperandName(&instruction->result), getOperandName(&instruction->firstOperand));
             break;
 
-        case TAC_UMINUS:
-        case TAC_NOT:
-            snprintf(buffer, size, "%s = %s%s\n",
-                     getOperandName(&instruction->result),
-                     getOperatorSymbol(instruction->operation),
-                     getOperandName(&instruction->firstOperand));
-            break;
-
-        default: /* operador binario: result = A sym B */
-            snprintf(buffer, size, "%s = %s %s %s\n",
-                     getOperandName(&instruction->result),
-                     getOperandName(&instruction->firstOperand),
-                     getOperatorSymbol(instruction->operation),
-                     getOperandName(&instruction->secondOperand));
+        default:
+            if (instruction->secondOperand.kind == OPERAND_NONE) {
+                snprintf(buffer, size, "%s = %s%s\n",
+                         getOperandName(&instruction->result),
+                         getOperatorSymbol(instruction->operation),
+                         getOperandName(&instruction->firstOperand));
+            } else {
+                snprintf(buffer, size, "%s = %s %s %s\n",
+                         getOperandName(&instruction->result),
+                         getOperandName(&instruction->firstOperand),
+                         getOperatorSymbol(instruction->operation),
+                         getOperandName(&instruction->secondOperand));
+            }
             break;
     }
 }

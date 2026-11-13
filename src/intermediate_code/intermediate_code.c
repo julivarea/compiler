@@ -261,8 +261,8 @@ static TACOperand generateOperatorCode(NodeAST *node) {
 
     TACOperand left = generateExpressionCode(GET_LEFT(node));
     TACOperand result = newTemporary(node->type);
-    bool isUnary = (node->operationType == OP_UMINUS || node->operationType == OP_NOT);
-    TACOperand right = isUnary ? tacNone() : generateExpressionCode(GET_RIGHT(node));
+    NodeAST *rightNode = GET_RIGHT(node);
+    TACOperand right = (rightNode != NULL) ? generateExpressionCode(rightNode) : tacNone();
 
     emit(getTACOperation(node->operationType), result, left, right);
     return result;
