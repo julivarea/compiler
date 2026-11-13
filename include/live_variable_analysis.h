@@ -31,6 +31,8 @@ typedef struct BasicBlock {
     struct BasicBlock *successors[2];     /**< Sucesores en el CFG (a lo sumo 2: salto y caída). */
     size_t successorCount;
 
+    VariableSet use;     /**< USE(B): Variables leídas antes de ser definidas en B. */
+    VariableSet def;     /**< DEF(B): Variables definidas antes de ser leídas en B. */
     VariableSet liveIn;  /**< LIVE_IN(B): Variables vivas al entrar a B. */
     VariableSet liveOut; /**< LIVE_OUT(B): Variables vivas al salir de B. */
 } BasicBlock;

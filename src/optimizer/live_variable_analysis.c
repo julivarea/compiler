@@ -9,8 +9,8 @@ static void collectOperandVariable(LiveVariableAnalysis *analysis, const TACOper
 static void partitionBasicBlocks(LiveVariableAnalysis *analysis);
 static void buildControlFlowEdges(LiveVariableAnalysis *analysis);
 static void addSuccessor(BasicBlock *block, BasicBlock *successor);
-static void computeBlockUseAndDef(const LiveVariableAnalysis *analysis, const BasicBlock *block, VariableSet *use, VariableSet *def);
-static void solveFixedPointLiveness(LiveVariableAnalysis *analysis, const VariableSet *useTable, const VariableSet *defTable);
+static void computeBlockUseAndDef(const LiveVariableAnalysis *analysis, BasicBlock *block);
+static void solveFixedPointLiveness(LiveVariableAnalysis *analysis);
 
 static BasicBlock *findBlockByLabel(const LiveVariableAnalysis *analysis, const char *labelName);
 static int getVariableIndex(const LiveVariableAnalysis *analysis, const char *name);
@@ -27,7 +27,7 @@ static bool isVariableInSet(VariableSet set, int variableIndex);
 
 static void printInstructionText(FILE *output, const TACInstruction *instruction);
 static void printVariableSet(FILE *output, const LiveVariableAnalysis *analysis, VariableSet set);
-static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, const BasicBlock *block, const VariableSet *use, const VariableSet *def);
+static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, const BasicBlock *block);
 
 LiveVariableAnalysis *createLiveVariableAnalysis(const TACList *tacList) {
     if (tacList == NULL || tacList->head == NULL) return NULL;
@@ -46,23 +46,11 @@ LiveVariableAnalysis *createLiveVariableAnalysis(const TACList *tacList) {
 
     buildControlFlowEdges(analysis);
 
-    VariableSet *useTable = calloc(analysis->blockCount, sizeof(*useTable));
-    VariableSet *defTable = calloc(analysis->blockCount, sizeof(*defTable));
-    if (useTable == NULL || defTable == NULL) {
-        free(useTable);
-        free(defTable);
-        freeLiveVariableAnalysis(analysis);
-        return NULL;
-    }
-
     for (size_t i = 0; i < analysis->blockCount; i++) {
-        computeBlockUseAndDef(analysis, analysis->blocks[i], &useTable[i], &defTable[i]);
+        computeBlockUseAndDef(analysis, analysis->blocks[i]);
     }
 
-    solveFixedPointLiveness(analysis, useTable, defTable);
-
-    free(useTable);
-    free(defTable);
+    solveFixedPointLiveness(analysis);
     return analysis;
 }
 
@@ -147,9 +135,9 @@ static void addSuccessor(BasicBlock *block, BasicBlock *successor) {
     block->successors[block->successorCount++] = successor;
 }
 
-static void computeBlockUseAndDef(const LiveVariableAnalysis *analysis, const BasicBlock *block, VariableSet *use, VariableSet *def) {
-    *use = 0;
-    *def = 0;
+static void computeBlockUseAndDef(const LiveVariableAnalysis *analysis, BasicBlock *block) {
+    block->use = 0;
+    block->def = 0;
 
     for (const TACInstruction *current = block->firstInstruction; current != NULL; current = current->next) {
         bool isDeclarationInstruction = isDeclaration(current);
@@ -157,19 +145,19 @@ static void computeBlockUseAndDef(const LiveVariableAnalysis *analysis, const Ba
             // USE(B): variables leídas antes de cualquier definición dentro del bloque.
 
             int firstIndex = getOperandVariableIndex(analysis, &current->firstOperand);
-            if (firstIndex >= 0 && !isVariableInSet(*def, firstIndex)) {
-                *use |= (1ULL << firstIndex);
+            if (firstIndex >= 0 && !isVariableInSet(block->def, firstIndex)) {
+                block->use |= (1ULL << firstIndex);
             }
 
             int secondIndex = getOperandVariableIndex(analysis, &current->secondOperand);
-            if (secondIndex >= 0 && !isVariableInSet(*def, secondIndex)) {
-                *use |= (1ULL << secondIndex);
+            if (secondIndex >= 0 && !isVariableInSet(block->def, secondIndex)) {
+                block->use |= (1ULL << secondIndex);
             }
 
             // DEF(B): variables asignadas antes de haber sido leídas dentro del bloque.
             int resultIndex = getOperandVariableIndex(analysis, &current->result);
-            if (resultIndex >= 0 && !isVariableInSet(*use, resultIndex)) {
-                *def |= (1ULL << resultIndex);
+            if (resultIndex >= 0 && !isVariableInSet(block->use, resultIndex)) {
+                block->def |= (1ULL << resultIndex);
             }
         }
 
@@ -177,7 +165,7 @@ static void computeBlockUseAndDef(const LiveVariableAnalysis *analysis, const Ba
     }
 }
 
-static void solveFixedPointLiveness(LiveVariableAnalysis *analysis, const VariableSet *useTable, const VariableSet *defTable) {
+static void solveFixedPointLiveness(LiveVariableAnalysis *analysis) {
     bool hasChanged = true;
 
     // Análisis backward: se itera hasta que ningún LIVE_IN/LIVE_OUT cambie.
@@ -194,7 +182,7 @@ static void solveFixedPointLiveness(LiveVariableAnalysis *analysis, const Variab
             }
 
             // LIVE_IN(B) = USE(B) ∪ (LIVE_OUT(B) − DEF(B)).
-            VariableSet newIn = useTable[i] | (newOut & ~defTable[i]);
+            VariableSet newIn = block->use | (newOut & ~block->def);
 
             if (newIn != block->liveIn || newOut != block->liveOut) {
                 hasChanged = true;
@@ -286,28 +274,13 @@ void printLiveVariableAnalysis(const LiveVariableAnalysis *analysis, FILE *outpu
     if (analysis->variableCount == 0) fprintf(output, "(ninguna)\n");
     fprintf(output, "Total de bloques basicos: %zu\n\n", analysis->blockCount);
 
-    VariableSet *useTable = calloc(analysis->blockCount, sizeof(*useTable));
-    VariableSet *defTable = calloc(analysis->blockCount, sizeof(*defTable));
-    bool canPrintUseAndDef = (useTable != NULL && defTable != NULL);
-
-    if (canPrintUseAndDef) {
-        for (size_t i = 0; i < analysis->blockCount; i++) {
-            computeBlockUseAndDef(analysis, analysis->blocks[i], &useTable[i], &defTable[i]);
-        }
-    }
-
     for (size_t i = 0; i < analysis->blockCount; i++) {
-        const VariableSet *use = canPrintUseAndDef ? &useTable[i] : NULL;
-        const VariableSet *def = canPrintUseAndDef ? &defTable[i] : NULL;
-        printBasicBlock(output, analysis, analysis->blocks[i], use, def);
+        printBasicBlock(output, analysis, analysis->blocks[i]);
     }
     fprintf(output, "======================================================================\n\n");
-
-    free(useTable);
-    free(defTable);
 }
 
-static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, const BasicBlock *block, const VariableSet *use, const VariableSet *def) {
+static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, const BasicBlock *block) {
     fprintf(output, "--------------------------------------------------\n");
     fprintf(output, "[Bloque %d]\n", block->id);
 
@@ -327,12 +300,10 @@ static void printBasicBlock(FILE *output, const LiveVariableAnalysis *analysis, 
         }
     }
 
-    if (use != NULL && def != NULL) {
-        fprintf(output, "  USE:      ");
-        printVariableSet(output, analysis, *use);
-        fprintf(output, "  DEF:      ");
-        printVariableSet(output, analysis, *def);
-    }
+    fprintf(output, "  USE:      ");
+    printVariableSet(output, analysis, block->use);
+    fprintf(output, "  DEF:      ");
+    printVariableSet(output, analysis, block->def);
 
     fprintf(output, "  LIVE_IN:  ");
     printVariableSet(output, analysis, block->liveIn);

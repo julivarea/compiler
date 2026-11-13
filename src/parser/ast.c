@@ -11,6 +11,7 @@
 extern int yylineno;
 
 static void describeNode(FILE *out, const NodeAST *node);
+static NodeAST *newConstantNode(DataType type);
 static const char *getOperationName(OperationType operation);
 
 NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid, NodeAST *right) {
@@ -22,8 +23,8 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
     node->type = TYPE_VOID;
     node->line = yylineno;
 
-    // if/while se reducen tras su bloque: usar la línea de la condición, no la del '}'.
-    if ((nodeType == IF_ELSE_NODE || nodeType == WHILE_NODE) && left != NULL) {
+    // if/while/method se reducen tras su bloque: usar la línea del encabezado, no la del '}'.
+    if ((nodeType == IF_ELSE_NODE || nodeType == WHILE_NODE || nodeType == METHOD_DECLARATION_NODE) && left != NULL) {
         node->line = left->line;
     }
 
@@ -73,7 +74,7 @@ NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *pa
         return NULL;
     }
 
-    NodeAST *node = newNode(METHOD_DECLARATION_NODE, symbol, NULL, NULL, NULL);
+    NodeAST *node = newNode(METHOD_DECLARATION_NODE, symbol, parameters, body, NULL);
     if (node == NULL) {
         freeSymbol(symbol);
         freeAST(parameters);
@@ -81,53 +82,34 @@ NodeAST *newMethodDeclaration(DataType returnType, char *methodName, NodeAST *pa
         return NULL;
     }
 
-    node->children = malloc(2 * sizeof(NodeAST *));
-    if (node->children == NULL) {
-        freeSymbol(symbol);
-        free(node);
-        freeAST(parameters);
-        freeAST(body);
-        return NULL;
-    }
-
     node->type = returnType;
-    bool hasParameters = (parameters != NULL);
-    if (hasParameters) {
-        node->line = parameters->line;
-    }
-    node->childCount = 2;
-    node->children[0] = parameters;
-    node->children[1] = body;
+    return node;
+}
+
+static NodeAST *newConstantNode(DataType type) {
+    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, type, NULL);
+    if (symbol == NULL) return NULL;
+
+    NodeAST *node = newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
+    if (node == NULL) freeSymbol(symbol);
     return node;
 }
 
 NodeAST *newIntLiteralNode(int value) {
-    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_INT, NULL);
-    if (symbol == NULL) return NULL;
-    symbol->value.intValue = value;
-
-    NodeAST *node = newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
-    if (node == NULL) freeSymbol(symbol);
+    NodeAST *node = newConstantNode(TYPE_INT);
+    if (node != NULL) node->symbol->value.intValue = value;
     return node;
 }
 
 NodeAST *newFloatLiteralNode(float value) {
-    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_FLOAT, NULL);
-    if (symbol == NULL) return NULL;
-    symbol->value.floatValue = value;
-
-    NodeAST *node = newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
-    if (node == NULL) freeSymbol(symbol);
+    NodeAST *node = newConstantNode(TYPE_FLOAT);
+    if (node != NULL) node->symbol->value.floatValue = value;
     return node;
 }
 
 NodeAST *newBoolLiteralNode(int value) {
-    Symbol *symbol = newSymbol(NULL, CONSTANT_SYMBOL, TYPE_BOOL, NULL);
-    if (symbol == NULL) return NULL;
-    symbol->value.intValue = value;
-
-    NodeAST *node = newNode(CONSTANT_NODE, symbol, NULL, NULL, NULL);
-    if (node == NULL) freeSymbol(symbol);
+    NodeAST *node = newConstantNode(TYPE_BOOL);
+    if (node != NULL) node->symbol->value.intValue = value;
     return node;
 }
 

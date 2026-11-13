@@ -106,11 +106,8 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, bool isExpression) {
 
 static DataType analyzeOperator(NodeAST *node, Scope *scope) {
     DataType leftType = analyzeExpression(GET_LEFT(node), scope);
-    DataType rightType = TYPE_VOID; // default
-    
-    if (GET_RIGHT(node) != NULL) {
-        rightType = analyzeExpression(GET_RIGHT(node), scope);
-    }
+    NodeAST *rightNode = GET_RIGHT(node);
+    DataType rightType = (rightNode != NULL) ? analyzeExpression(rightNode, scope) : TYPE_VOID;
 
     // Evita reportar error en cascada si algun operando ya fallo previamente.
     if (leftType == TYPE_ERROR || rightType == TYPE_ERROR) {
@@ -121,7 +118,8 @@ static DataType analyzeOperator(NodeAST *node, Scope *scope) {
     DataType resultType = resolveOperation(node->operationType, leftType, rightType);
 
     if (resultType == TYPE_ERROR) {
-        semanticError(node->line, "Tipos incompatibles en la operacion binaria.");
+        semanticError(node->line, "Tipos incompatibles en la operacion %s.",
+                      (rightNode != NULL) ? "binaria" : "unaria");
     }
 
     node->type = resultType;
