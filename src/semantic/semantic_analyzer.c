@@ -6,6 +6,7 @@
 #include "error_handler.h"
 #include "type_checker.h"
 
+static void analyzeChildren(NodeAST *node, Scope *currentScope);
 static void analyzeNodeSemantics(NodeAST *node, Scope *currentScope);
 static void analyzeMethodNode(NodeAST *node, Scope *currentScope);
 static void analyzeVariableDeclarationNode(NodeAST *node, Scope *currentScope);
@@ -34,15 +35,19 @@ Scope *analyzeSemantics(NodeAST *root, Scope *parent) {
         appendChildScope(parent, currentScope);
     }
 
-    for (int i = 0; i < root->childCount; i++) {
-        analyzeNodeSemantics(root->children[i], currentScope);
-    }
+    analyzeChildren(root, currentScope);
 
     if (isGlobalScope) {
         checkMainMethodExists(currentScope);
     }
 
     return currentScope;
+}
+
+static void analyzeChildren(NodeAST *node, Scope *currentScope) {
+    for (int i = 0; i < node->childCount; i++) {
+        analyzeNodeSemantics(node->children[i], currentScope);
+    }
 }
 
 static void analyzeNodeSemantics(NodeAST *node, Scope *currentScope) {
@@ -82,9 +87,7 @@ static void analyzeNodeSemantics(NodeAST *node, Scope *currentScope) {
             break;
 
         default:
-            for (int i = 0; i < node->childCount; i++) {
-                analyzeNodeSemantics(node->children[i], currentScope);
-            }
+            analyzeChildren(node, currentScope);
             break;
     }
 }
@@ -106,14 +109,10 @@ static void analyzeMethodNode(NodeAST *node, Scope *currentScope) {
     }
 
     NodeAST *parameters = GET_LEFT(node);
-    for (int i = 0; i < parameters->childCount; i++) {
-        analyzeNodeSemantics(parameters->children[i], methodScope);
-    }
+    analyzeNodeSemantics(parameters, methodScope);
 
     NodeAST *body = GET_RIGHT(node);
-    for (int i = 0; i < body->childCount; i++) {
-        analyzeNodeSemantics(body->children[i], methodScope);
-    }
+    analyzeChildren(body, methodScope);
 
     bool requiresReturn = (node->type != TYPE_VOID);
     bool hasGuaranteedReturn = guaranteesReturn(body);
