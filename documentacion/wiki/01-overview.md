@@ -252,7 +252,6 @@ flowchart LR
             +int frameSize
             +int paramCount
             +int pendingParamSlots[64]
-            +DataType pendingParamTypes[64]
             +int pendingParamCount
             +createFrame(functionName)
             +addSlot(operand)
@@ -533,7 +532,6 @@ flowchart LR
             +int frameSize
             +int paramCount
             +int pendingParamSlots[64]
-            +DataType pendingParamTypes[64]
             +int pendingParamCount
             +createFrame(name) FunctionFrame*
             +addSlot(operand) int

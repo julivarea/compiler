@@ -49,7 +49,6 @@ typedef struct FunctionFrame {
      * aquí el desplazamiento de ese slot; el call consume los últimos N.
      */
     int *pendingParamSlots;
-    DataType *pendingParamTypes; /**< Clase de cada argumento: entera o real. */
     int pendingParamCount;       /**< Argumentos apilados sin su llamada correspondiente. */
     int pendingParamCapacity;    /**< Capacidad actual de los arreglos dinámicos. */
     int maxPendingParams;        /**< Pico de la pila, calculado antes de emitir. */

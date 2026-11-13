@@ -502,7 +502,6 @@ static void emitParam(const TACInstruction *instruction, FunctionFrame *frame) {
     loadOperand(&instruction->firstOperand, "%eax", frame);
     buildStringf("    movl %%eax, %d(%%rbp)\n", slot);
 
-    frame->pendingParamTypes[frame->pendingParamCount] = instruction->firstOperand.type;
     frame->pendingParamCount++;
 }
 
