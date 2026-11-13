@@ -76,7 +76,7 @@ DataType analyzeMethodCall(NodeAST *node, Scope *scope, bool isExpression) {
         }
     }
 
-    node->symbol = method;
+    resolveNodeSymbol(node, method);
     node->type = method->type;
 
     return method->type;
@@ -103,7 +103,7 @@ static DataType analyzeIdentifier(NodeAST *node, Scope *scope) {
         return TYPE_ERROR;
     }
 
-    node->symbol = symbol;
+    resolveNodeSymbol(node, symbol);
     node->type = symbol->type;
 
     return symbol->type;

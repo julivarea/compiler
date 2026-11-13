@@ -152,6 +152,14 @@ void freeAST(NodeAST *node) {
     free(node);
 }
 
+void resolveNodeSymbol(NodeAST *node, Symbol *declared) {
+    bool isProvisional = (node->symbol != NULL && node->symbol->uid == 0);
+    if (isProvisional) {
+        freeSymbol(node->symbol);
+    }
+    node->symbol = declared;
+}
+
 void printAST(NodeAST *node, int level) {
     fprintAST(stdout, node, level);
 }

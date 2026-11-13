@@ -150,7 +150,7 @@ static void analyzeAssignmentNode(NodeAST *node, Scope *currentScope) {
         return;
     }
 
-    node->symbol = resolvedSymbol;
+    resolveNodeSymbol(node, resolvedSymbol);
 
     NodeAST *expression = GET_EXPRESSION(node);
     DataType expressionType = analyzeExpression(expression, currentScope);

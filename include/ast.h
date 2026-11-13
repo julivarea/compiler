@@ -68,6 +68,18 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *midd
 void freeAST(NodeAST *node);
 
 /**
+ * @brief Reapunta un nodo de referencia al símbolo declarado que resolvió el análisis semántico.
+ *
+ * El parser crea un símbolo provisorio (uid 0) por cada uso de un nombre solo para
+ * conservar su texto; al resolverlo se libera, ya que el símbolo declarado pertenece a su
+ * nodo de declaración. Si el nodo ya apuntaba a un símbolo declarado, solo se reasigna.
+ *
+ * @param node Nodo de referencia (ID, asignación o llamada).
+ * @param declared Símbolo declarado hallado en la tabla de símbolos.
+ */
+void resolveNodeSymbol(NodeAST *node, Symbol *declared);
+
+/**
  * @brief Imprime la representación jerárquica del AST por la salida estándar.
  *
  * @param node Raíz del subárbol a imprimir (acepta NULL).
