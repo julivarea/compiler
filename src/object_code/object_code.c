@@ -147,33 +147,11 @@ static void allocateLocalSlots(FunctionFrame *frame, const TACInstruction *funct
          current != NULL && current->operation != TAC_END_FUNC;
          current = current->next) {
 
-        switch (current->operation) {
-            case TAC_PARAM_DECL:
-            case TAC_LOCAL_DECL:
-                addSlot(frame, &current->result);
-                break;
-
-            case TAC_ASSIGN:
-            case TAC_ADD:
-            case TAC_SUB:
-            case TAC_MUL:
-            case TAC_DIV:
-            case TAC_MOD:
-            case TAC_UMINUS:
-            case TAC_NOT:
-            case TAC_LT:
-            case TAC_GT:
-            case TAC_EQ:
-            case TAC_CALL: {
-                bool isTemporary = (current->result.kind == OPERAND_TEMP);
-                if (isTemporary) {
-                    addSlot(frame, &current->result);
-                }
-                break;
-            }
-
-            default:
-                break;
+        bool isLocalOrParam = (current->operation == TAC_PARAM_DECL ||
+                               current->operation == TAC_LOCAL_DECL);
+        bool isTemporary = (current->result.kind == OPERAND_TEMP);
+        if (isLocalOrParam || isTemporary) {
+            addSlot(frame, &current->result);
         }
     }
 }
