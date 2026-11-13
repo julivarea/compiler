@@ -35,20 +35,16 @@ static const TACInstruction *emitFunction(FunctionFrame *frame, const TACInstruc
 
 static void emitParamDeclaration(const TACInstruction *instruction, FunctionFrame *frame);
 static void emitAssignment(const TACInstruction *instruction, const FunctionFrame *frame);
-static void emitAddition(const TACInstruction *instruction, const FunctionFrame *frame);
-static void emitSubtraction(const TACInstruction *instruction, const FunctionFrame *frame);
 static void emitMultiplication(const TACInstruction *instruction, const FunctionFrame *frame);
-static void emitDivision(const TACInstruction *instruction, const FunctionFrame *frame);
-static void emitModulo(const TACInstruction *instruction, const FunctionFrame *frame);
 static void emitUnaryMinus(const TACInstruction *instruction, const FunctionFrame *frame);
 static void emitNot(const TACInstruction *instruction, const FunctionFrame *frame);
-static void emitLessThan(const TACInstruction *instruction, const FunctionFrame *frame);
-static void emitGreaterThan(const TACInstruction *instruction, const FunctionFrame *frame);
-static void emitEquality(const TACInstruction *instruction, const FunctionFrame *frame);
 static void emitLabel(const TACInstruction *instruction);
 static void emitGoto(const TACInstruction *instruction);
-static void emitIfFalse(const TACInstruction *instruction, const FunctionFrame *frame);
-static void emitIfTrue(const TACInstruction *instruction, const FunctionFrame *frame);
+static void emitConditionalJump(const TACInstruction *instruction, const char *jumpMnemonic, const FunctionFrame *frame);
+static bool getRelationalMnemonics(TACOperation operation,
+                                   const char **setMnemonic,
+                                   const char **jumpTrue,
+                                   const char **jumpFalse);
 static bool canFuseConditionAndJump(const TACInstruction *inst, const TACInstruction *next);
 static void emitFusedComparisonAndJump(const TACInstruction *relInst,
                                       const TACInstruction *jumpInst,
@@ -65,7 +61,7 @@ static void emitBinaryOp(const TACInstruction *instruction, const char *opMnemon
 static bool emitStrengthReducedMultiplication(const TACInstruction *instruction, const FunctionFrame *frame);
 static int powerOfTwoExponent(int value);
 static void emitDivisionOp(const TACInstruction *instruction, const FunctionFrame *frame, const char *resultRegisterName);
-static void emitRelationalOp(const TACInstruction *instruction, const char *conditionMnemonic, const FunctionFrame *frame);
+static void emitRelationalOp(const TACInstruction *instruction, const FunctionFrame *frame);
 
 static void loadOperand(const TACOperand *operand, const char *registerName, const FunctionFrame *frame);
 static void storeOperand(const TACOperand *operand, const char *registerName, const FunctionFrame *frame);
@@ -252,11 +248,11 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_ADD:
-            emitAddition(instruction, frame);
+            emitBinaryOp(instruction, "addl", frame);
             break;
 
         case TAC_SUB:
-            emitSubtraction(instruction, frame);
+            emitBinaryOp(instruction, "subl", frame);
             break;
 
         case TAC_MUL:
@@ -264,11 +260,11 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_DIV:
-            emitDivision(instruction, frame);
+            emitDivisionOp(instruction, frame, "%eax");
             break;
 
         case TAC_MOD:
-            emitModulo(instruction, frame);
+            emitDivisionOp(instruction, frame, "%edx");
             break;
 
         case TAC_UMINUS:
@@ -280,15 +276,9 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_LT:
-            emitLessThan(instruction, frame);
-            break;
-
         case TAC_GT:
-            emitGreaterThan(instruction, frame);
-            break;
-
         case TAC_EQ:
-            emitEquality(instruction, frame);
+            emitRelationalOp(instruction, frame);
             break;
 
         case TAC_LABEL:
@@ -300,11 +290,11 @@ void generateInstruction(const TACInstruction *instruction, FunctionFrame *frame
             break;
 
         case TAC_IF_FALSE:
-            emitIfFalse(instruction, frame);
+            emitConditionalJump(instruction, "je", frame);
             break;
 
         case TAC_IF_TRUE:
-            emitIfTrue(instruction, frame);
+            emitConditionalJump(instruction, "jne", frame);
             break;
 
         case TAC_PARAM:
@@ -354,27 +344,11 @@ static void emitAssignment(const TACInstruction *instruction, const FunctionFram
     storeOperand(&instruction->result, "%eax", frame);
 }
 
-static void emitAddition(const TACInstruction *instruction, const FunctionFrame *frame) {
-    emitBinaryOp(instruction, "addl", frame);
-}
-
-static void emitSubtraction(const TACInstruction *instruction, const FunctionFrame *frame) {
-    emitBinaryOp(instruction, "subl", frame);
-}
-
 static void emitMultiplication(const TACInstruction *instruction, const FunctionFrame *frame) {
     bool wasReduced = emitStrengthReducedMultiplication(instruction, frame);
     if (!wasReduced) {
         emitBinaryOp(instruction, "imull", frame);
     }
-}
-
-static void emitDivision(const TACInstruction *instruction, const FunctionFrame *frame) {
-    emitDivisionOp(instruction, frame, "%eax");
-}
-
-static void emitModulo(const TACInstruction *instruction, const FunctionFrame *frame) {
-    emitDivisionOp(instruction, frame, "%edx");
 }
 
 static void emitUnaryMinus(const TACInstruction *instruction, const FunctionFrame *frame) {
@@ -389,18 +363,6 @@ static void emitNot(const TACInstruction *instruction, const FunctionFrame *fram
     storeOperand(&instruction->result, "%eax", frame);
 }
 
-static void emitLessThan(const TACInstruction *instruction, const FunctionFrame *frame) {
-    emitRelationalOp(instruction, "setl", frame);
-}
-
-static void emitGreaterThan(const TACInstruction *instruction, const FunctionFrame *frame) {
-    emitRelationalOp(instruction, "setg", frame);
-}
-
-static void emitEquality(const TACInstruction *instruction, const FunctionFrame *frame) {
-    emitRelationalOp(instruction, "sete", frame);
-}
-
 static void emitLabel(const TACInstruction *instruction) {
     buildStringf(".%s:\n", instruction->result.name);
 }
@@ -409,27 +371,42 @@ static void emitGoto(const TACInstruction *instruction) {
     buildStringf("    jmp .%s\n", instruction->firstOperand.name);
 }
 
-static void emitIfFalse(const TACInstruction *instruction, const FunctionFrame *frame) {
+static void emitConditionalJump(const TACInstruction *instruction, const char *jumpMnemonic, const FunctionFrame *frame) {
     loadOperand(&instruction->firstOperand, "%eax", frame);
     buildStringf("    cmpl $0, %%eax\n");
-    buildStringf("    je .%s\n", instruction->secondOperand.name);
+    buildStringf("    %s .%s\n", jumpMnemonic, instruction->secondOperand.name);
 }
 
-static void emitIfTrue(const TACInstruction *instruction, const FunctionFrame *frame) {
-    loadOperand(&instruction->firstOperand, "%eax", frame);
-    buildStringf("    cmpl $0, %%eax\n");
-    buildStringf("    jne .%s\n", instruction->secondOperand.name);
+static bool getRelationalMnemonics(TACOperation operation,
+                                   const char **setMnemonic,
+                                   const char **jumpTrue,
+                                   const char **jumpFalse) {
+    switch (operation) {
+        case TAC_LT:
+            if (setMnemonic != NULL) *setMnemonic = "setl";
+            if (jumpTrue != NULL)    *jumpTrue    = "jl";
+            if (jumpFalse != NULL)   *jumpFalse   = "jge";
+            return true;
+        case TAC_GT:
+            if (setMnemonic != NULL) *setMnemonic = "setg";
+            if (jumpTrue != NULL)    *jumpTrue    = "jg";
+            if (jumpFalse != NULL)   *jumpFalse   = "jle";
+            return true;
+        case TAC_EQ:
+            if (setMnemonic != NULL) *setMnemonic = "sete";
+            if (jumpTrue != NULL)    *jumpTrue    = "je";
+            if (jumpFalse != NULL)   *jumpFalse   = "jne";
+            return true;
+        default:
+            return false;
+    }
 }
 
 static bool canFuseConditionAndJump(const TACInstruction *inst, const TACInstruction *next) {
     bool isEnabled = isOptimizationEnabled(activeOptimizations, OPTIMIZATION_PEEPHOLE);
-    if (!isEnabled) return false;
+    if (!isEnabled || inst == NULL || next == NULL) return false;
 
-    if (inst == NULL || next == NULL) return false;
-
-    bool isRelational = (inst->operation == TAC_LT ||
-                         inst->operation == TAC_GT ||
-                         inst->operation == TAC_EQ);
+    bool isRelational = getRelationalMnemonics(inst->operation, NULL, NULL, NULL);
     bool isConditionalJump = (next->operation == TAC_IF_FALSE ||
                               next->operation == TAC_IF_TRUE);
 
@@ -442,27 +419,17 @@ static bool canFuseConditionAndJump(const TACInstruction *inst, const TACInstruc
 static void emitFusedComparisonAndJump(const TACInstruction *relInst,
                                       const TACInstruction *jumpInst,
                                       const FunctionFrame *frame) {
+    const char *jumpTrue = NULL;
+    const char *jumpFalse = NULL;
+    if (!getRelationalMnemonics(relInst->operation, NULL, &jumpTrue, &jumpFalse)) {
+        return;
+    }
+
     loadOperand(&relInst->firstOperand, "%eax", frame);
     loadOperand(&relInst->secondOperand, "%edx", frame);
     buildStringf("    cmpl %%edx, %%eax\n");
 
-    const char *jumpMnemonic = NULL;
-    bool isIfFalse = (jumpInst->operation == TAC_IF_FALSE);
-
-    switch (relInst->operation) {
-        case TAC_LT:
-            jumpMnemonic = isIfFalse ? "jge" : "jl";
-            break;
-        case TAC_GT:
-            jumpMnemonic = isIfFalse ? "jle" : "jg";
-            break;
-        case TAC_EQ:
-            jumpMnemonic = isIfFalse ? "jne" : "je";
-            break;
-        default:
-            return;
-    }
-
+    const char *jumpMnemonic = (jumpInst->operation == TAC_IF_FALSE) ? jumpFalse : jumpTrue;
     buildStringf("    %s .%s\n", jumpMnemonic, jumpInst->secondOperand.name);
 }
 
@@ -617,7 +584,12 @@ static void emitDivisionOp(const TACInstruction *instruction, const FunctionFram
     storeOperand(&instruction->result, resultRegisterName, frame);
 }
 
-static void emitRelationalOp(const TACInstruction *instruction, const char *conditionMnemonic, const FunctionFrame *frame) {
+static void emitRelationalOp(const TACInstruction *instruction, const FunctionFrame *frame) {
+    const char *conditionMnemonic = NULL;
+    if (!getRelationalMnemonics(instruction->operation, &conditionMnemonic, NULL, NULL)) {
+        return;
+    }
+
     loadOperand(&instruction->firstOperand, "%eax", frame);
     loadOperand(&instruction->secondOperand, "%edx", frame);
     buildStringf("    cmpl %%edx, %%eax\n");
@@ -714,7 +686,7 @@ static bool isDeclaredGlobal(const TACOperand *operand) {
 }
 
 static void registerGlobalVariable(const TACOperand *operand) {
-    if (operand == NULL || operand->name[0] == '\0') return;
+    if (operand == NULL || operand->symbol != NULL || operand->name[0] == '\0') return;
 
     if (globalVariableCount >= globalVariableCapacity) {
         int newCapacity = (globalVariableCapacity == 0) ? 64 : globalVariableCapacity * 2;
