@@ -187,7 +187,7 @@ Si se necesitara analizar programas con más de 64 variables simultáneas, `Vari
 - **Inspección del CFG con `-debug`:** al ejecutar el compilador con `-debug`, `printLiveVariableAnalysis` vuelca por salida estándar la lista de variables candidatas y cada bloque básico con sus instrucciones, sucesores y conjuntos `USE`, `DEF`, `LIVE_IN` y `LIVE_OUT` traducidos a nombres simbólicos:
 
 ```bash
-./mi_compilador -debug -target codinter examples/dead_code.ctds
+./mi_compilador -debug -target codinter examples/valido_optimizacion_codigo_muerto.ctds
 ```
 
 - **Equivalencia semántica:** la validación integral consiste en compilar los programas de prueba con y sin `-opt dead-code` (o `-opt all`), ejecutar ambos binarios y verificar que sus códigos de salida coincidan.

@@ -155,13 +155,13 @@ Comprobaciones en línea de comandos:
 
 ```bash
 # 1. Compilación exitosa sin -debug: salida vacía en ambos canales
-test -z "$(./mi_compilador examples/programa.ctds 2>&1)" && echo "OK silencio"
+test -z "$(./mi_compilador examples/valido_completo.ctds 2>&1)" && echo "OK silencio"
 
 # 2. Compilación exitosa con -debug: trazas en stdout, stderr vacío
-test -z "$(./mi_compilador -debug examples/programa.ctds 2>&1 >/dev/null)" && echo "OK stderr vacio"
+test -z "$(./mi_compilador -debug examples/valido_completo.ctds 2>&1 >/dev/null)" && echo "OK stderr vacio"
 
 # 3. Acumulación de errores semánticos y salida por stderr
-./mi_compilador -target sem examples/programa_con_error.ctds
+./mi_compilador -target sem examples/error_suma_booleano_entero.ctds
 ```
 
 ---

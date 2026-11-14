@@ -202,8 +202,8 @@ void test_integration_minimal_program_runs(void) {
 
 // Los programas de examples/ compilan, ejecutan y terminan con código 0
 void test_integration_canonical_examples(void) {
-    TEST_ASSERT_EQUAL_INT(0, compileAndRunFile("examples/factorial.ctds"));
-    TEST_ASSERT_EQUAL_INT(0, compileAndRunFile("examples/programa_sin_error.ctds"));
+    TEST_ASSERT_EQUAL_INT(0, compileAndRunFile("examples/valido_factorial_recursivo.ctds"));
+    TEST_ASSERT_EQUAL_INT(0, compileAndRunFile("examples/valido_llamada_y_aritmetica.ctds"));
 }
 
 // Llamadas anidadas y pasaje de argumentos por pila (>6) segun System V AMD64

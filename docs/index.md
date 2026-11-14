@@ -38,7 +38,7 @@ Fuente (.ctds) ──▶ Lexer (Flex) ──▶ Parser (Bison) ──▶ AST ─
 
 ```bash
 bash build.sh                             # compila Flex, Bison y los módulos C -> ./mi_compilador
-./mi_compilador examples/factorial.ctds   # genera el ejecutable examples/factorial.out
+./mi_compilador examples/valido_factorial_recursivo.ctds   # genera el ejecutable examples/valido_factorial_recursivo.out
 ./mi_compilador -opt all archivo.ctds     # compila con todas las optimizaciones activas
 bash test_suite.sh                        # ejecuta las 11 suites Unity (294 tests)
 ```

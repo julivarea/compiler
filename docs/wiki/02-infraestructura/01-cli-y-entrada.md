@@ -258,7 +258,7 @@ Verificaciones manuales representativas:
 Para comprobar que una compilación exitosa sin `-debug` no emita salida por `stdout` ni `stderr`:
 
 ```bash
-test -z "$(./mi_compilador examples/programa.ctds 2>&1)" && echo "OK"
+test -z "$(./mi_compilador examples/valido_completo.ctds 2>&1)" && echo "OK"
 ```
 
 ---

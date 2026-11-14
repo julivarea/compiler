@@ -85,15 +85,15 @@ El archivo de entrada es obligatorio, no puede comenzar con `-` y debe tener ext
 Cuando no se especifica `-target`, el compilador ejecuta todas las etapas y genera el ejecutable `nombreArchivo.out`:
 
 ```bash
-./mi_compilador examples/factorial.ctds   # genera examples/factorial.out
-./examples/factorial.out                  # ejecuta el binario
+./mi_compilador examples/valido_factorial_recursivo.ctds   # genera examples/valido_factorial_recursivo.out
+./examples/valido_factorial_recursivo.out                  # ejecuta el binario
 ```
 
 Dado que C-TDS carece de funciones de entrada/salida estándar, el resultado de ejecución se observa a través del código de retorno del proceso (en programas donde `main` retorna `int`; si `main` es `void`, el proceso retorna siempre `0`):
 
 ```bash
-./mi_compilador examples/dead_code.ctds
-./examples/dead_code.out; echo $?         # imprime 10
+./mi_compilador examples/valido_optimizacion_codigo_muerto.ctds
+./examples/valido_optimizacion_codigo_muerto.out; echo $?         # imprime 10
 ```
 
 ### Opciones de línea de comandos
@@ -122,10 +122,10 @@ Al especificar `-target`, el compilador detiene el pipeline tras completar la fa
 Si se combina `-target` con `-opt`, la extensión de salida pasa a ser `.opt`:
 
 ```bash
-./mi_compilador -target scan examples/factorial.ctds               # -> examples/factorial.lex
-./mi_compilador -target codinter examples/factorial.ctds           # -> examples/factorial.ci
-./mi_compilador -opt all -target codinter examples/factorial.ctds  # -> examples/factorial.opt
-./mi_compilador -o miprograma examples/factorial.ctds              # -> miprograma (ejecutable)
+./mi_compilador -target scan examples/valido_factorial_recursivo.ctds               # -> examples/valido_factorial_recursivo.lex
+./mi_compilador -target codinter examples/valido_factorial_recursivo.ctds           # -> examples/valido_factorial_recursivo.ci
+./mi_compilador -opt all -target codinter examples/valido_factorial_recursivo.ctds  # -> examples/valido_factorial_recursivo.opt
+./mi_compilador -o miprograma examples/valido_factorial_recursivo.ctds              # -> miprograma (ejecutable)
 ```
 
 ---
@@ -138,11 +138,11 @@ Tras realizar cambios en el código fuente, se recomienda recompilar y ejecutar 
 ./build.sh && ./test_suite.sh
 ```
 
-Dado que `test_suite.sh` compila sus propios binarios de prueba de manera independiente, para verificar también el ejecutable `./mi_compilador` generado por `build.sh` se puede compilar `examples/programa.ctds` (que ejercita todas las construcciones de la gramática) y comprobar el rechazo de programas inválidos:
+Dado que `test_suite.sh` compila sus propios binarios de prueba de manera independiente, para verificar también el ejecutable `./mi_compilador` generado por `build.sh` se puede compilar `examples/valido_completo.ctds` (que ejercita todas las construcciones de la gramática) y comprobar el rechazo de programas inválidos:
 
 ```bash
-./mi_compilador examples/programa.ctds
-./mi_compilador examples/programa_con_error.ctds   # debe reportar error semántico y salir con 1
+./mi_compilador examples/valido_completo.ctds
+./mi_compilador examples/error_suma_booleano_entero.ctds   # debe reportar error semántico y salir con 1
 ```
 
 Para validar que las pasadas de optimización preserven el comportamiento observable, se compila un mismo programa con y sin `-opt all`, se ejecutan ambos binarios y se verifica que sus códigos de salida coincidan.

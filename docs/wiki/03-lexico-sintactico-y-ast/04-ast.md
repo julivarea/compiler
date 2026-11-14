@@ -276,8 +276,8 @@ No requiere un nuevo `NodeType`: basta con agregar la constante en `OperationTyp
 - **Comparación entre árbol sintáctico y árbol anotado:**
 
 ```bash
-./mi_compilador -target parse examples/programa.ctds   # genera .sint (sin anotar)
-./mi_compilador -target sem   examples/programa.ctds   # genera .sem  (anotado)
+./mi_compilador -target parse examples/valido_completo.ctds   # genera .sint (sin anotar)
+./mi_compilador -target sem   examples/valido_completo.ctds   # genera .sem  (anotado)
 ```
 
 ---

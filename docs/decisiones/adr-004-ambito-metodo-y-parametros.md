@@ -4,7 +4,7 @@
 
 Se permitía que una variable local declarada en el cuerpo principal de una función tuviera el mismo identificador que un parámetro formal de dicha función, tratándolo erróneamente como un *shadowing* (ocultamiento) válido en lugar de emitir un error semántico de redeclaración en el mismo ámbito.
 
-## Código de Ejemplo (`examples/aliasing_parameters_in_method.ctds`)
+## Código de Ejemplo (`examples/error_redeclaracion_parametro.ctds`)
 
 ```c
 int aliasing_parameters_with_assignment(int x){
@@ -22,7 +22,7 @@ void main(){
 El analizador semántico aceptaba el programa sin emitir errores y creaba dos entidades con distinto UID para la misma variable `x` (`#2` para el parámetro y `#3` para la variable local):
 
 ```text
-$ ./mi_compilador examples/aliasing_parameters_in_method.ctds
+$ ./mi_compilador examples/error_redeclaracion_parametro.ctds
 --- Analisis sintactico sin errores formales. ---
 
 --- Arbol de Sintaxis Abstracta (AST) ---
@@ -76,7 +76,7 @@ Al compartir el mismo ámbito, la función estándar `lookupVariableCurrentScope
 ## Traza Corregida (Comportamiento Actual)
 
 ```text
-$ ./mi_compilador examples/aliasing_parameters_in_method.ctds
+$ ./mi_compilador examples/error_redeclaracion_parametro.ctds
 --- Analisis sintactico sin errores formales. ---
 Error semantico en la linea 2: La variable 'x' ya fue declarada previamente en este ambito.
 

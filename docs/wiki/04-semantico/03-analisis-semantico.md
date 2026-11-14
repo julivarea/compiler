@@ -175,7 +175,7 @@ Si `semantic_errors > 0`, el proceso termina con código `1` antes de invocar la
 
 1. **Igualdad (`==`) frente a relacionales (`<`, `>`):** la regla 11 exige operandos del mismo tipo en `==`, mientras que la regla 10 pide operandos `int` o `float` en operadores relacionales y la regla 14 habilita coerciones. Se dio precedencia a la restricción específica de `==` (sin coerción entre `int` y `float`), manteniendo la promoción numérica en `<` y `>` (ver [chequeo de tipos](02-chequeo-de-tipos.md)).
 2. **Resto entero (`%`):** aunque la regla 10 agrupa a `%` con los operadores aritméticos, la sección *Expresiones* de la especificación lo define como el resto de la división entera, por lo que se restringió a operandos `TYPE_INT`.
-3. **Código inalcanzable tras `return`:** la especificación no prohíbe sentencias posteriores a un `return` ni múltiples `return` en un mismo bloque (`examples/two_returns.ctds`). El analizador semántico continúa validando las sentencias siguientes para no ocultar errores en ellas, y la eliminación del código inalcanzable queda a cargo del [optimizador](../06-optimizador/02-optimizador.md) mediante la pasada `dead-code`.
+3. **Código inalcanzable tras `return`:** la especificación no prohíbe sentencias posteriores a un `return` ni múltiples `return` en un mismo bloque (`examples/valido_doble_return.ctds`). El analizador semántico continúa validando las sentencias siguientes para no ocultar errores en ellas, y la eliminación del código inalcanzable queda a cargo del [optimizador](../06-optimizador/02-optimizador.md) mediante la pasada `dead-code`.
 
 > Nota sobre el enunciado: el programa de ejemplo de la página 3 de la especificación declara `void main()` con `return 1;`, lo cual infringe la regla 6 del propio documento.
 
@@ -236,21 +236,21 @@ Puede añadirse un caso `WHILE_NODE` en `guaranteesReturn` que verifique si `GET
 - **Comparación de volcados `.sint` y `.sem`:** permite inspeccionar las anotaciones de tipos y `uid` agregadas sobre el AST:
 
 ```bash
-./mi_compilador -target parse examples/programa.ctds   # .sint: AST sin anotar
-./mi_compilador -target sem   examples/programa.ctds   # .sem: AST con tipos y uid
+./mi_compilador -target parse examples/valido_completo.ctds   # .sint: AST sin anotar
+./mi_compilador -target sem   examples/valido_completo.ctds   # .sem: AST con tipos y uid
 ```
 
 - **Casos de regresión en `examples/`:**
 
 ```bash
 # Deben finalizar con código de salida 1:
-./mi_compilador -target sem examples/programa_con_error.ctds
-./mi_compilador -target sem examples/method_without_return.ctds
-./mi_compilador -target sem examples/asignation_method.ctds
-./mi_compilador -target sem examples/aliasing_parameters_in_method.ctds
+./mi_compilador -target sem examples/error_suma_booleano_entero.ctds
+./mi_compilador -target sem examples/error_metodo_sin_return.ctds
+./mi_compilador -target sem examples/error_asignacion_a_metodo.ctds
+./mi_compilador -target sem examples/error_redeclaracion_parametro.ctds
 
 # Debe finalizar con código de salida 0:
-./mi_compilador -target sem examples/two_returns.ctds
+./mi_compilador -target sem examples/valido_doble_return.ctds
 ```
 
 ---

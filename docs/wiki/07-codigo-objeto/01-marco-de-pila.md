@@ -232,8 +232,8 @@ Todas las instrucciones `return` de una función saltan a la etiqueta única `.L
 - **Inspección manual del assembly:**
 
 ```bash
-./mi_compilador -target assembly examples/factorial.ctds
-grep -A3 '^factorial:' examples/factorial.ass
+./mi_compilador -target assembly examples/valido_factorial_recursivo.ctds
+grep -A3 '^factorial:' examples/valido_factorial_recursivo.ass
 ```
 
 - **Invariantes verificados en cada marco:**

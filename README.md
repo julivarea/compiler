@@ -204,9 +204,9 @@ Las optimizaciones se piden por nombre, separadas por coma o repitiendo el flag;
 las tres formas que siguen son equivalentes:
 
 ```bash
-./mi_compilador -opt all examples/factorial.ctds
-./mi_compilador -opt const-fold,dead-code examples/factorial.ctds
-./mi_compilador -opt const-fold -opt dead-code examples/factorial.ctds
+./mi_compilador -opt all examples/valido_factorial_recursivo.ctds
+./mi_compilador -opt const-fold,dead-code examples/valido_factorial_recursivo.ctds
+./mi_compilador -opt const-fold -opt dead-code examples/valido_factorial_recursivo.ctds
 ```
 
 Un nombre de optimización desconocido es un error: el compilador lista las
@@ -217,10 +217,10 @@ como paso intermedio y lo ensambla y enlaza con `gcc`. Ese intermedio se borra a
 salvo que se pase `-debug`.
 
 ```bash
-./mi_compilador examples/factorial.ctds                  # -> examples/factorial.out (ejecutable)
-./mi_compilador -target assembly examples/factorial.ctds # -> examples/factorial.ass
-./mi_compilador -target scan examples/factorial.ctds     # -> examples/factorial.lex
-./mi_compilador -o miprograma examples/factorial.ctds    # -> miprograma
+./mi_compilador examples/valido_factorial_recursivo.ctds                  # -> examples/valido_factorial_recursivo.out (ejecutable)
+./mi_compilador -target assembly examples/valido_factorial_recursivo.ctds # -> examples/valido_factorial_recursivo.ass
+./mi_compilador -target scan examples/valido_factorial_recursivo.ctds     # -> examples/valido_factorial_recursivo.lex
+./mi_compilador -o miprograma examples/valido_factorial_recursivo.ctds    # -> miprograma
 ```
 
 Sobre el archivo de entrada se ejecutan las siguientes fases en orden, hasta
@@ -371,12 +371,12 @@ compila su propia copia y **no** valida el ejecutable que dejó `build.sh`. Por
 eso al final conviene probar el compilador de verdad sobre un ejemplo:
 
 ```bash
-./mi_compilador examples/programa.ctds
+./mi_compilador examples/valido_completo.ctds
 ```
 
 `programa.ctds` usa todas las construcciones de la gramática, así que sirve de
 prueba de humo de todas las fases de una sola pasada. Para chequear que los
-errores se siguen detectando, `./mi_compilador examples/programa_con_error.ctds`
+errores se siguen detectando, `./mi_compilador examples/error_suma_booleano_entero.ctds`
 tiene que reportar un error semántico y salir con código 1 sin dejar archivo de
 salida.
 
@@ -389,11 +389,11 @@ optimización.
 Para validar todas las etapas sobre un mismo programa:
 
 ```bash
-for etapa in scan parse sem codinter assembly; do ./mi_compilador -target $etapa examples/programa.ctds || echo "FALLO en $etapa"; done
+for etapa in scan parse sem codinter assembly; do ./mi_compilador -target $etapa examples/valido_completo.ctds || echo "FALLO en $etapa"; done
 ```
 
 Debe generar `programa.lex`, `programa.sint`, `programa.sem`, `programa.ci` y
-`programa.ass` en `examples/`, sin imprimir nada. Son artefactos generados:
+`valido_completo.ass` en `examples/`, sin imprimir nada. Son artefactos generados:
 están en `.gitignore` y se borran con
 `rm -f examples/*.lex examples/*.sint examples/*.sem examples/*.ci examples/*.ass`.
 
@@ -404,8 +404,8 @@ siga haciendo lo mismo. Para eso se compila dos veces y se comparan los
 resultados de la ejecución:
 
 ```bash
-./mi_compilador -o /tmp/sin_opt examples/dead_code.ctds && /tmp/sin_opt; echo "sin opt -> $?"
-./mi_compilador -opt all -o /tmp/con_opt examples/dead_code.ctds && /tmp/con_opt; echo "con opt -> $?"
+./mi_compilador -o /tmp/sin_opt examples/valido_optimizacion_codigo_muerto.ctds && /tmp/sin_opt; echo "sin opt -> $?"
+./mi_compilador -opt all -o /tmp/con_opt examples/valido_optimizacion_codigo_muerto.ctds && /tmp/con_opt; echo "con opt -> $?"
 ```
 
 Los dos códigos de salida tienen que coincidir entre sí y con el valor esperado.

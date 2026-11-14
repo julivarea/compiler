@@ -178,8 +178,8 @@ Ambos componentes se validan de forma transversal en las suites unitarias y de i
 Para verificar manualmente la integridad del buffer en salidas extensas:
 
 ```bash
-./mi_compilador -target assembly examples/programa.ctds
-gcc -x assembler examples/programa.ass -o /tmp/programa.out -no-pie
+./mi_compilador -target assembly examples/valido_completo.ctds
+gcc -x assembler examples/valido_completo.ass -o /tmp/programa.out -no-pie
 ```
 
 ---

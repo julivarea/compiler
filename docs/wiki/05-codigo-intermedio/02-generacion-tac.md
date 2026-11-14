@@ -323,7 +323,7 @@ Requieren mantener en el estado del módulo una pila de pares de etiquetas `(sta
 - **Inspección del archivo `.ci`:**
 
 ```bash
-./mi_compilador -target codinter examples/programa.ctds
+./mi_compilador -target codinter examples/valido_completo.ctds
 ```
 
 - **Propiedades estructurales verificables sobre el `.ci`:**

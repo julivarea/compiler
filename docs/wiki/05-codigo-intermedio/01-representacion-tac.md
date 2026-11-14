@@ -281,7 +281,7 @@ Basta con incrementar la constante `TAC_NAME_LENGTH` (y proporcionalmente `TAC_I
 - **Inspección manual:** el archivo `.ci` vuelca directamente la `TACList` generada:
 
 ```bash
-./mi_compilador -target codinter examples/programa.ctds
+./mi_compilador -target codinter examples/valido_completo.ctds
 ```
 
 - **Programa de cobertura de los 23 opcodes:**

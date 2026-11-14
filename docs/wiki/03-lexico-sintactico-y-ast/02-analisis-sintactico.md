@@ -321,7 +321,7 @@ bison -Wall -d src/parser/bison.y -o /tmp/check.tab.c
 - **Inspección manual del árbol sin anotar (`.sint`):**
 
 ```bash
-./mi_compilador -target parse examples/programa.ctds
+./mi_compilador -target parse examples/valido_completo.ctds
 ```
 
 ---

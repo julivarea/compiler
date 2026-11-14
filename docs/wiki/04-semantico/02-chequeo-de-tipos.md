@@ -219,7 +219,7 @@ Requeriría un nuevo `NodeType` en el AST y una rama en `analyzeExpression` que 
 - **Ejecución manual:** los diagnósticos de tipos se verifican ejecutando el compilador hasta la etapa semántica:
 
 ```bash
-./mi_compilador -target sem examples/if_not_equals_type.ctds
+./mi_compilador -target sem examples/error_float_en_codegen.ctds
 ```
 
 ---

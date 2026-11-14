@@ -283,8 +283,8 @@ Actualmente un método solo puede invocar a los declarados previamente en el arc
 - **Inspección manual:** el archivo `.sem` muestra el `uid` resuelto de cada símbolo tras el carácter `#`, y el archivo `.ci` lo exhibe como sufijo `@n`:
 
 ```bash
-./mi_compilador -target sem examples/programa.ctds
-./mi_compilador -target codinter examples/programa.ctds
+./mi_compilador -target sem examples/valido_completo.ctds
+./mi_compilador -target codinter examples/valido_completo.ctds
 ```
 
 ---

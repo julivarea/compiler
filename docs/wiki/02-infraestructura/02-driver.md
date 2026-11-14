@@ -250,14 +250,14 @@ Comprobación manual de todas las etapas sobre un programa de ejemplo:
 
 ```bash
 for etapa in scan parse sem codinter assembly; do
-    ./mi_compilador -target $etapa examples/programa.ctds || echo "FALLO en $etapa"
+    ./mi_compilador -target $etapa examples/valido_completo.ctds || echo "FALLO en $etapa"
 done
 ```
 
 Para conservar e inspeccionar el archivo ensamblador intermedio `.tmp.s` generado al compilar un ejecutable:
 
 ```bash
-./mi_compilador -debug examples/factorial.ctds
+./mi_compilador -debug examples/valido_factorial_recursivo.ctds
 ```
 
 ---

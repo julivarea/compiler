@@ -260,10 +260,10 @@ Ante los dos primeros fallos se interrumpe la generación de la función actual.
 
 ```bash
 # Generar e inspeccionar el archivo .ass
-./mi_compilador -target assembly examples/factorial.ctds
+./mi_compilador -target assembly examples/valido_factorial_recursivo.ctds
 
 # Compilar a binario, ejecutar y consultar el código de salida
-./mi_compilador -o /tmp/prog examples/dead_code.ctds && /tmp/prog; echo $?
+./mi_compilador -o /tmp/prog examples/valido_optimizacion_codigo_muerto.ctds && /tmp/prog; echo $?
 ```
 
 ---

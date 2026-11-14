@@ -257,7 +257,7 @@ Reemplazar `ID {ALPHA}({ALPHA_NUM})*` por `ID ({ALPHA}|"_")({ALPHA_NUM})*`.
 - **Inspección manual:** `-target scan` ejecuta únicamente el escáner y genera un archivo `.lex` con la secuencia de tokens, línea y lexema:
 
 ```bash
-./mi_compilador -target scan examples/programa.ctds
+./mi_compilador -target scan examples/valido_completo.ctds
 ```
 
 ---

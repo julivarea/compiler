@@ -267,15 +267,15 @@ El desplazamiento aritmético a izquierda (`sall`) es equivalente a la multiplic
 
 ```bash
 # Comparar TAC antes (.ci) y después de optimizar (.opt)
-./mi_compilador -target codinter examples/dead_code.ctds
-./mi_compilador -opt all -target codinter examples/dead_code.ctds
+./mi_compilador -target codinter examples/valido_optimizacion_codigo_muerto.ctds
+./mi_compilador -opt all -target codinter examples/valido_optimizacion_codigo_muerto.ctds
 
 # Inspeccionar qué instrucciones elimina cada pasada
-./mi_compilador -debug -opt all -target codinter examples/dead_code.ctds
+./mi_compilador -debug -opt all -target codinter examples/valido_optimizacion_codigo_muerto.ctds
 
 # Verificar equivalencia de ejecución entre binario sin optimizar y optimizado
-./mi_compilador -o /tmp/sin_opt examples/dead_code.ctds && /tmp/sin_opt; echo "sin opt -> $?"
-./mi_compilador -opt all -o /tmp/con_opt examples/dead_code.ctds && /tmp/con_opt; echo "con opt -> $?"
+./mi_compilador -o /tmp/sin_opt examples/valido_optimizacion_codigo_muerto.ctds && /tmp/sin_opt; echo "sin opt -> $?"
+./mi_compilador -opt all -o /tmp/con_opt examples/valido_optimizacion_codigo_muerto.ctds && /tmp/con_opt; echo "con opt -> $?"
 ```
 
 ---

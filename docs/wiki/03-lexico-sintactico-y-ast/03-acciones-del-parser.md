@@ -161,11 +161,11 @@ No requiere cambios en este módulo: `resolveVariableDefinition` recibe `DataTyp
 - **Inspección de `.sint` y `.sem`:**
 
 ```bash
-./mi_compilador -target parse examples/programa.ctds
-./mi_compilador -target sem   examples/programa.ctds
+./mi_compilador -target parse examples/valido_completo.ctds
+./mi_compilador -target sem   examples/valido_completo.ctds
 ```
 
-- **Control de fugas de memoria:** `valgrind --leak-check=full ./mi_compilador -target sem examples/factorial.ctds` verifica que no queden contenedores `NodeArray` ni símbolos provisorios huérfanos desde `newSymbol` (ver §8).
+- **Control de fugas de memoria:** `valgrind --leak-check=full ./mi_compilador -target sem examples/valido_factorial_recursivo.ctds` verifica que no queden contenedores `NodeArray` ni símbolos provisorios huérfanos desde `newSymbol` (ver §8).
 
 ---
 
