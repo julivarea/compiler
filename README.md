@@ -351,7 +351,7 @@ internas del equipo y en `docs/historicos/` el archivo de borradores tempranos.
 Dos pasos, y el segundo es el que se olvida:
 
 1. Crear el `.md` **dentro de `docs/`**. Es el `docs_dir` del sitio, así
-   que todo lo que esté en la raíz del repo (los `TODO_*.md`, este mismo README)
+   que todo lo que esté en la raíz del repo (como este mismo `README.md`)
    queda afuera y no aparece.
 2. Agregarlo al `nav:` de `mkdocs.yml`. Una página que no está en el `nav` igual
    se compila, pero no figura en el menú y solo se llega a ella por el buscador

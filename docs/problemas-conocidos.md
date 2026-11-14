@@ -18,12 +18,11 @@ En C-TDS un método puede invocarse recursivamente a sí mismo (porque su símbo
 
 ## 2. El plegado de constantes desborda con signo en `+`, `-` y `*`
 
-Al plegar en compilación expresiones como `2147483647 * 3`, el cálculo entero se realiza sobre `int` de C, lo cual constituye comportamiento indefinido (*undefined behavior*) en caso de desborde.
+Al plegar en compilación expresiones como `2147483647 * 3`, el cálculo entero en `evaluateBinary` se realiza directamente sobre `int` de C, lo cual constituye comportamiento indefinido (*undefined behavior*) en caso de desborde.
 
 - **Cómo se detectó:** compilando el proyecto con **UBSan** (*UndefinedBehaviorSanitizer*) y ejecutando la batería de ejemplos.
-- **Comportamiento observado:** con GCC en x86-64 el resultado envuelve en complemento a dos coincidiendo con el código objeto generado (`addl`, `subl`, `imull`), aunque formalmente no está garantizado por el estándar C.
-- **Divisiones y módulo:** `/` y `%` sí están protegidos contra divisor cero y contra `INT_MIN / -1`.
-- **Alternativa:** aplicar el mismo patrón que ya usan `/` y `%` en `evaluateBinary` ([Optimizador del Código Intermedio](wiki/06-optimizador/02-optimizador.md)). Verificar el posible desborde antes de operar (por ejemplo con `__builtin_add_overflow`, `__builtin_sub_overflow`, `__builtin_mul_overflow` o operando en `int64_t` y comparando contra `INT_MAX`/`INT_MIN`) y retornar `false` para dejar la instrucción sin plegar y resolverla en tiempo de ejecución.
+- **Por qué se mantiene así:** con GCC en x86-64 el resultado envuelve en complemento a dos coincidiendo con el código objeto generado (`addl`, `subl`, `imull`), y las expresiones dentro del rango de 32 bits con signo definido por la especificación (`[-2147483648, 2147483647]`) no desbordan. Las divisiones y el módulo (`/` y `%`) sí están protegidos contra divisor cero y contra `INT_MIN / -1` porque en x86-64 `idivl` abortaría en ejecución con `SIGFPE`.
+- **Alternativa:** aplicar el mismo patrón que usan `/` y `%` en `evaluateBinary` ([Optimizador del Código Intermedio](wiki/06-optimizador/02-optimizador.md)), verificando el desborde antes de operar (por ejemplo en `int64_t` contra `[INT_MIN, INT_MAX]` o con `__builtin_*_overflow`) y retornando `false` para dejar la instrucción sin plegar, o bien calcular en `uint32_t` para envolver explícitamente módulo $2^{32}$.
 
 ---
 
