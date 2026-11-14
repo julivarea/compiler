@@ -1,144 +1,136 @@
 # Análisis de Variables Vivas
 
-**Archivos:** `include/live_variable_analysis.h`,
-`src/optimizer/live_variable_analysis.c` (484 líneas)
+**Archivos:** `include/live_variable_analysis.h`, `src/optimizer/live_variable_analysis.c` (484 líneas)
 
-El análisis de flujo de datos que le dice al [optimizador](02-optimizador.md) qué
-asignaciones puede eliminar sin cambiar el comportamiento del programa.
-
-El análisis de variables vivas opera sobre la lista de instrucciones TAC (código de tres direcciones) generada tras el análisis semántico. Su objetivo es detectar **definiciones muertas** (asignaciones cuyo valor nunca se leerá) para que una etapa posterior pueda eliminarlas. Sus responsabilidades están organizadas en los módulos `src/optimizer/live_variable_analysis.c` y `include/live_variable_analysis.h`.
+El análisis de variables vivas es un análisis de flujo de datos que opera sobre la lista de instrucciones [TAC](../05-codigo-intermedio/01-representacion-tac.md) para determinar qué variables pueden ser leídas en el futuro en cada punto del programa. Su propósito en el compilador es identificar definiciones muertas (asignaciones cuyo valor nunca se lee) para que el [optimizador](02-optimizador.md) pueda eliminarlas sin alterar la semántica.
 
 ---
 
-## 1. Conceptos Fundamentales
+## 1. Conceptos y alcance
 
-- **Variable viva:** una variable está *viva* en un punto del programa si su valor actual puede ser leído más adelante por algún camino de ejecución, sin ser sobrescrita antes.
-- **Bloque básico:** secuencia máxima de instrucciones que se ejecutan siempre de corrido: se entra únicamente por la primera y se sale únicamente por la última.
-- **Líder:** primera instrucción de un bloque básico. Una instrucción es líder si cumple alguna de estas condiciones (`isLeader`):
-  - Es la primera instrucción del programa.
+- **Variable viva:** una variable está viva en un punto del programa si existe algún camino de ejecución desde ese punto hasta una lectura de la variable que no pase antes por una redefinición de la misma.
+- **Bloque básico:** secuencia máxima de instrucciones consecutivas sin saltos intermedios: el flujo de control ingresa únicamente por la primera instrucción y sale únicamente por la última.
+- **Líder (`isLeader`):** primera instrucción de un bloque básico. Una instrucción es líder si cumple alguna de estas condiciones:
+  - Es la primera instrucción de la lista TAC.
   - Es una etiqueta (`TAC_LABEL`).
   - Es el inicio de una función (`TAC_BEGIN_FUNC`).
   - Sigue inmediatamente a un terminador de bloque.
-- **Terminador de bloque:** instrucción que cierra un bloque: `TAC_GOTO`, `TAC_IF_FALSE`, `TAC_IF_TRUE`, `TAC_RETURN` o `TAC_END_FUNC`.
-- **CFG (Grafo de Flujo de Control):** los bloques son nodos y existe una arista `B → S` si la ejecución puede pasar de `B` a `S`. Los `S` se denominan **sucesores** de `B`.
+- **Terminador de bloque (`endsBasicBlock`):** instrucción que transfiere o detiene el flujo de control al final de un bloque: `TAC_GOTO`, `TAC_IF_FALSE`, `TAC_IF_TRUE`, `TAC_RETURN` o `TAC_END_FUNC`.
+- **Grafo de flujo de control (CFG):** grafo dirigido donde los nodos son los bloques básicos y existe una arista `B → S` si la ejecución puede pasar directamente del final de `B` al inicio del sucesor `S`.
 - **Variable candidata (`holdsValue`, de `tac.h`):** solo se analizan operandos de tipo `OPERAND_VARIABLE` y `OPERAND_TEMP`. Las constantes y etiquetas se ignoran.
+- **Alcance intraprocedural:** aunque todos los bloques del programa se almacenan en un mismo arreglo, ningún bloque ni arista cruza la frontera entre dos funciones. `TAC_BEGIN_FUNC` actúa como líder y `TAC_END_FUNC` como terminador sin arista de caída secuencial, manteniendo aisladas las funciones en el grafo.
 
 ---
 
-## 2. Modelado de Datos
+## 2. Interfaz pública y estructuras de datos
+
+### Funciones públicas
+
+| Función | Descripción |
+| :--- | :--- |
+| `createLiveVariableAnalysis(tacList)` | Ejecuta las cinco etapas del análisis (§3) y devuelve la estructura convergida, o `NULL` si la lista es vacía o falla una reserva. |
+| `freeLiveVariableAnalysis(analysis)` | Libera los bloques y la estructura del análisis. Acepta `NULL`. |
+| `findInstructionBlock(analysis, instruction)` | Busca linealmente el bloque básico al que pertenece una instrucción. |
+| `isDeadDefinitionInBlock(analysis, block, instruction)` | Evalúa si la asignación en `instruction` dentro de `block` es una definición muerta (§4). |
+| `isDeadDefinition(analysis, instruction)` | Localiza primero el bloque con `findInstructionBlock` y delega en `isDeadDefinitionInBlock`. |
+| `printLiveVariableAnalysis(analysis, output)` | Imprime el CFG completo y los conjuntos de cada bloque para la salida de `-debug` (usa `stdout` si `output` es `NULL`). |
+
+La separación entre `isDeadDefinition` e `isDeadDefinitionInBlock` responde a su costo algorítmico: `removeDeadStores` en el optimizador recorre el programa bloque por bloque, por lo que ya conoce el bloque actual y consulta `isDeadDefinitionInBlock` en tiempo lineal, mientras que `isDeadDefinition` queda disponible para consultas puntuales en pruebas unitarias.
 
 ### `VariableSet` (conjunto de variables como *bitset*)
 
-Un conjunto de variables se representa como un entero de 64 bits donde **cada bit corresponde a una variable**: el bit `i` está encendido si la variable de índice `i` pertenece al conjunto.
+Cada conjunto de variables se representa mediante un `uint64_t` donde el bit `i` indica la presencia de la variable de índice `i`. Esto permite resolver las operaciones de conjuntos en una única instrucción de procesador:
 
 | Operación de conjuntos | Expresión en C |
 | :--- | :--- |
 | Agregar variable `i` | `set \|= (1ULL << i)` |
-| ¿Contiene `i`? | `(set & (1ULL << i)) != 0` |
+| Pertenencia de `i` | `(set & (1ULL << i)) != 0` |
 | Unión `A ∪ B` | `A \| B` |
 | Diferencia `A − B` | `A & ~B` |
 | Conjunto vacío | `0` |
-
-> **Limitación:** al usar 64 bits, el análisis admite como máximo 64 variables distintas (`MAX_LIVENESS_VARIABLES`).
 
 ### `BasicBlock` (bloque básico)
 
 | Campo | Descripción |
 | :--- | :--- |
-| `id` | Número secuencial del bloque, empezando en 0. |
-| `firstInstruction` | Puntero a la primera instrucción TAC del bloque (el líder). |
+| `id` | Identificador secuencial del bloque (comenzando en 0). |
+| `firstInstruction` | Puntero a la primera instrucción TAC del bloque (líder). |
 | `lastInstruction` | Puntero a la última instrucción TAC del bloque. |
-| `successors[]` / `successorCount` | Bloques a los que puede saltar la ejecución desde este. |
-| `use` | `VariableSet` con `USE(B)`: las variables leídas antes de ser definidas en el bloque. |
-| `def` | `VariableSet` con `DEF(B)`: las variables definidas antes de ser leídas en el bloque. |
-| `liveIn` | `VariableSet` con las variables vivas **al entrar** al bloque. |
-| `liveOut` | `VariableSet` con las variables vivas **al salir** del bloque. |
+| `successors[2]` / `successorCount` | Punteros a los bloques sucesores (máximo 2: salto condicional y caída secuencial). |
+| `use` | `VariableSet` con `USE(B)`: variables leídas antes de ser definidas en el bloque. |
+| `def` | `VariableSet` con `DEF(B)`: variables definidas antes de ser leídas en el bloque. |
+| `liveIn` | `VariableSet` con las variables vivas al ingresar al bloque. |
+| `liveOut` | `VariableSet` con las variables vivas al salir del bloque. |
 
 ### `LiveVariableAnalysis` (contexto del análisis)
 
 | Campo | Descripción |
 | :--- | :--- |
-| `tacList` | Lista TAC original sobre la que se trabaja (no es propietario de ella). |
-| `variableNames[]` / `variableCount` | Tabla que asigna un índice (0, 1, 2, ...) a cada variable o temporal distinto. El índice es la posición del bit en el `VariableSet`. |
-| `blocks[]` / `blockCount` | Arreglo dinámico de bloques básicos, en el orden en que aparecen en el TAC. |
+| `tacList` | Lista TAC analizada (referencia no propietaria). |
+| `variableNames[]` / `variableCount` | Tabla que asocia cada nombre de variable o temporal con su índice de bit (`0` a `MAX_LIVENESS_VARIABLES - 1`). |
+| `blocks[]` / `blockCount` | Arreglo dinámico de bloques básicos en el orden en que aparecen en el TAC. |
 
 ---
 
-## 3. Flujo General (`createLiveVariableAnalysis`)
+## 3. Etapas del algoritmo
 
-La función principal ejecuta las etapas en este orden:
+`createLiveVariableAnalysis` construye y resuelve el análisis en cinco etapas secuenciales:
 
-1. **`collectVariables`:** recorre todo el TAC y registra cada variable/temporal en `variableNames` mediante `registerVariable`.
-2. **`partitionBasicBlocks`:** divide el TAC en bloques básicos.
-3. **`buildControlFlowEdges`:** calcula los sucesores de cada bloque.
-4. **`computeBlockUseAndDef`:** calcula `USE(B)` y `DEF(B)` para cada bloque.
-5. **`solveFixedPointLiveness`:** resuelve las ecuaciones de liveness por punto fijo.
+### 3.1 Recolección de variables (`collectVariables`)
 
-Si la lista TAC es `NULL`/vacía, o si no se genera ningún bloque, la función retorna `NULL`. La memoria se libera con `freeLiveVariableAnalysis`.
+Recorre todas las instrucciones del TAC y registra en `variableNames` cada operando candidato (`result`, `firstOperand`, `secondOperand`) mediante `registerVariable`. Si el nombre ya existe (búsqueda lineal con `getVariableIndex`), conserva su índice; de lo contrario, le asigna el siguiente bit libre hasta alcanzar `MAX_LIVENESS_VARIABLES` (64).
 
----
+### 3.2 Particionado en bloques básicos (`partitionBasicBlocks`)
 
-## 4. Etapas del Análisis
+Recorre la lista TAC identificando líderes con `isLeader`. A partir de cada líder, extiende el bloque hasta que la instrucción actual sea un terminador (`endsBasicBlock`), la siguiente instrucción sea un líder o se alcance el final de la lista. El arreglo `blocks` crece dinámicamente duplicando su capacidad desde un tamaño inicial de 8 bloques.
 
-### 4.1 Registro de Variables (`collectVariables`, `registerVariable`, `getVariableIndex`)
+### 3.3 Construcción del CFG (`buildControlFlowEdges`)
 
-- Por cada instrucción se registran, si son candidatas, `result`, `firstOperand` y `secondOperand`.
-- `registerVariable` primero busca el nombre con `getVariableIndex` (búsqueda lineal con `strcmp`). Si ya existe devuelve su índice; si no, lo agrega al final.
-- Si se supera `MAX_LIVENESS_VARIABLES`, devuelve `-1` y esa variable queda **fuera del análisis**.
+Inspecciona únicamente la última instrucción de cada bloque para agregar las aristas hacia sus sucesores:
 
-### 4.2 Particionado en Bloques Básicos (`partitionBasicBlocks`)
-
-- Se recorre la lista TAC saltando instrucciones hasta hallar un líder (`isLeader`).
-- Desde cada líder, el bloque se extiende hasta que ocurra una de estas situaciones:
-  - La instrucción actual es un terminador (`goto`, `if_false`, `if_true`, `return`, `end_func`).
-  - La siguiente instrucción es un líder.
-  - Se acaba la lista.
-- Cada bloque guarda su `firstInstruction` y `lastInstruction`, y se agrega al arreglo `blocks`, que se duplica con `realloc` cuando se llena (capacidad inicial: 8).
-
-### 4.3 Construcción del CFG (`buildControlFlowEdges`)
-
-Se analiza **únicamente la última instrucción** de cada bloque:
-
-| Última instrucción | Sucesores |
+| Última instrucción | Sucesores agregados |
 | :--- | :--- |
-| `TAC_GOTO` | Uno: el bloque cuya etiqueta es el destino del salto. |
-| `TAC_IF_FALSE` / `TAC_IF_TRUE` | Dos: el bloque destino del salto y el bloque siguiente en el orden del TAC (caída secuencial). |
+| `TAC_GOTO` | El bloque cuya primera instrucción es la etiqueta destino (`findBlockByLabel`). |
+| `TAC_IF_FALSE` / `TAC_IF_TRUE` | El bloque de la etiqueta destino y el bloque siguiente en el arreglo (caída secuencial). |
 | `TAC_RETURN` / `TAC_END_FUNC` | Ninguno. |
-| Cualquier otra | Uno: el bloque siguiente (caída secuencial). |
+| Cualquier otra | El bloque siguiente en el arreglo (caída secuencial). |
 
-`findBlockByLabel` localiza el bloque cuya primera instrucción es una `TAC_LABEL` con el nombre buscado.
+Si `findBlockByLabel` no encuentra una etiqueta destino, la arista correspondiente se omite de forma segura.
 
-### 4.4 Cálculo de `USE` y `DEF` (`computeBlockUseAndDef`)
+### 3.4 Cálculo de `USE` y `DEF` (`computeBlockUseAndDef`)
 
-Se recorren las instrucciones del bloque en orden, **ignorando las declaraciones** (`TAC_GLOBAL_DECL`, `TAC_LOCAL_DECL`, `TAC_PARAM_DECL`), ya que declarar no lee ni escribe un valor.
+Recorre las instrucciones de cada bloque en orden secuencial, omitiendo las declaraciones (`TAC_GLOBAL_DECL`, `TAC_LOCAL_DECL`, `TAC_PARAM_DECL`) dado que reservar espacio no lee ni escribe valores. Si una declaración se contara como definición, incluiría la variable en `DEF(B)` e impediría propagar su vivacidad hacia atrás.
 
-- **`USE(B)`:** variables **leídas** (`firstOperand`, `secondOperand`) en el bloque **antes de ser definidas** dentro del mismo bloque. Son las que deben venir vivas desde antes.
-- **`DEF(B)`:** variables **asignadas** (`result`) en el bloque antes de haber sido utilizadas. Una escritura "mata" el valor previo.
+- **`USE(B)`:** variables leídas en `firstOperand` o `secondOperand` que aún no pertenecen a `DEF(B)`.
+- **`DEF(B)`:** variables escritas en `result` que aún no pertenecen a `USE(B)`.
 
-### 4.5 Resolución por Punto Fijo (`solveFixedPointLiveness`)
+### 3.5 Resolución por punto fijo (`solveFixedPointLiveness`)
 
-Es un análisis **hacia atrás** (*backward*): se recorren los bloques del último al primero, y se repite hasta que ningún conjunto cambie.
+La vivacidad es un análisis hacia atrás (*backward data-flow*): el estado a la entrada de un bloque depende de lo que sucede después de él. En cada iteración se recorren los bloques en orden inverso (`blockCount - 1` hasta `0`), de modo que la información fluya en dirección opuesta al control y converja en menos pasadas:
 
-**Ecuación 1:**
-```
-LIVE_OUT(B) = ⋃ LIVE_IN(S)   para todo sucesor S de B
-```
+$$\text{LIVE\_OUT}(B) = \bigcup_{S \in \text{succ}(B)} \text{LIVE\_IN}(S)$$
 
-**Ecuación 2:**
-```
-LIVE_IN(B) = USE(B) ∪ (LIVE_OUT(B) − DEF(B))
-```
+$$\text{LIVE\_IN}(B) = \text{USE}(B) \cup \bigl(\text{LIVE\_OUT}(B) - \text{DEF}(B)\bigr)$$
 
-- Lo que está vivo al salir de `B` es lo que cualquier sucesor necesite.
-- Lo que está vivo al entrar es lo que `B` lee, más lo que sigue vivo después y `B` no sobrescribe.
-- La iteración es necesaria por los **bucles**: el resultado de un bloque puede depender de otro que aún no fue calculado correctamente. Al terminar una pasada sin cambios, se alcanzó el punto fijo.
+En código, gracias a la representación como `VariableSet`, la ecuación de transferencia se evalúa directamente como `newIn = block->use | (newOut & ~block->def)`. El bucle se repite hasta alcanzar el punto fijo (una pasada completa sin cambios en ningún `liveIn` ni `liveOut`). La terminación está garantizada porque las ecuaciones son monótonas crecientes sobre un conjunto finito acotado por 64 bits.
 
 ---
 
-## 5. Ejemplo Completo
+## 4. Criterio de definición muerta y ejemplo
 
-**Código TAC:**
-```
+### Evaluación intra-bloque (`isDeadDefinitionInBlock`)
+
+Para determinar si una instrucción que define una variable `v` (en `instruction->result`) dentro del bloque `B` es una definición muerta, se recorren las instrucciones posteriores a ella dentro del mismo bloque:
+
+1. Si una instrucción posterior lee `v` (`instructionReadsVariable`), la definición **no es muerta**.
+2. Si una instrucción posterior sobrescribe `v` (`instructionWritesVariable`) sin haberla leído en esa misma instrucción, la definición anterior **es muerta**.
+3. Si se alcanza el final del bloque `B` sin que ocurra 1 ni 2, la definición es muerta si y solo si `v ∉ LIVE_OUT(B)`.
+
+### Ejemplo de ejecución
+
+Dado el siguiente fragmento TAC:
+
+```text
 x = 1
 y = 2
 if_false x goto L1
@@ -148,397 +140,57 @@ w = y
 return w
 ```
 
-**Bloques y sucesores:**
+El particionado y la resolución producen los siguientes conjuntos:
 
-| Bloque | Instrucciones | Sucesores |
+| Bloque | Instrucciones | Sucesores | `USE` | `DEF` | `LIVE_OUT` | `LIVE_IN` |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| B0 | `x = 1`, `y = 2`, `if_false x goto L1` | B2, B1 | `{}` | `{x, y}` | `{x, y}` | `{}` |
+| B1 | `z = x + y` | B2 | `{x, y}` | `{z}` | `{y}` | `{x, y}` |
+| B2 | `L1:`, `w = y`, `return w` | ninguno | `{y}` | `{w}` | `{}` | `{y}` |
+
+Al consultar `isDeadDefinitionInBlock` sobre `z = x + y` en `B1`: no hay instrucciones posteriores en `B1` y `z ∉ LIVE_OUT(B1) = {y}`, por lo que se identifica como definición muerta.
+
+---
+
+## 5. Limitaciones y comportamiento conservador
+
+- **Tope de 64 variables (`MAX_LIVENESS_VARIABLES`):** si una función combinada con el resto del TAC supera las 64 variables o temporales distintos, `registerVariable` y `getOperandVariableIndex` devuelven `-1` para el excedente. Cuando `isDeadDefinitionInBlock` recibe un índice negativo, retorna `false`. De esta forma, superar el límite degrada la capacidad de optimización pero preserva la corrección del programa.
+- **Capacidad fija en `successors[2]`:** `addSuccessor` inserta en el arreglo de dos elementos sin validar el tope, apoyándose en el invariante de que ningún terminador del TAC genera más de dos salidas.
+- **Asignaciones muertas frente a ciclos auto-sustentados:** el análisis detecta definiciones cuyo valor nunca se lee, pero no elimina cómputos que se retroalimentan en un bucle sin uso externo. Por ejemplo, si dentro de un `while` se ejecuta `a = a + i` y al salir del ciclo `a` se pisa con `a = 10`, la lectura de `a` en `a + i` la incluye en `USE` del cuerpo del bucle y la mantiene viva a través de la arista de retorno. Eliminar ese patrón requeriría un análisis de variables desvanecidas (*faint variable analysis*).
+
+---
+
+## 6. Cómo se extiende
+
+### Otros análisis de flujo de datos sobre el CFG
+
+El particionado en bloques básicos (`partitionBasicBlocks`), el armado de aristas (`buildControlFlowEdges`) y el esquema iterativo de punto fijo son reutilizables para otros análisis sobre el TAC cambiando únicamente la dirección del recorrido y las ecuaciones de flujo:
+
+| Propiedad | Variables vivas (actual) | Definiciones alcanzables (*reaching definitions*) |
 | :--- | :--- | :--- |
-| B0 | `x = 1`, `y = 2`, `if_false x goto L1` | B2 (salto), B1 (caída) |
-| B1 | `z = x + y` | B2 |
-| B2 | `L1:`, `w = y`, `return w` | ninguno |
-
-**`USE` / `DEF`:**
-
-| Bloque | USE | DEF |
-| :--- | :--- | :--- |
-| B0 | `{}` (`x` se lee pero ya fue definida en el bloque) | `{x, y}` |
-| B1 | `{x, y}` | `{z}` |
-| B2 | `{y}` | `{w}` |
-
-**Cálculo hacia atrás:**
-
-| Bloque | LIVE_OUT | LIVE_IN |
-| :--- | :--- | :--- |
-| B2 | `{}` | `{y}` |
-| B1 | `{y}` | `{x, y}` |
-| B0 | `{x, y}` | `{}` |
-
-**Resultado:** en `z = x + y`, `z` no está en `LIVE_OUT(B1) = {y}` y nadie la lee después dentro del bloque, por lo tanto **es una definición muerta**.
-
----
-
-## 6. Funciones de Consulta
-
-- **`findInstructionBlock(analysis, instruction)`:** devuelve el bloque que contiene a la instrucción, o `NULL` si no se encuentra.
-- **`isDeadDefinition(analysis, instruction)`:** localiza el bloque de la instrucción y delega en `isDeadDefinitionInBlock`.
-- **`isDeadDefinitionInBlock(analysis, block, instruction)`:** la misma pregunta con el bloque ya conocido; es la que usa el optimizador.
-
-Las dos primeras solo las usan los tests: el optimizador recorre los bloques de a uno y ya sabe en cuál está cada instrucción.
-
-### Criterio de Definición Muerta (`isDeadDefinitionInBlock`)
-
-Dada una instrucción que **define** una variable `v` (su `result`), se examinan las instrucciones siguientes **dentro del mismo bloque**:
-
-1. Si alguna instrucción **lee** `v` → **no es muerta** (el valor se usa).
-2. Si alguna instrucción **reescribe** `v` sin haberla leído antes → **es muerta** (el valor fue pisado sin usarse).
-3. Si se llega al final del bloque sin ocurrir lo anterior → es muerta si y solo si `v ∉ LIVE_OUT(B)`.
-
----
-
-## 7. Salida de Depuración (`printLiveVariableAnalysis`)
-
-Imprime, por cada bloque: su identificador, sus instrucciones (con `fprintTACInstruction` de `tac.c`), sus sucesores, y los conjuntos `USE`, `DEF`, `LIVE_IN` y `LIVE_OUT`, leídos directamente de los campos del bloque. Al inicio muestra la lista de variables candidatas y el total de bloques. Si `output` es `NULL`, escribe en `stdout`.
-
----
-
-## 8. Manejo de Errores y Casos Anómalos
-
-1. **Entrada nula o vacía:** si `tacList` o `tacList->head` es `NULL`, se retorna `NULL`.
-2. **Sin bloques:** si el particionado no genera ningún bloque, se retorna `NULL`.
-3. **Fallo de memoria:** si `calloc`, `malloc` o `realloc` fallan, se libera lo reservado y se retorna `NULL` (o se detiene el particionado con los bloques construidos hasta ese punto).
-4. **Parámetros `NULL` en consultas:** `findInstructionBlock`, `isDeadDefinition` e `isDeadDefinitionInBlock` devuelven `NULL`/`false` de forma segura ante punteros nulos.
-5. **Etiqueta inexistente:** si `findBlockByLabel` no encuentra el destino de un salto, simplemente no se agrega esa arista.
-
-### Limitaciones y Puntos de Atención
-
-- **Máximo 64 variables:** `registerVariable` devuelve `-1` en silencio al superar el límite. Las variables excedentes no se analizan y no se emite ningún aviso.
-- **`successors[2]` no tiene guarda.** El arreglo es de tamaño fijo 2, que es el máximo real (los dos destinos de un salto condicional), pero `addSuccessor` hace `block->successors[block->successorCount++] = successor;` **sin verificar el límite**. Es seguro por construcción —`buildControlFlowEdges` agrega a lo sumo dos— pero un caso nuevo que agregara un tercer sucesor escribiría fuera del arreglo sin que nada avise.
-- **Análisis intra-bloque en `isDeadDefinitionInBlock`:** no considera las propias operaciones de la instrucción evaluada; solo las posteriores dentro del bloque.
-
----
-
-## 9. Inventario de funciones
-
-Veinticinco funciones: **seis públicas** y **diecinueve privadas**. La estructura
-del archivo sigue la regla de descenso y el orden del análisis —recolectar,
-partir, conectar, calcular, converger— y deja los auxiliares al final.
-
-### Públicas
-
-| Función | Qué hace |
-| --- | --- |
-| `createLiveVariableAnalysis(tacList)` | Las cinco etapas de §3 y §4. Devuelve el análisis ya convergido, o `NULL` |
-| `freeLiveVariableAnalysis(analysis)` | Libera los bloques y la estructura. Acepta `NULL` |
-| `findInstructionBlock(analysis, instruction)` | A qué bloque pertenece una instrucción. Búsqueda lineal |
-| `isDeadDefinitionInBlock(analysis, block, instruction)` | La pregunta que consume el optimizador, con el bloque ya sabido |
-| `isDeadDefinition(analysis, instruction)` | La misma, buscando antes el bloque |
-| `printLiveVariableAnalysis(analysis, output)` | El volcado del CFG de `-debug` |
-
-**Que existan las dos versiones de la pregunta no es duplicación.**
-`isDeadDefinition` tiene que encontrar el bloque primero, y eso es una búsqueda
-lineal sobre todos los bloques y todas sus instrucciones. `removeDeadStores`
-recorre los bloques de a uno, así que ya sabe en cuál está: usa la versión con
-bloque y evita una búsqueda por instrucción. La diferencia es un recorrido
-cuadrático contra uno lineal.
-
-### Las cinco etapas de la construcción
-
-| Función | Etapa |
-| --- | --- |
-| `collectVariables` | Recorre todo el TAC y registra cada variable y temporal que aparece |
-| `collectOperandVariable` | Registra un operando si es candidato (`holdsValue`). Es el cuerpo del bucle anterior |
-| `partitionBasicBlocks` | Corta la lista en bloques básicos usando `isLeader`. Duplica la capacidad desde 8 |
-| `buildControlFlowEdges` | Agrega las aristas: destino del salto, caída al siguiente, o ninguna |
-| `addSuccessor` | Agrega un sucesor, ignorando `NULL` |
-| `computeBlockUseAndDef` | Calcula `USE(B)` y `DEF(B)` de un bloque en una sola pasada y los guarda en `block->use` y `block->def` |
-| `solveFixedPointLiveness` | Itera las ecuaciones hasta que ningún conjunto cambia |
-
-Tres detalles de estas siete que vale tener a mano:
-
-**`solveFixedPointLiveness` recorre los bloques en orden inverso**
-(`for (size_t i = analysis->blockCount; i-- > 0;)`). No es un detalle de estilo:
-en un análisis **hacia atrás**, la información fluye del final hacia el
-principio, así que visitar los bloques en orden inverso propaga en una sola
-ronda lo que el orden directo tardaría varias en propagar. El resultado es el
-mismo —el punto fijo es único—, pero se llega en menos vueltas.
-
-**`computeBlockUseAndDef` saltea las declaraciones.** Un `local_decl` no lee ni
-escribe un valor: solo reserva espacio. Si contara como definición, una variable
-declarada al principio de un bloque aparecería en `DEF(B)` y eso la sacaría de
-`LIVE_IN(B)`, que es exactamente lo contrario de lo que corresponde.
-
-**Ningún bloque cruza la frontera entre dos funciones, y ninguna arista
-tampoco.** `isLeader` trata `begin_func` como líder y `endsBasicBlock` trata
-`end_func` como terminador, así que el bloque anterior cierra ahí y
-`buildControlFlowEdges` no le agrega la arista de caída. Eso es lo que hace sano
-el análisis **intraprocedural** aunque todos los bloques de todas las funciones
-vivan en un mismo arreglo: no hay ningún camino en el grafo que vaya del final
-de una función al principio de la siguiente.
-
-### El índice de variables
-
-| Función | Qué hace |
-| --- | --- |
-| `registerVariable` | Devuelve el índice del nombre, agregándolo si es nuevo. **`-1` si la tabla está llena** |
-| `getVariableIndex` | Busca un nombre y devuelve su índice, o `-1` |
-| `getOperandVariableIndex` | Lo mismo partiendo de un operando, filtrando con `holdsValue` de `tac.h` (¿es una variable o un temporal?) |
-
-El índice es lo que convierte un nombre en una **posición de bit**, y es toda la
-razón de que los conjuntos quepan en un entero. El `-1` de los dos últimos es el
-que propaga el límite de §10 de forma conservadora.
-
-### Los predicados sobre instrucciones
-
-| Función | Qué contesta |
-| --- | --- |
-| `isDeclaration` | ¿es `global_decl`, `local_decl` o `param_decl`? |
-| `endsBasicBlock` | ¿termina un bloque? `goto`, los dos saltos condicionales (`isConditionalJump`), `ret` y `end_func` |
-| `isLeader` | ¿empieza un bloque? La primera instrucción, una etiqueta, un `begin_func`, o lo que sigue a un terminador |
-| `instructionReadsVariable` | ¿lee esta variable en alguno de sus dos operandos? |
-| `instructionWritesVariable` | ¿la escribe en `result`? |
-| `isVariableInSet` | `(set & (1ULL << index)) != 0` |
-
-`isLeader` y `endsBasicBlock` son **la definición de bloque básico del libro**,
-escrita en seis líneas: un líder es la primera instrucción, el destino de un
-salto —acá aproximado por "toda etiqueta"— o la instrucción siguiente a un
-salto. Aproximar "destino de un salto" por "toda etiqueta" puede partir un
-bloque de más si una etiqueta quedó sin referencias, lo que es inofensivo: más
-bloques dan el mismo resultado, solo con más vueltas.
-
-Las dos funciones `instructionReads`/`WritesVariable` comparan **por nombre** y
-no por índice, porque las usa `isDeadDefinitionInBlock` recorriendo
-instrucciones, donde el nombre está a mano y convertirlo a índice costaría una
-búsqueda por instrucción.
-
-### La impresión
-
-| Función | Qué hace |
-| --- | --- |
-| `findBlockByLabel` | Busca el bloque que arranca con una etiqueta dada. Lo usa el armado de aristas |
-| `printBasicBlock` | Un bloque: sus instrucciones (vía `fprintTACInstruction` de [representación TAC](../05-codigo-intermedio/01-representacion-tac.md)), sus sucesores y sus cuatro conjuntos |
-| `printVariableSet` | Un conjunto de bits como `{ a@1, t0 }`, traduciendo índices a nombres |
-
-`printVariableSet` es lo que hace legible el volcado: sin esa traducción de bits
-a nombres, `LIVE_OUT` sería un número como `6` y habría que decodificarlo a mano.
-
-Los cuatro conjuntos de cada bloque quedan guardados en el propio `BasicBlock`
-(`use`, `def`, `liveIn`, `liveOut`), así que `printLiveVariableAnalysis` solo
-los lee: no recalcula nada ni necesita descartar el `const` del análisis.
-
----
-
-## 10. El límite de 64 variables, en la práctica
-
-`VariableSet` es un `uint64_t`, así que el análisis sigue a lo sumo
-`MAX_LIVENESS_VARIABLES = 64` variables. Esa elección es la que hace que las
-operaciones de conjuntos sean instrucciones de un ciclo:
-
-| Operación de conjuntos | En el código |
-| --- | --- |
-| Unión | `a \| b` |
-| Diferencia | `a & ~b` |
-| Pertenencia | `(set & (1ULL << i)) != 0` |
-
-Por eso las ecuaciones de vivacidad se leen casi como su notación matemática:
-
-```c
-VariableSet newIn = block->use | (newOut & ~block->def);
-```
-
-### Qué pasa al pasarse del límite
-
-`registerVariable` devuelve `-1` y la variable **no se registra**. La pregunta
-importante es qué consecuencia tiene eso, y la respuesta es tranquilizadora:
-
-`getOperandVariableIndex` devuelve `-1` para una variable sin registrar, y
-`isDeadDefinitionInBlock` arranca con:
-
-```c
-int variableIndex = getOperandVariableIndex(analysis, &instruction->result);
-if (variableIndex < 0) return false;   /* no es muerta */
-```
-
-O sea que una variable que quedó fuera del análisis se trata como **no muerta**,
-que es el lado **conservador**: se pierde la oportunidad de optimizar, pero nunca
-se elimina algo que hacía falta.
-
-Verificado con un programa de 70 variables:
-
-```
-Variables candidatas (64)       <- se queda en el tope
-```
-
-y el ejecutable devuelve el mismo valor con y sin `-opt all`. **Pasarse del
-límite degrada la optimización, no la corrección.** Para subirlo habría que
-cambiar `VariableSet` por un arreglo de palabras, con lo que las operaciones
-pasarían de una instrucción a un bucle.
-
----
-
-## 11. Qué detecta y qué no
-
-El análisis encuentra **asignaciones muertas**, no **cómputos inútiles**. La
-diferencia se ve en este programa:
-
-```c
-int main(){
-    int a; int i;
-    a = 0; i = 0;
-    while (i < 3) { a = a + i; i = i + 1; }
-    a = 10;
-    return a;
-}
-```
-
-Con `-opt all`, el `a = 10` y el `ret a` se colapsan a `ret 10`, pero **la
-acumulación del ciclo sobrevive**:
-
-```
-L0:
-t0 = i@3 < 3
-if t0 false goto L1
-t1 = a@2 + i@3
-a@2 = t1          <- sigue ahi, aunque su resultado no se use nunca
-t2 = i@3 + 1
-i@3 = t2
-goto L0
-L1:
-ret 10
-```
-
-La razón es que el ciclo **se sostiene a sí mismo**: `a = a + i` *lee* `a`, lo que
-pone a `a` en `USE` del bloque del cuerpo, lo que la hace aparecer en su
-`LIVE_IN`, lo que vía la arista de retorno la pone en el `LIVE_OUT` del mismo
-bloque. El punto fijo converge con `a` viva dentro del ciclo, y entonces la
-asignación no es muerta según la definición.
-
-Romper ese círculo requiere un análisis más fuerte: el **análisis de variables
-desvanecidas** (*faint variable analysis*), donde una variable es desvanecida si
-solo se usa para calcular otras variables desvanecidas. Es un análisis de punto
-fijo también, pero no es el de vivacidad.
-
-Es un buen ejemplo de hasta dónde llega cada análisis, y de que la respuesta a
-"¿por qué no eliminó este código que claramente no sirve?" suele ser "porque ese
-es otro análisis".
-
----
-
-## 12. Cómo se extiende
-
-### Otro análisis de flujo de datos sobre la misma infraestructura
-
-El CFG, el particionado en bloques y el bucle de punto fijo son **genéricos**: lo
-único específico de la vivacidad son las dos ecuaciones y la dirección del
-recorrido. Un análisis hacia adelante, como el de **definiciones alcanzables**
-(*reaching definitions*), reusaría `partitionBasicBlocks` y
-`buildControlFlowEdges` cambiando:
-
-| | Vivacidad | Definiciones alcanzables |
-| --- | --- | --- |
-| Dirección | Hacia atrás | Hacia adelante |
-| Se recorre | Del último bloque al primero | Del primero al último |
-| Confluencia | `LIVE_OUT(B) = ⋃ LIVE_IN(S)` sobre sucesores | `IN(B) = ⋃ OUT(P)` sobre **predecesores** |
+| Dirección | Hacia atrás (*backward*) | Hacia adelante (*forward*) |
+| Orden de recorrido | Del último bloque al primero | Del primer bloque al último |
+| Confluencia | `LIVE_OUT(B) = ⋃ LIVE_IN(S)` sobre sucesores | `IN(B) = ⋃ OUT(P)` sobre predecesores |
 | Transferencia | `IN = USE ∪ (OUT − DEF)` | `OUT = GEN ∪ (IN − KILL)` |
 
-El cambio estructural que haría falta es llevar también la lista de
-**predecesores** de cada bloque, que hoy no se guarda.
+Para soportar análisis hacia adelante solo sería necesario almacenar las aristas de predecesores en `BasicBlock` durante `buildControlFlowEdges`.
 
-### Aristas entre funciones
+### Soporte para más de 64 variables
 
-Hoy el análisis es **intraprocedural**: un `TAC_CALL` no genera arista hacia el
-cuerpo del método llamado, y un bloque que termina en `TAC_END_FUNC` o
-`TAC_RETURN` no tiene sucesores, así que las funciones quedan naturalmente
-aisladas aunque el CFG se construya sobre la lista completa del programa.
-
-Eso es lo que obliga a tratar las **variables globales** con cuidado en el
-optimizador: una llamada puede modificarlas y el análisis no lo ve. La solución
-adoptada es excluir las globales de las candidatas a asignación muerta, en lugar
-de intentar un análisis interprocedural.
+Si se necesitara analizar programas con más de 64 variables simultáneas, `VariableSet` debería reemplazarse por un arreglo de palabras de 64 bits (`uint64_t words[N]`), encapsulando la unión, diferencia y pertenencia en funciones auxiliares que operen palabra por palabra.
 
 ---
 
-## 13. La teoría detrás
+## 7. Validación
 
-- **Análisis de flujo de datos** (*data-flow analysis*): calcular, para cada punto
-  del programa, información sobre todos los caminos de ejecución posibles. Se
-  formula como un sistema de ecuaciones sobre el CFG y se resuelve por iteración
-  hasta el punto fijo.
-- **Bloque básico**: una secuencia maximal de instrucciones sin saltos hacia
-  adentro salvo al principio, ni hacia afuera salvo al final. La consecuencia que
-  importa: **si se ejecuta la primera instrucción, se ejecutan todas**, lo que
-  permite razonar sobre el bloque como una unidad.
-- **Líder** (*leader*): la primera instrucción de un bloque. Las tres reglas
-  clásicas para identificarlos son las que implementa `isLeader`: la primera
-  instrucción del programa, el destino de cualquier salto (acá, toda `TAC_LABEL`),
-  y la instrucción que sigue a un salto o retorno.
-- **Grafo de flujo de control** (*CFG*): los bloques básicos como nodos y las
-  transferencias posibles de control como aristas.
-- **Variable viva**: una variable está viva en un punto si **existe un camino**
-  desde ese punto hasta un uso suyo que no pase por una redefinición. Nótese el
-  "existe": alcanza con un camino, y es lo que hace que la confluencia sea una
-  **unión** y no una intersección.
-- **Análisis hacia atrás** (*backward*): la vivacidad depende de lo que ocurre
-  **después**, así que la información fluye en contra del flujo de control. Por eso
-  el bucle recorre los bloques del último al primero: no es obligatorio para la
-  corrección (el punto fijo converge en cualquier orden) pero **converge en menos
-  pasadas**.
-- **Por qué el punto fijo converge, y en cuántos pasos.** Los conjuntos arrancan
-  vacíos y las ecuaciones son **monótonas**: `LIVE_OUT` es una unión de conjuntos
-  que solo crecen, y `LIVE_IN = USE ∪ (LIVE_OUT − DEF)` crece si `LIVE_OUT` crece.
-  Como además están **acotados** por el conjunto finito de variables —a lo sumo
-  64—, una sucesión creciente y acotada tiene que estabilizarse. La cota es
-  `O(variables × bloques)` pasadas en el peor caso, y en la práctica dos o tres.
-  Es el argumento del **marco monótono** (*monotone framework*), y es la respuesta
-  a "¿cómo sabés que el `while` termina?".
-- **Problema distributivo**: la vivacidad pertenece a la clase de problemas donde
-  la solución por iteración coincide con la *meet over all paths*, o sea que el
-  resultado es el mejor posible y no una aproximación grosera.
-- **Aproximación conservadora**: cuando el análisis no puede decidir, tiene que
-  responder "viva". Marcar como muerta una variable que no lo es **rompe el
-  programa**; marcar como viva una que está muerta solo pierde una optimización.
-  Es la misma asimetría que en `guaranteesReturn`, pero con el lado seguro
-  invertido: allá era rechazar, acá es no optimizar.
-- **Eliminación de código muerto** (*dead code elimination*): la optimización que
-  consume este análisis. La variante que usa la vivacidad se llama más
-  precisamente **eliminación de asignaciones muertas** (*dead store
-  elimination*), y su límite está en §11.
-
----
-
-## 14. Cómo se valida
-
-- **Suite:** `tests/test_live_variable_analysis.c` (240 líneas): particionado en
-  bloques, construcción de aristas, convergencia del punto fijo y el criterio de
-  definición muerta. La entrada es siempre TAC, construido instrucción por
-  instrucción o escrito en formato `.ci` con `buildTAC`.
-- **A mano:** con `-debug` el compilador imprime el CFG completo con los cuatro
-  conjuntos por bloque, que es la forma de verificar el análisis sobre un
-  programa concreto:
+- **Pruebas unitarias:** `tests/test_live_variable_analysis.c` (240 líneas) verifica el particionado en bloques, la construcción de aristas del CFG, la convergencia del punto fijo y la detección de definiciones muertas sobre listas TAC construidas con `buildTAC`.
+- **Inspección del CFG con `-debug`:** al ejecutar el compilador con `-debug`, `printLiveVariableAnalysis` vuelca por salida estándar la lista de variables candidatas y cada bloque básico con sus instrucciones, sucesores y conjuntos `USE`, `DEF`, `LIVE_IN` y `LIVE_OUT` traducidos a nombres simbólicos:
 
 ```bash
 ./mi_compilador -debug -target codinter examples/dead_code.ctds
 ```
 
-  La salida muestra, por bloque, sus instrucciones, sus sucesores y
-  `USE`/`DEF`/`LIVE_IN`/`LIVE_OUT`. Para el ciclo del §11, por ejemplo:
-
-```
-[Bloque 2]
-  Instrucciones:
-    t1 = a@2 + i@3
-    a@2 = t1
-    t2 = i@3 + 1
-    i@3 = t2
-    goto L0
-  Sucesores (1): Bloque 1
-  USE:      { a@2, i@3 }
-  DEF:      { t1, t2 }
-  LIVE_IN:  { a@2, i@3 }
-  LIVE_OUT: { a@2, i@3 }
-```
-
-- **La prueba que importa** es que eliminar lo que el análisis marca como muerto
-  no cambie el resultado del programa: compilar con y sin `-opt all`, ejecutar los
-  dos binarios y comparar sus códigos de salida.
+- **Equivalencia semántica:** la validación integral consiste en compilar los programas de prueba con y sin `-opt dead-code` (o `-opt all`), ejecutar ambos binarios y verificar que sus códigos de salida coincidan.
 
 ---
 

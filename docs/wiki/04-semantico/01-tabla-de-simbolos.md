@@ -2,21 +2,15 @@
 
 **Archivos:** `include/symbol_table.h`, `src/semantic/symbol_table.c` (278 líneas)
 
-La estructura con la que el compilador sabe qué identificadores existen, de qué
-tipo son y cuál de los que comparten nombre corresponde en cada punto del
-programa.
+Estructura de datos que registra los identificadores declarados en el programa, su tipo y el ámbito léxico al que pertenecen.
 
 ---
 
 ## 1. Qué problema resuelve
 
-El [AST](../03-lexico-sintactico-y-ast/04-ast.md) tiene los nombres pero no sabe a qué se refieren: un `ID_NODE`
-con el nombre `x` no dice qué `x`. La tabla de símbolos responde esa pregunta
-respetando el **anidamiento de ámbitos** del lenguaje, donde una declaración
-interna puede ocultar a una externa del mismo nombre.
+El [AST](../03-lexico-sintactico-y-ast/04-ast.md) conserva los nombres de los identificadores, pero un nodo `ID_NODE` con el nombre `x` no indica a qué declaración refiere. La tabla de símbolos resuelve cada uso respetando el alcance léxico (*static scoping*) y el anidamiento de ámbitos del lenguaje, donde la visibilidad queda determinada por la posición en el texto fuente y una declaración interna puede ocultar (*shadowing*) a una externa del mismo nombre.
 
-Es una estructura de datos, no una fase: la construye y consulta el
-[análisis semántico](03-analisis-semantico.md).
+Es una estructura auxiliar construida y consultada durante el [análisis semántico](03-analisis-semantico.md).
 
 ---
 
@@ -24,25 +18,24 @@ Es una estructura de datos, no una fase: la construye y consulta el
 
 ### Símbolos
 
-| Función | Para qué |
+| Función | Descripción |
 | --- | --- |
-| `newSymbol(id, symbolType, type, parameters)` | Crea un símbolo en el heap |
-| `freeSymbol(symbol)` | Lo libera junto con su `id` |
+| `newSymbol(id, symbolType, type, parameters)` | Crea e inicializa un símbolo en el heap |
+| `freeSymbol(symbol)` | Libera el símbolo junto con su cadena `id` |
 
 ### Ámbitos
 
-| Función | Para qué |
+| Función | Descripción |
 | --- | --- |
-| `createScope(level, parent, function)` | Crea un ámbito |
-| `freeScope(scope)` | Libera el ámbito, sus sub-ámbitos y todos sus símbolos |
-| `appendSymbol(scope, symbol)` | Registra un símbolo y **le asigna su `uid`** |
-| `appendChildScope(parent, child)` | Cuelga un sub-ámbito del padre |
-| `lookupSymbol(scope, id)` | Busca en el ámbito y **sube** por los ancestros |
-| `lookupSymbolInScope(scope, id)` | Busca **solo** en el ámbito dado |
-| `resetSymbolUids()` | Reinicia el contador de `uid` a 1 |
+| `createScope(level, parent, function)` | Crea un ámbito enlazado a su padre |
+| `freeScope(scope)` | Libera recursivamente el ámbito, sus sub-ámbitos y sus símbolos |
+| `appendSymbol(scope, symbol)` | Registra un símbolo en el ámbito y le asigna su `uid` |
+| `appendChildScope(parent, child)` | Registra un sub-ámbito en el arreglo de hijos del padre |
+| `lookupSymbol(scope, id)` | Busca un identificador en el ámbito actual y asciende por `parent` |
+| `lookupSymbolInScope(scope, id)` | Busca únicamente en el ámbito indicado |
+| `resetSymbolUids()` | Reinicia el contador global de `uid` a 1 |
 
-Todas las funciones de ámbitos aceptan `NULL` y no hacen nada, así que el código
-que las usa no está lleno de guardas.
+Todas las funciones de ámbitos aceptan `NULL` de forma segura sin realizar ninguna operación.
 
 ---
 
@@ -63,53 +56,28 @@ typedef struct Symbol {
 } Symbol;
 ```
 
-| Campo | Por qué existe |
+| Campo | Propósito |
 | --- | --- |
-| `id` | El nombre. **`NULL` en las constantes**, que no nombran nada |
-| `uid` | Identificador único en todo el programa. Ver §6 |
-| `type` | El tipo de dato. En un método es su **tipo de retorno** |
-| `symbolType` | Qué clase de símbolo es, y por lo tanto qué campos tienen sentido |
-| `parameters` | Puntero al `PARAMETERS_NODE` del AST. Es una **referencia hacia atrás** desde la tabla al árbol, y es lo que permite validar los argumentos de una llamada |
-| `value` | El valor de una constante |
+| `id` | Nombre del identificador (`NULL` en las constantes literales) |
+| `uid` | Identificador numérico único en todo el programa (ver §6) |
+| `type` | Tipo de dato de la variable o constante, o tipo de retorno si es un método |
+| `symbolType` | Categoría del símbolo (`VARIABLE_SYMBOL`, `METHOD_SYMBOL`, `CONSTANT_SYMBOL`) |
+| `parameters` | Puntero al `PARAMETERS_NODE` del AST para validar los argumentos en las llamadas a métodos |
+| `value` | Valor literal cuando el símbolo representa una constante (`intValue` para enteros y booleanos, `floatValue` para reales) |
 
-**La unión tiene dos miembros para dos usos que no coexisten:** `intValue`
-guarda enteros y booleanos (1/0), y `floatValue` los reales. Un símbolo nunca es
-entero y real a la vez, así que la unión no desperdicia nada.
+### Variantes de `SymbolType` y reutilización para literales
 
-### Las tres variantes de `SymbolType`
-
-| Variante | Quién la crea | Qué campos usa |
+| Variante | Origen | Campos utilizados |
 | --- | --- | --- |
-| `VARIABLE_SYMBOL` | El parser y `newParameterDeclaration` | `id`, `uid`, `type` |
+| `VARIABLE_SYMBOL` | Parser y `newParameterDeclaration` | `id`, `uid`, `type` |
 | `METHOD_SYMBOL` | `newMethodDeclaration` | `id`, `uid`, `type` (retorno), `parameters` |
-| `CONSTANT_SYMBOL` | Los `new*LiteralNode` | `type`, `value`. **Sin `id`** |
+| `CONSTANT_SYMBOL` | Constructores `new*LiteralNode` en `ast.c` | `type`, `value` (`id == NULL`, `uid == 0`) |
 
-### Un `Symbol` sin `id` es una constante, no una entrada rota
+La misma estructura `Symbol` se utiliza tanto para declaraciones registradas en la tabla como para literales colgados de un `CONSTANT_NODE`. En consecuencia, un símbolo con `id == NULL` y `uid == 0` no representa una entrada inválida, sino una constante anónima que nunca se inserta en un `Scope`.
 
-La misma estructura sirve para dos cosas, y conviene no confundirlas:
+### Propiedad de la cadena `id`
 
-| | Declaración | Literal |
-| --- | --- | --- |
-| Quién lo crea | `newSymbol`, desde el parser | Los `new*LiteralNode` de `ast.c` |
-| `id` | El nombre del identificador | **`NULL`** |
-| `uid` | Lo asigna `appendSymbol` al registrarlo | Siempre 0 |
-| Dónde vive | En la tabla de símbolos del ámbito | Colgado del nodo `CONSTANT_NODE` |
-
-Un símbolo con `id == NULL` y `uid == 0` **no está mal formado**: es un literal,
-que no tiene nombre ni ámbito porque no se declara en ninguna parte. Es economía
-de código —una sola estructura para las dos cosas— a costa de que `Symbol`
-signifique dos cosas según el contexto.
-
-### `newSymbol` adopta el `id`, no lo copia
-
-```c
-symbol->id = id;   /* no hay strdup aca */
-```
-
-La cadena viene del `strdup` que hizo el [analizador léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md)
-y se libera en `freeSymbol`. Es la misma cadena recorriendo todo el front-end sin
-una sola copia intermedia; el precio es que pasarle un literal de string a
-`newSymbol` haría que `freeSymbol` intentara liberar memoria estática.
+`newSymbol` asigna el puntero `id` directamente sin duplicar la cadena (`symbol->id = id`). El string proviene del `strdup` realizado en el [análisis léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md) y es liberado por `freeSymbol`, evitando copias intermedias a lo largo del front-end.
 
 ---
 
@@ -157,78 +125,33 @@ typedef struct Scope {
 } Scope;
 ```
 
-| Campo | Por qué existe |
+| Campo | Propósito |
 | --- | --- |
-| `level` | Profundidad de anidamiento. Informativo: la búsqueda usa `parent`, no el nivel |
-| `symbols` / `symbolCount` / `symbolCapacity` | Arreglo dinámico de los símbolos declarados **en este ámbito** |
-| `function` | El símbolo del método que contiene a este ámbito. Es cómo se sabe **qué tipo de retorno se espera** dentro de un bloque anidado |
-| `parent` | La **cadena de búsqueda**. Es el campo que implementa el anidamiento |
-| `children` / `childrenCount` / `childrenCapacity` | Los sub-ámbitos |
+| `level` | Nivel de anidamiento léxico (informativo; la búsqueda sigue `parent`) |
+| `symbols` / `symbolCount` / `symbolCapacity` | Arreglo dinámico de símbolos declarados en este ámbito |
+| `function` | Símbolo del método contenedor, utilizado para validar el tipo de las sentencias `return` |
+| `parent` | Puntero al ámbito padre para la resolución jerárquica de nombres |
+| `children` / `childrenCount` / `childrenCapacity` | Sub-ámbitos hijos, utilizados por `freeScope` para liberar el árbol completo |
 
-**`parent` y `children` no son redundantes: sirven a cosas distintas.** `parent`
-es lo que recorre la búsqueda, de adentro hacia afuera. `children` es lo que
-recorre `freeScope` para liberar el árbol completo, y lo que permite recorrer la
-jerarquía desde la raíz. Sin `children`, liberar la tabla exigiría llevar una
-lista aparte de todos los ámbitos creados.
-
-**`function` se hereda.** Cuando el análisis semántico abre el ámbito de un
-bloque, lo crea con el `function` del padre:
-
-```c
-Symbol *function = !isGlobalScope ? parent->function : NULL;
-Scope *currentScope = createScope(level, parent, function);
-```
-
-Así un `return` dentro de un `while` dentro de un `if` sigue sabiendo cuál es el
-método que lo contiene y, por lo tanto, qué tipo tiene que devolver. Sin esa
-herencia, un bloque anidado perdería el contexto del método.
+Cuando el análisis semántico abre el ámbito de un bloque interno, hereda el puntero `function` de su padre (`parent->function`). De este modo, una sentencia `return` ubicada dentro de bloques `if` o `while` anidados conserva el acceso a la firma del método que la contiene.
 
 ---
 
-## 5. La búsqueda de identificadores
+## 5. Búsqueda de identificadores
 
-Dos funciones, y la diferencia entre ellas es exactamente la diferencia entre
-dos reglas del lenguaje.
+El módulo ofrece dos operaciones de consulta que corresponden a dos reglas semánticas distintas:
 
-### `lookupSymbolInScope`: solo acá
+- **`lookupSymbolInScope(scope, id)`**: recorre linealmente el arreglo `symbols` del ámbito actual con `strcmp`. Se utiliza al procesar una declaración para detectar redeclaraciones ilegales dentro del mismo ámbito.
+- **`lookupSymbol(scope, id)`**: invoca a `lookupSymbolInScope(scope, id)` y, si no halla el nombre, recurre sobre `scope->parent` hasta llegar al ámbito global (`parent == NULL`). Evaluar el ámbito actual antes de ascender al padre implementa directamente el ocultamiento de nombres (*shadowing*).
 
-Recorrido lineal del arreglo con `strcmp`. Devuelve el primer símbolo cuyo `id`
-coincida, o `NULL`.
-
-Se usa para **detectar redeclaraciones**: una variable ya declarada *en el mismo
-ámbito* es un error, pero una del mismo nombre en un ámbito externo no lo es.
-
-### `lookupSymbol`: acá y hacia arriba
-
-```c
-Symbol *symbol = lookupSymbolInScope(scope, id);
-if (symbol != NULL) return symbol;
-return lookupSymbol(scope->parent, id);
-```
-
-Recursión sobre `parent`: prueba el ámbito actual y, si no está, sube. La
-recursión termina porque el ámbito global tiene `parent == NULL` y la guarda de
-entrada devuelve `NULL`.
-
-**Que pruebe el ámbito actual antes de subir es todo el mecanismo de
-ocultamiento.** No hay código específico de *shadowing*: sale del orden de la
-búsqueda.
-
-### Costo
-
-`lookupSymbolInScope` es O(n) en la cantidad de símbolos del ámbito, y
-`lookupSymbol` es O(n × profundidad). Para los programas de este lenguaje —
-decenas de símbolos, tres o cuatro niveles — es irrelevante, y es la
-implementación más simple que es correcta. Un compilador de producción usa una
-tabla de hash por ámbito, o una sola tabla de hash global con una pila de
-ámbitos por nombre.
+La búsqueda local es $O(n)$ en la cantidad de símbolos del ámbito y la jerárquica es $O(n \times \text{profundidad})$. Dado el tamaño reducido de los ámbitos en programas C-TDS, un arreglo dinámico resulta suficiente sin recurrir a tablas de hash.
 
 ---
 
-## 6. El `uid` y para qué sirve
+## 6. Identificador único (`uid`) y renombrado
 
 ```c
-static int nextSymbolUid = 1;   /* arranca en 1: el 0 significa "no declarado" */
+static int nextSymbolUid = 1;   /* 0 reservado para símbolos no registrados */
 
 void appendSymbol(Scope *scope, Symbol *symbol) {
     if (symbol->uid == 0) {
@@ -238,22 +161,12 @@ void appendSymbol(Scope *scope, Symbol *symbol) {
 }
 ```
 
-Un **contador global**, no por ámbito. Cada símbolo que se registra en algún
-ámbito recibe un número único en todo el programa.
+Cada símbolo registrado mediante `appendSymbol` recibe un número secuencial global al programa. Este identificador cumple dos funciones:
 
-Esto tiene dos usos y los dos importan:
+1. **Propiedad de memoria (`uid == 0`):** el valor `0` identifica símbolos que no pertenecen a ningún ámbito (literales o símbolos provisorios creados por el parser en nodos de uso). `freeAST` y `resolveNodeSymbol` utilizan esta marca para liberar únicamente los símbolos que no viven en la tabla (ver [AST](../03-lexico-sintactico-y-ast/04-ast.md)).
+2. **Renombrado único para fases posteriores:** el código intermedio y el código objeto operan sobre listas planas de instrucciones sin estructura de ámbitos. Al formatear cada variable como `nombre@uid` en el TAC, las declaraciones homónimas en distintos ámbitos quedan desambiguadas de forma análoga a un renombrado alfa.
 
-**1. `uid == 0` significa "nunca registrado".** Es lo que usa `freeAST` para
-decidir si un nodo es dueño de su símbolo, y `resolveNodeSymbol` para saber si
-el símbolo que va a reemplazar es un provisorio del parser que hay que liberar
-(ver la [AST](../03-lexico-sintactico-y-ast/04-ast.md)). Por eso el contador arranca en 1 y no en 0.
-
-**2. Desambiguar nombres repetidos en las fases posteriores.** El código
-intermedio y el assembly no tienen ámbitos: son listas planas de instrucciones.
-Si tres variables se llaman `x`, hace falta distinguirlas, y el `uid` es lo que
-lo permite.
-
-### Verificación
+### Ejemplo de resolución y renombrado
 
 ```c
 int x;
@@ -268,9 +181,9 @@ int main(){
 }
 ```
 
-El `.sem` muestra tres símbolos distintos (el `uid` 2 se lo llevó `main`):
+El archivo `.sem` refleja los `uid` asignados (donde `#2` corresponde a `main`):
 
-```
+```text
   | Declaracion Variable: x #1 (Tipo INT)
   | Metodo: main (Retorna INT)
   |   |   | Declaracion Variable: x #3 (Tipo INT)
@@ -282,9 +195,9 @@ El `.sem` muestra tres símbolos distintos (el `uid` 2 se lo llevó `main`):
   |   |   |   | ID: x #3 (Tipo INT)
 ```
 
-Y el `.ci` los nombra con el `uid` pegado al nombre:
+En el archivo `.ci`, cada referencia queda calificada con su `@uid`:
 
-```
+```text
 global x@1, INT
 begin_func main, 0
 local x@3, INT
@@ -295,82 +208,42 @@ ret x@3
 end_func main
 ```
 
-El `return x` resolvió a `x@3`, el del ámbito del método, porque el `x@4` del
-bloque interno ya está fuera de alcance. El programa devuelve 10.
-
-### `resetSymbolUids`
-
-Reinicia el contador. **Lo llaman únicamente las suites de tests**
-(`test_semantic.c`, `test_tac.c`, `test_integration.c`), para que cada caso
-empiece con los `uid` desde 1. Las suites que parten de TAC no la necesitan: ahí
-el `uid` viene escrito en el propio texto (`x@3`), y `test_tac.c` fija el de cada
-declaración al armar el AST anotado. El compilador no la usa: procesa un archivo
-y termina.
+La función `resetSymbolUids()` reinicia el contador a 1 y es utilizada exclusivamente por las suites de tests (`test_semantic.c`, `test_tac.c`, `test_integration.c`) para garantizar numeraciones deterministas entre casos de prueba.
 
 ---
 
-## 7. Las reglas de alcance que resultan
+## 7. Reglas de alcance resultantes
 
-La forma en que el análisis semántico usa esta estructura determina qué se puede
-y qué no. Las tres verificadas:
+La interacción entre `Scope` y el [análisis semántico](03-analisis-semantico.md) define el comportamiento del alcance en tres casos clave:
 
-### Un local no puede ocultar a un parámetro
-
-Los parámetros y las variables declaradas al principio del método se registran
-**en el mismo ámbito**: `analyzeMethodNode` crea un solo `methodScope` y analiza
-en él tanto los parámetros como el cuerpo. Entonces repetir el nombre es una
-redeclaración:
+- **Parámetros y locales del cuerpo comparten ámbito:** `analyzeMethodNode` registra los parámetros formales y las declaraciones del bloque principal del método dentro del mismo `methodScope`. Declarar una variable local con el mismo nombre que un parámetro produce un error de redeclaración:
 
 ```c
 int f(int n){ int n; n = 1; return n; }
+// Error semantico en la linea 1: La variable 'n' ya fue declarada previamente en este ambito.
 ```
 
-```
-Error semantico en la linea 1: La variable 'n' ya fue declarada previamente en este ambito.
-```
-
-### Pero un bloque interno sí puede
-
-El bloque abre un ámbito nuevo, hijo del método:
+- **Bloques internos pueden ocultar parámetros:** un bloque `{ ... }` anidado dentro del método abre un ámbito hijo nuevo, por lo que una declaración de `n` allí oculta temporalmente al parámetro sin generar conflicto:
 
 ```c
 int f(int n){ { int n; n = 99; } return n; }
-int main(){ return f(7); }
+int main(){ return f(7); } // retorna 7
 ```
 
-Devuelve **7**: el `return n` ve el parámetro, porque el `n` del bloque ya se
-cerró.
-
-### La recursión funciona porque el método se registra antes de su cuerpo
-
-```c
-appendSymbol(currentScope, node->symbol);   /* primero se registra */
-...
-/* despues se analiza el cuerpo */
-```
-
-Si el orden fuera el inverso, `fact(n-1)` dentro de `fact` daría "método no
-declarado". Con este orden, `fact(5)` devuelve 120. Verificado.
+- **Soporte para recursión directa:** el símbolo de un método se inserta en el ámbito global antes de analizar su cuerpo, permitiendo que las llamadas recursivas como `fact(n - 1)` resuelvan el identificador del propio método.
 
 ---
 
 ## 8. Conexión con las fases vecinas
 
-| Viene de | Qué cruza la frontera |
+| Módulo origen / destino | Interacción |
 | --- | --- |
-| `ast.c` | Los `Symbol` ya creados por el parser, con `uid` en 0 y tipo provisorio |
+| `ast.c` (entrada) | Entrega nodos con instancias de `Symbol` provisorias (`uid == 0`) |
+| `type_checker.c` (salida) | Usa `lookupSymbol` para resolver identificadores y consultar sus tipos y firmas |
+| `semantic_analyzer.c` (salida) | Usa `lookupSymbolInScope` para detectar duplicados y `scope->function` para validar `return` |
+| `intermediate_code.c` (salida) | Lee el `uid` de cada símbolo para construir los nombres calificados `x@uid` en el TAC |
 
-| Va hacia | Qué entrega |
-| --- | --- |
-| `type_checker.c` | `lookupSymbol` para resolver cada identificador y leer su tipo |
-| `semantic_analyzer.c` | `lookupSymbolInScope` para detectar duplicados, `scope->function` para el tipo de retorno |
-| `intermediate_code.c` | El `uid` de cada símbolo, que se convierte en el sufijo `@n` de los nombres del TAC |
-
-El punto importante: después del análisis semántico, **los símbolos están
-compartidos**. Todos los nodos del AST que mencionan la misma variable apuntan al
-*mismo* `Symbol`, que vive en la tabla. Esa es la razón de la regla de propiedad
-de `freeAST` y la razón de que el generador de código pueda leer el tipo de una
-variable desde cualquier nodo que la mencione.
+Tras el análisis semántico, todos los nodos del AST que referencian a una misma variable o método apuntan a la misma instancia de `Symbol` almacenada en la tabla de símbolos.
 
 ---
 
@@ -378,110 +251,39 @@ variable desde cualquier nodo que la mencione.
 
 ### Un `SymbolType` nuevo
 
-Agregar el valor al enum y decidir qué campos de la unión usa. No hay un `switch`
-central sobre `SymbolType` que haya que completar, así que el cambio es local:
-los lugares que lo necesiten lo comparan donde corresponda. La contracara es que
-nada avisa si falta un caso.
+Agregar la constante al `enum SymbolType` y definir qué campos de la estructura o de la unión `value` utiliza. Como no existe un `switch` centralizado sobre `SymbolType`, solo se modifican las funciones que deban consultar la nueva categoría.
 
 ### Guardar el offset de pila en el símbolo
 
-Es la extensión que pediría el generador de código si se quisiera evitar el
-cálculo de offsets aparte: un campo `int stackOffset` en `Symbol`, que el
-generador rellenaría. Hoy eso vive en [`function_frame.c`](../07-codigo-objeto/01-marco-de-pila.md), indexado por
-nombre. Ponerlo acá acoplaría la tabla de símbolos al backend, que es
-justamente lo que la separación actual evita.
+Si se quisiera evitar la tabla de offsets separada del backend, podría añadirse un campo `int stackOffset` en `Symbol`. Actualmente esa información se mantiene en [`function_frame.c`](../07-codigo-objeto/01-marco-de-pila.md) indexada por nombre calificado, lo que evita acoplar la tabla de símbolos del front-end con detalles de la arquitectura x86-64.
 
 ### Reemplazar la búsqueda lineal por una tabla de hash
 
-Cambiar `symbols` por una tabla de hash dentro de cada `Scope`. La interfaz
-(`lookupSymbol`, `lookupSymbolInScope`, `appendSymbol`) no cambia, así que
-**ningún otro módulo se entera**: es un buen ejemplo de para qué sirve que la
-estructura esté detrás de funciones. Lo que se perdería es el orden de
-declaración, que hoy el arreglo conserva gratis.
+Puede sustituirse el arreglo dinámico `symbols` dentro de `Scope` por una tabla de hash sin alterar las firmas de `lookupSymbol`, `lookupSymbolInScope` ni `appendSymbol`, manteniendo intactos los demás módulos.
 
 ### Declaración adelantada de métodos
 
-Hoy un método solo ve a los declarados antes que él, porque el registro ocurre
-durante el mismo recorrido que analiza los cuerpos. Para permitirlo haría falta
-**una pasada previa** que registre todas las firmas en el ámbito global antes de
-analizar ningún cuerpo. Es un cambio en el [análisis semántico](03-analisis-semantico.md), no acá: la tabla ya soporta el caso.
+Actualmente un método solo puede invocar a los declarados previamente en el archivo porque el registro y el análisis de cuerpos ocurren en una sola pasada. Soportar recursión mutua o llamadas adelantadas solo requiere una pasada previa en el [análisis semántico](03-analisis-semantico.md) que invoque `appendSymbol` para todas las firmas globales antes de recorrer los cuerpos.
 
 ---
 
 ## 10. Trampas y límites conocidos
 
-- **`uid == 0` es un valor con significado**, no un identificador válido. El
-  contador arranca en 1 para reservarlo. Si alguna vez `appendSymbol` asignara 0,
-  la regla de propiedad de `freeAST` produciría dobles liberaciones.
-- **El `uid` es global, no por ámbito.** Dos variables del mismo nombre en
-  métodos distintos reciben números distintos, lo cual es necesario para el TAC,
-  pero significa que el `uid` no dice nada sobre la posición dentro de un ámbito.
-- **`createScope` no revisa `malloc` de a uno.** Reserva `symbols` y `children` y
-  después chequea los dos juntos; si el primero falló, el segundo igual se
-  intentó. Funciona porque `free(NULL)` es válido, pero se lee raro.
-- **`appendSymbol` ignora en silencio un `realloc` fallido.** Devuelve sin
-  registrar el símbolo y sin avisar, así que en un escenario de falta de memoria
-  una declaración desaparecería y el error que se vería sería "variable no
-  declarada", muy lejos de la causa.
-- **`Symbol` significa dos cosas** (§3): entrada de tabla cuando tiene `id` y
-  `uid`, y literal cuando no. Un símbolo con `id == NULL` y `uid == 0` no es una
-  entrada rota: es una constante.
-- **La tabla de símbolos no se libera al terminar.** `freeScope` existe y es
-  correcta, pero el compilador no la llama sobre el ámbito global: es parte de las
-  fugas que reporta el detector al salir. Es la misma decisión que con el AST.
-- **`level` no se usa para buscar.** Es informativo. Quien asuma que el nivel
-  determina la visibilidad se va a equivocar: lo que la determina es la cadena de
-  `parent`.
+- **`uid == 0` está reservado:** el contador global comienza en 1 porque `0` indica que el símbolo no pertenece a ningún ámbito. Si un símbolo registrado conservara `uid == 0`, `freeAST` intentaría liberarlo causando una doble liberación.
+- **El `uid` es global al programa, no local al ámbito:** dos variables en métodos distintos reciben números distintos, por lo que el `uid` no representa el índice de la variable dentro de su ámbito.
+- **Fallo silencioso en `appendSymbol` ante falta de memoria:** si `realloc` falla al expandir el arreglo de símbolos, la función retorna sin registrar la entrada ni reportar error, lo que se manifestaría más adelante como un error de variable no declarada.
+- **Doble rol de `Symbol` (§3):** un símbolo con `id == NULL` y `uid == 0` corresponde a una constante literal en el AST, no a una entrada corrupta.
+- **El ámbito global no se libera al finalizar:** aunque `freeScope` libera recursivamente toda la jerarquía, el compilador no la invoca al cierre de `driver.c`, dejando que el sistema operativo recupere la memoria junto con el AST.
 
 ---
 
-## 11. La teoría detrás
+## 11. Cómo se valida
 
-- **Tabla de símbolos**: la estructura que asocia cada identificador del programa
-  con sus atributos (tipo, clase, ubicación). Junto con el AST es la
-  representación con la que trabaja el análisis semántico.
-- **Tabla de símbolos jerárquica** o **con ámbitos anidados**: la organización en
-  árbol de ámbitos con búsqueda de adentro hacia afuera, que es la forma estándar
-  de implementar reglas de alcance léxico. Las dos alternativas clásicas son
-  esta (una tabla por ámbito, encadenadas por `parent`) y una tabla global única
-  donde cada nombre guarda una pila de declaraciones; la primera es más simple de
-  entender, la segunda más rápida de consultar.
-- **Alcance léxico** (*static scoping*): el alcance de un identificador se
-  determina por la **posición en el texto** del programa, no por el orden de
-  llamadas en tiempo de ejecución. Es lo que implementa esta estructura, y la
-  alternativa histórica es el alcance dinámico, donde `lookupSymbol` subiría por
-  la pila de llamadas en lugar de por el anidamiento del código.
-- **Ocultamiento** (*shadowing*): que una declaración interna tape a una externa
-  del mismo nombre. Acá no se programa: es consecuencia de buscar en el ámbito
-  actual antes que en el padre.
-- **Resolución de nombres**: el proceso de decidir a qué declaración se refiere
-  cada uso. Su resultado se materializa en que `node->symbol` del AST pase a
-  apuntar al símbolo de la tabla, que es lo que hace el análisis semántico.
-- **Renombrado único**: darle a cada declaración un nombre irrepetible para poder
-  descartar los ámbitos en las representaciones posteriores. El sufijo `@uid` del
-  TAC es exactamente eso, y es el mismo problema que resuelven las formas SSA en
-  los compiladores modernos, aunque acá solo se aplique a declaraciones y no a
-  cada asignación.
-
----
-
-## 12. Cómo se valida
-
-- **Suite:** `tests/test_symbol_table.c`. Creación y liberación de
-  ámbitos, registro de símbolos, asignación de `uid`, búsqueda local contra
-  jerárquica, ocultamiento y los casos con `NULL`.
-- **A mano:** el `uid` de cada símbolo aparece en el archivo `.sem` después del
-  `#`, así que mirar ese archivo es la forma de ver cómo quedó resuelto cada
-  nombre:
+- **Suite unitaria:** `tests/test_symbol_table.c` ejercita la creación y liberación de ámbitos, asignación de `uid`, búsqueda local y jerárquica, ocultamiento de nombres y manejo de punteros `NULL`.
+- **Inspección manual:** el archivo `.sem` muestra el `uid` resuelto de cada símbolo tras el carácter `#`, y el archivo `.ci` lo exhibe como sufijo `@n`:
 
 ```bash
 ./mi_compilador -target sem examples/programa.ctds
-```
-
-  Y el `.ci` muestra el mismo `uid` como sufijo `@n`, que es la prueba de que la
-  desambiguación llegó al código intermedio:
-
-```bash
 ./mi_compilador -target codinter examples/programa.ctds
 ```
 

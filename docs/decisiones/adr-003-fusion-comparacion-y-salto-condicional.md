@@ -1,106 +1,56 @@
-# ADR 003: Fusión de Comparaciones Relacionales y Saltos Condicionales (Condition Code & Branch Folding)
+# ADR 003: Fusión de Comparaciones Relacionales y Saltos Condicionales
 
-- **Estado:** Aceptado e implementado (`canFuseConditionAndJump` y `emitFusedComparisonAndJump` en `src/object_code/object_code.c`, activos con `-opt peephole`)
-- **Fecha:** 2026-11-13
-- **Contexto:** Generación de código x86-64 para estructuras de control (`if`, `while`) a partir de cuádruplas TAC en `src/object_code/object_code.c`.
-
----
-
-## 1. Contexto del Problema
-
-En el lenguaje fuente, las estructuras condicionales e iterativas (`if`, `if-else`, `while`) evalúan condiciones relacionales como `a < b`, `a > b` o `a == b`. 
-
-Durante la etapa de generación de código intermedio (`src/intermediate_code/intermediate_code.c`), estas construcciones se aplanan canónicamente en dos cuádruplas TAC consecutivas:
-1. Una operación relacional que almacena el valor de verdad en un operando temporal virtual:
-   ```
-   t0 = a < b
-   ```
-2. Un salto condicional que inspecciona dicho temporal:
-   ```
-   ifFalse t0 goto .L1
-   ```
-
-Sin la optimización, el generador de código objeto (`src/object_code/object_code.c`) traduce cada cuádrupla de forma **aislada y sin contexto**, mediante plantillas fijas de macro-expansión. Esto provoca una severa sobrecarga de instrucciones y accesos redundantes a memoria.
+- **Estado:** Aceptado (`canFuseConditionAndJump` y `emitFusedComparisonAndJump` en `src/object_code/object_code.c`, activo con `-opt peephole`)
+- **Contexto:** Emisión de código x86-64 para saltos condicionales generados por `if`, `if-else` y `while`.
 
 ---
 
-## 2. Traducción sin fusión (sin `-opt peephole`)
+## 1. Problema
 
-Cada cuádrupla se traduce independientemente, forzando la materialización numérica del booleano (0 o 1) en memoria:
+El generador de código intermedio traduce las condiciones relacionales (`a < b`, `a > b`, `a == b`) en dos cuádruplas TAC consecutivas:
 
-### Traducción de `t0 = a < b` ([emitRelationalOp](https://github.com/julivarea/compiler/blob/main/src/object_code/object_code.c#L409))
-```assembly
-    movl a(%rbp), %eax       # 1. Carga primer operando
-    movl b(%rbp), %edx       # 2. Carga segundo operando
-    cmpl %edx, %eax          # 3. Compara operandos (fija flags en CPU)
-    setl %al                 # 4. Materializa condición a byte (1 si menor, 0 si no)
-    movzbl %al, %eax         # 5. Extiende byte a entero de 32 bits en %eax
-    movl %eax, -12(%rbp)     # 6. Vuelca el booleano al stack slot de t0
+```text
+t0 = a < b
+ifFalse t0 goto .L1
 ```
 
-### Traducción de `ifFalse t0 goto .L1` ([emitConditionalJump](https://github.com/julivarea/compiler/blob/main/src/object_code/object_code.c#L431))
+Cuando el generador de código objeto traduce cada cuádrupla de forma aislada:
+
+1. `emitRelationalOp` compara los operandos (`cmpl`), materializa el booleano `0`/`1` en `%eax` (`setl %al` + `movzbl %al, %eax`) y lo guarda en el slot de pila de `t0`.
+2. `emitConditionalJump` vuelve a cargar `t0` desde la pila a `%eax`, ejecuta `cmpl $0, %eax` y salta con `je .L1`.
+
+Esto consume 9 instrucciones y 2 accesos a pila para reconstruir en `EFLAGS` una condición que el primer `cmpl` ya había calculado.
+
+---
+
+## 2. Decisión
+
+Con `-opt peephole` (o `-opt all`), el bucle de `emitFunction` en `src/object_code/object_code.c` inspecciona una ventana de dos instrucciones mediante `canFuseConditionAndJump(inst, next)`:
+
+- Si `inst` es una comparación relacional (`TAC_LT`, `TAC_GT`, `TAC_EQ`) cuyo destino es un temporal (`OPERAND_TEMP`), y
+- `next` es un salto condicional (`TAC_IF_FALSE` o `TAC_IF_TRUE`) que evalúa ese mismo temporal, y
+- el temporal no vuelve a leerse en ninguna instrucción posterior de la función (`!isTemporaryUsedLater`),
+
+entonces `emitFusedComparisonAndJump` emite directamente la comparación seguida del salto condicional correspondiente y avanza dos instrucciones en la lista:
+
 ```assembly
-    movl -12(%rbp), %eax     # 7. Vuelve a leer t0 desde la pila a %eax
-    cmpl $0, %eax            # 8. Compara el booleano contra cero
-    je .L1                   # 9. Salta si es cero (falso)
+movl -4(%rbp), %eax
+movl -8(%rbp), %edx
+cmpl %edx, %eax
+jge .L1
 ```
 
-### Diagnóstico de la traducción sin fusión
-* **Costo por condición:** **8 a 9 instrucciones** de Assembly x86-64.
-* **Sobrecarga de memoria:** 2 accesos a memoria (un `store` y un `load` consecutivo sobre el mismo slot de pila `-12(%rbp)`).
-* **Desperdicio de hardware:** La instrucción `cmpl` inicial ya dejó en el registro de estados (*EFLAGS*) la información exacta del resultado (`ZF`, `SF`, `OF`). La secuencia `setcc` $\to$ `movzbl` $\to$ `store` $\to$ `load` $\to$ `cmpl $0` no hace más que destruir y reconstruir un estado que el procesador ya tenía listo.
+### Tabla de mnemónicos (`getRelationalMnemonics`)
+
+| Operación TAC | Comparación (`%eax` vs `%edx`) | Salto en `ifFalse` (condición invertida) | Salto en `ifTrue` (condición directa) |
+| --- | --- | --- | --- |
+| `TAC_LT` (`<`) | `cmpl %edx, %eax` | `jge` | `jl` |
+| `TAC_GT` (`>`) | `cmpl %edx, %eax` | `jle` | `jg` |
+| `TAC_EQ` (`==`) | `cmpl %edx, %eax` | `jne` | `je` |
 
 ---
 
-## 3. Diseño implementado
+## 3. Casos borde contemplados
 
-Aplicar **Condition Code and Branch Folding** mediante reconocimiento de patrones en ventana deslizante (*Peephole / Lookahead*) durante la emisión de la función en `src/object_code/object_code.c`: `emitFunction` pregunta a `canFuseConditionAndJump` por cada instrucción y su siguiente, y si se puede llama a `emitFusedComparisonAndJump` y avanza dos instrucciones. Los mnemónicos salen de `getRelationalMnemonics`, la misma tabla que usa `emitRelationalOp`.
-
-Cuando una cuádrupla relacional (`TAC_LT`, `TAC_GT`, `TAC_EQ`) sea sucedida inmediatamente por un salto condicional (`TAC_IF_FALSE` o `TAC_IF_TRUE`) que consume ese mismo temporal, **se fusionan ambas operaciones**.
-
-### Código Assembly resultante (3 instrucciones)
-```assembly
-    movl a(%rbp), %eax       # 1. Carga primer operando
-    movl b(%rbp), %edx       # 2. Carga segundo operando
-    cmpl %edx, %eax          # 3. Compara operandos
-    jge .L1                  # 4. Salto condicional directo a la etiqueta
-```
-
-### Tabla de Mapeo de Condiciones y Saltos Directos
-
-| Comparación TAC | Mnemónico de comparación | Salto con `ifFalse` (Condición Invertida) | Salto con `ifTrue` (Condición Directa) |
-|---|---|---|---|
-| `TAC_LT` (`<`) | `cmpl %edx, %eax` | **`jge .label`** ($\ge$) | **`jl .label`** ($<$) |
-| `TAC_GT` (`>`) | `cmpl %edx, %eax` | **`jle .label`** ($\le$) | **`jg .label`** ($>$) |
-| `TAC_EQ` (`==`) | `cmpl %edx, %eax` | **`jne .label`** ($\ne$) | **`je .label`** ($==$) |
-
-*(Nota: en sintaxis AT&T, `cmpl %edx, %eax` evalúa `%eax - %edx`, por lo que el orden relativo de los operandos se preserva de forma canónica).*
-
----
-
-## 4. Fundamentación Teórica (Dragon Book)
-
-En *Compilers: Principles, Techniques, and Tools* (Aho, Lam, Sethi, Ullman):
-* **Capítulo 8, Sección 8.7 (Peephole Optimization — Flow-of-Control Optimizations):**
-  El texto destaca que las secuencias donde se evalúa un valor lógico para luego bifurcar deben colapsarse eliminando la prueba redundante contra cero y utilizando directamente las bifurcaciones condicionales que provee el juego de instrucciones (`jcc`).
-* **Capítulo 8, Sección 8.9 (Instruction Selection & Condition Codes):**
-  Se formaliza que los códigos de condición (*condition codes*) son un recurso de hardware efímero. Generar código para ramas bifurcadas mediante la materialización de valores de verdad (*jumping code* vs. *value code*) es un antipatrón en backends de arquitecturas CISC modernas, a menos que el valor booleano escape de la estructura de control (e.g. asignado a una variable de usuario o retornado).
-
----
-
-## 5. Criterios de Implementación y Casos Borde
-
-1. **Temporales efímeros vs. Variables persistentes:**
-   * La fusión aplica cuando el operando resultado de la comparación es un `OPERAND_TEMP` consumido por el salto contiguo.
-   * Si la comparación asigna directamente a una variable de usuario (e.g. `flag = a < b;`), se mantiene la emisión con `setcc` y `movzbl` porque el valor numérico persistente sí es necesario.
-2. **Compatibilidad con pruebas unitarias aisladas:**
-   * La suite de tests unitarios (`tests/test_object_code.c`) evalúa `generateInstruction` con cuádruplas individuales (`TAC_IF_FALSE` sin contexto previo).
-   * La implementación debe mantener el comportamiento actual como *fallback* por defecto, activando la fusión cuando el generador recorre la secuencia de instrucciones dentro de `emitFunction`.
-
----
-
-## 6. Beneficios Medibles
-
-* **Reducción de tamaño del código:** Reducción de **~60% de instrucciones** en cada bloque de control condicional e iterativo (de 8-9 a 3 instrucciones).
-* **Eliminación de presión sobre el Stack Frame:** El temporal intermedio de la condición ya no necesita un slot físico en la pila si no se materializa.
-* **Menor latencia de CPU:** Se eliminan dos accesos a memoria (store-forwarding) y una instrucción de extensión de ceros (`movzbl`).
+- **Variables de usuario o temporales reutilizados:** Si el resultado de la comparación se guarda en una variable o si el temporal se lee más adelante, `canFuseConditionAndJump` devuelve `false` y se mantiene la traducción estándar con `setcc` + `movzbl`.
+- **Compatibilidad con `generateInstruction` individual:** La traducción por instrucción individual se conserva intacta cuando no se activa `-opt peephole` o cuando se invoca `generateInstruction` de forma aislada en pruebas unitarias.

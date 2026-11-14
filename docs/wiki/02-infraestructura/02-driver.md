@@ -1,46 +1,28 @@
 # Orquestación de las Etapas
 
-**Archivos:** `include/driver.h`, `src/core/driver.c` (349 líneas)
+**Archivos:** `include/driver.h`, `src/core/driver.c`
 
-Decide qué fases correr según `-target`, corta ante el primer error de una fase,
-escribe el archivo de salida y, si corresponde, llama a `gcc` para ensamblar.
-
----
-
-## 1. Qué problema resuelve
-
-Las fases del compilador no se conocen entre sí: el lexer no llama al parser, el
-parser no llama al semántico. **Alguien tiene que llamarlas en orden**, decidir
-dónde parar, y manejar lo que no es traducción: abrir archivos, volcar la salida,
-invocar el ensamblador.
-
-Es el único módulo que incluye a **todas** las fases, y por eso es también el
-mapa de cómo se arma el pipeline. Si hay un documento que contesta *"¿qué pasa
-exactamente cuando corrés `./mi_compilador programa.ctds`?"*, es este.
+Coordina la ejecución secuencial de las fases del compilador según el valor de `-target`, detiene el proceso ante errores intermedios, vuelca las representaciones textuales a disco e invoca a `gcc` para ensamblar y enlazar el ejecutable final.
 
 ---
 
-## 2. Interfaz pública
+## 1. Propósito e interfaz pública
 
-Una sola función:
+Las fases del compilador están desacopladas entre sí: el analizador léxico no invoca al sintáctico, ni el sintáctico al semántico. `driver.c` concentra el acoplamiento entre etapas, las ejecuta en orden y gestiona las operaciones de entrada/salida y subprocesos. Esto permite que cada módulo del pipeline se compile y pruebe de forma aislada en su propia suite unitaria.
+
+Su interfaz pública expone una única función:
 
 ```c
 int compile(const Options *options);
 ```
 
-Devuelve **0 si todo salió bien y 1 si falló cualquier fase**, y ese valor es el
-que `main` devuelve al sistema operativo. No hay más API: todo lo demás son
-once funciones `static`.
-
-Esa estrechez es a propósito. El driver es el único que sabe el orden de las
-fases, y nadie necesita preguntarle nada más.
+Retorna `0` si todas las etapas solicitadas finalizaron sin errores y `1` ante cualquier fallo (léxico, sintáctico, semántico, de generación o de sistema de archivos).
 
 ---
 
-## 3. El `switch` sobre `-target`
+## 2. Despacho del pipeline según `-target`
 
-El cuerpo entero de `compile` es un `switch` con seis casos, y leerlo es ver el
-pipeline:
+El cuerpo de `compile` selecciona el flujo de ejecución mediante un `switch` sobre `options->target`:
 
 ```c
 case TARGET_SCAN:
@@ -68,25 +50,16 @@ case TARGET_ASSEMBLY:
     return runAssembly(options, tacList);
 ```
 
-Tres cosas que se leen de esa estructura:
+- **Ejecución acumulativa:** cada objetivo ejecuta todas las fases previas necesarias para construir sus estructuras de entrada.
+- **Independencia de `TARGET_SCAN`:** el escaneo consume tokens llamando directamente a `yylex()` en un bucle, sin invocar a `yyparse()` ni construir el AST (por lo que un programa con errores sintácticos pero tokens válidos supera `-target scan`).
+- **Corte temprano:** si una fase retorna distinto de `0`, las etapas posteriores no se ejecutan y no se genera archivo de salida. De este modo, el generador de código intermedio y el backend pueden asumir que el AST recibido ya superó todas las validaciones sintácticas y semánticas.
 
-**El prefijo se repite y es acumulativo.** Cada etapa corre todas las anteriores.
-No hay forma de pedir el semántico sin parsear, y eso es lo que hace que
-`-target` signifique "hasta acá" y no "solo esto".
+### Estado global compartido con Flex y Bison
 
-**`TARGET_SCAN` es el único que no llama a `runParse`.** El escaneo se hace
-directamente con `yylex()` en bucle, sin el parser. Es la única etapa que se
-puede correr sin construir el AST.
-
-**Cada `if (... != 0) return 1;` es un corte.** Si una fase falla, las siguientes
-no corren y no se escribe ningún archivo de salida. Esa es la garantía que
-permite que el generador de código no revalide nada: **si llega a ejecutarse, el
-programa es válido**.
-
-### Las variables globales que el driver conecta
+El driver se comunica con los analizadores generados por Flex y Bison a través de sus variables globales:
 
 ```c
-extern NodeAST *astRoot;     /* lo llena bison.y, lo leen todas las fases */
+extern NodeAST *astRoot;     /* asignado en bison.y, consumido por las fases siguientes */
 extern int yyparse(void);
 extern int yylex(void);
 extern char *yytext;
@@ -94,60 +67,42 @@ extern FILE *yyin;
 extern int yylineno;
 ```
 
-El driver no recibe el AST por parámetro: lo lee de la global que el parser
-dejó. Es la consecuencia de que Bison y Flex se comuniquen por globales, y el
-driver es donde eso se vuelve visible.
-
 ---
 
-## 4. Las cinco funciones de etapa
+## 3. Ejecución por etapa
 
-### `runScan(options)` — la única que no usa el parser
+### `runScan(options)`
 
 ```c
 while ((token = yylex()) != 0) {
     const char *tokenName = getTokenName(token);
-    if (tokenName == NULL) { /* es un caracter suelto: '+' , ';' ... */ }
+    if (tokenName == NULL) { /* token de un caracter: '+', ';', '(' ... */ }
     fprintf(outputFile, "[Linea %d] %-12s %s\n", yylineno, tokenName, yytext);
     debugPrintf(options->debug, "[SCAN] ...");
 }
 ```
 
-Llama a `yylex()` hasta que devuelva 0 e imprime una línea por token con su
-número de línea y su lexema. **Es el único consumidor de `yylex` que no es el
-parser**, y por eso el léxico tiene dos clientes (ver la
-[análisis léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md)).
+Invoca a `yylex()` hasta alcanzar `EOF` (`0`) y escribe una línea por token en el archivo `.lex` (ver [análisis léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md)). `getTokenName` traduce el código numérico de Bison a su identificador simbólico, o retorna `NULL` cuando el token es un literal de un solo carácter cuyo código coincide con su valor ASCII.
 
-`getTokenName` traduce el número de token a su nombre. Devuelve `NULL` para los
-tokens que son **un carácter** —`'+'`, `';'`, `'('`— porque esos no tienen
-constante con nombre: su número *es* su código ASCII. En ese caso el driver
-formatea el carácter entre comillas.
-
-### `runParse()` — parsea y chequea los errores léxicos
+### `runParse()`
 
 ```c
 if (yyparse() != 0) return 1;
 if (lexical_errors > 0) { compileAborted("lexicos", lexical_errors); return 1; }
 ```
 
-Dos chequeos, y el orden tiene sentido: `yyparse` consume todos los tokens, así
-que para cuando termina, el contador de errores léxicos ya está completo.
+El analizador léxico reporta caracteres inválidos e incrementa `lexical_errors` sin detener el escaneo, permitiendo recolectar todos los errores léxicos en una misma pasada. Por ello, una vez que `yyparse()` termina de consumir la entrada, `runParse` verifica el contador léxico antes de dar por válida la fase (teniendo en cuenta que un carácter inválido ignorado por el lexer puede provocar también un error sintáctico derivado en Bison).
 
-**Un error léxico no aborta el parseo.** El lexer reporta y sigue (ver [análisis léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md)), así
-que el parser puede completar su trabajo; recién al final se mira el contador. Eso
-permite reportar todos los símbolos inválidos de una pasada en lugar de uno por
-corrida.
-
-### `runSemantic()`
+### `runSemantic()` y `writeASTTo(options)`
 
 ```c
 analyzeSemantics(astRoot, NULL);
 if (semantic_errors > 0) { compileAborted("semanticos", semantic_errors); return 1; }
 ```
 
-El `NULL` del segundo parámetro es lo que le dice al análisis semántico "este es
-el ámbito global" (ver la [análisis semántico](../04-semantico/03-analisis-semantico.md)). **Se descarta el
-`Scope` que devuelve**: el resultado útil quedó anotado en el AST.
+Invoca al analizador semántico pasando `NULL` como ámbito padre para indicar el alcance global (ver [análisis semántico](../04-semantico/03-analisis-semantico.md)). Las anotaciones de tipos y punteros a `Symbol` quedan registradas sobre los propios nodos de `astRoot`. Ni el árbol `Scope` devuelto ni el `astRoot` se liberan explícitamente al finalizar el proceso, delegando la recuperación de memoria al sistema operativo al terminar la ejecución (ver [AST](../03-lexico-sintactico-y-ast/04-ast.md) y [tabla de símbolos](../04-semantico/01-tabla-de-simbolos.md)).
+
+Tanto `-target parse` como `-target sem` vuelcan el árbol a disco mediante `writeASTTo`, que invoca a `fprintAST`: en `parse` el árbol se imprime sin anotar (`.sint`) y en `sem` con los tipos y `uid` resueltos (`.sem`).
 
 ### `runIntermediateCode(options, tacList)`
 
@@ -159,11 +114,9 @@ debugPrintf(options->debug, "%s", getBuiltString());
 return writeBuiltStringTo(options->output);
 ```
 
-El patrón que usan las dos etapas de salida textual: resetear el acumulador,
-llenarlo, chequear que no haya fallado por memoria, volcarlo con `-debug` y
-escribirlo al archivo.
+Reinicia el acumulador de texto (`string_builder`), formatea la lista de cuádruplas TAC, verifica que no hayan ocurrido errores de asignación de memoria y escribe el resultado en el archivo `.ci` (o `.opt`). Si la escritura a disco falla parcialmente, `writeBuiltStringTo` elimina el archivo incompleto con `remove(options->output)`.
 
-### `runAssembly(options, tacList)` — la que bifurca
+### `runAssembly(options, tacList)`
 
 ```c
 resetBuildString();
@@ -173,10 +126,9 @@ if (getObjectCodeErrors() > 0) { compileAborted("internos ...", ...); return 1; 
 if (hasStringBuilderError())   { ...; return 1; }
 
 if (!BUILDS_EXECUTABLE(options)) {
-    return writeBuiltStringTo(options->output);     /* -target assembly: queda el .ass */
+    return writeBuiltStringTo(options->output);     /* -target assembly: escribe .ass */
 }
 
-/* sin -target: hay que ensamblar */
 snprintf(assemblyPath, sizeof(assemblyPath), "%s.tmp.s", options->output);
 writeBuiltStringTo(assemblyPath);
 int result = assembleAndLink(options, assemblyPath);
@@ -184,29 +136,20 @@ if (!options->debug) remove(assemblyPath);
 return result;
 ```
 
-Acá se materializa la decisión de `BUILDS_EXECUTABLE` de la
-[CLI y entrada](01-cli-y-entrada.md): con `-target assembly` el `.ass` **es** la salida; sin
-`-target`, el assembly es un **paso intermedio** que se escribe a
-`<salida>.tmp.s`, se ensambla y se borra.
+Evalúa la macro `BUILDS_EXECUTABLE` definida en [CLI y entrada](01-cli-y-entrada.md):
 
-**Con `-debug` el intermedio se conserva**, y se informa dónde quedó. Es la forma
-de ver el assembly exacto que produjo un ejecutable.
-
-El sufijo `.tmp.s` no es decorativo: el nombre se deriva de la **salida** y no de
-la entrada, para que dos compilaciones simultáneas con distintos `-o` no se pisen
-el archivo temporal. Y hay un chequeo de truncamiento del `snprintf` contra
-`MAX_PATH_LENGTH` (4096), porque una ruta larga truncada escribiría a un archivo
-equivocado.
+- Con `-target assembly`, vuelca el código ensamblador directamente en la ruta de salida (`.ass`).
+- Sin `-target`, escribe un archivo temporal `<output>.tmp.s` (verificando previamente que la longitud de la ruta no supere `MAX_PATH_LENGTH` de 4096 bytes), invoca a `assembleAndLink` para generar el binario y elimina el archivo `.tmp.s` al terminar, salvo que se haya especificado `-debug`.
 
 ---
 
-## 5. `buildIntermediateCode`: donde se enchufa el optimizador
+## 4. Integración del optimizador (`buildIntermediateCode`)
 
 ```c
 const TACList *tacList = generateIntermediateCode(astRoot);
 if (tacList == NULL) { ...; return NULL; }
 
-if (options->debug) {                                    /* el CFG y la vivacidad */
+if (options->debug) {
     LiveVariableAnalysis *analysis = createLiveVariableAnalysis(tacList);
     if (analysis != NULL) {
         printLiveVariableAnalysis(analysis, stdout);
@@ -222,32 +165,16 @@ if (hasOptimizations) {
 return tacList;
 ```
 
-Tres cosas que vale señalar:
-
-**El optimizador se enchufa acá, entre la generación del TAC y su consumo.** Por
-eso lo aprovechan los tres consumidores: `-target codinter` escribe el `.opt`,
-`-target assembly` traduce el TAC optimizado, y el ejecutable también. Una sola
-línea cubre los tres casos.
-
-**Sin `-opt` el optimizador no se llama en absoluto**, así que la lista queda
-exactamente como la emitió el generador. Es la garantía de que `-opt` sea
-opcional en el sentido fuerte: no es que no cambie nada, es que no corre.
-
-**El cast `(TACList *)` descarta el `const`** con el que
-`generateIntermediateCode` devolvió la lista, porque el optimizador la modifica
-en el lugar. Es deliberado y está en la línea 69; la
-[generación de TAC](../05-codigo-intermedio/02-generacion-tac.md) lo explica desde el otro lado.
-
-**El análisis de variables vivas se imprime solo con `-debug`, y se imprime
-siempre que haya `-debug`, incluso sin `-opt`.** O sea que se puede ver el CFG de
-un programa sin optimizar nada. Y se construye y se libera solo para imprimir: el
-que usa el optimizador es otro, construido adentro de `removeDeadStores`.
+- **Punto único de intercepción:** al aplicar las optimizaciones inmediatamente después de `generateIntermediateCode`, los tres flujos que consumen TAC (`-target codinter`, `-target assembly` y la generación del ejecutable) reciben la lista ya optimizada.
+- **Ejecución condicional estricta:** si no se activó `-opt`, `optimizeIntermediateCode` no se invoca y la lista TAC permanece intacta.
+- **Modificación *in-place*:** `generateIntermediateCode` retorna `const TACList *` para los consumidores de solo lectura, y `buildIntermediateCode` realiza un cast explícito a `(TACList *)` para que el optimizador reescriba la lista en el lugar (ver [generación de TAC](../05-codigo-intermedio/02-generacion-tac.md)).
+- **Volcado de vivacidad en `-debug`:** cuando `-debug` está activo, el análisis de variables vivas y el CFG se construyen e imprimen sobre el TAC inicial incluso si no se solicitaron optimizaciones.
 
 ---
 
-## 6. `assembleAndLink`: `fork` + `execvp`, no `system`
+## 5. Ensamblado y enlazado (`assembleAndLink`)
 
-Es la parte más interesante del módulo y la que más consecuencias tiene.
+Para producir el ejecutable final, el driver invoca a `gcc` mediante `fork`, `execvp` y `waitpid`:
 
 ```c
 char *const assemblerArguments[] = {
@@ -269,201 +196,57 @@ if (waitpid(processId, &status, 0) < 0) { perror("waitpid"); return 1; }
 if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) { ...; return 1; }
 ```
 
-### Por qué no `system()`
+### Uso de `fork` + `execvp` en lugar de `system()`
 
-`system("gcc -x assembler ... -o ...")` habría sido una línea. El problema es que
-`system` pasa el comando **a un shell**, y el shell interpreta espacios, comillas,
-`;`, `$`, `&&`… Un nombre de archivo con cualquiera de esos caracteres rompería
-el comando o, peor, ejecutaría algo distinto.
+A diferencia de `system()`, que ejecuta el comando a través de un shell `/bin/sh -c` e interpreta metacaracteres, `execvp` recibe el arreglo de argumentos directamente y lo pasa al proceso hijo sin intervención del shell. Esto evita fallos o inyecciones de comandos cuando las rutas de entrada o salida contienen espacios, comillas simples, `;` o `$`.
 
-Con `fork` + `execvp` los argumentos se pasan **como un arreglo** y no hay shell
-en el medio: cada elemento llega al programa tal cual, sin interpretación.
+### Opciones pasadas a `gcc` y control del proceso hijo
 
-Verificado con cuatro nombres que un `system()` habría roto:
-
-| Nombre de salida | Resultado |
+| Aspecto | Detalle técnico |
 | --- | --- |
-| `con espacios.out` | compila y ejecuta |
-| `con'apostrofe.out` | compila y ejecuta |
-| `con;punto_y_coma.out` | compila y ejecuta |
-| `con$dolar.out` | compila y ejecuta |
+| `-x assembler` | Fuerza a `gcc` a tratar el archivo de entrada como código ensamblador independientemente de su extensión. |
+| `-no-pie` | Deshabilita la generación de ejecutables independientes de posición (PIE), requerido por el esquema de direccionamiento emitido por el backend. |
+| `_exit(127)` | Si `execvp` falla, el proceso hijo termina inmediatamente con `_exit` (código estándar `127` para comando no encontrado) en lugar de `exit`, evitando ejecutar manejadores `atexit` o vaciar por duplicado los buffers de E/S heredados del padre. |
+| `WIFEXITED` y `WEXITSTATUS` | Verifica que el subproceso haya finalizado normalmente antes de inspeccionar su código de retorno. |
 
-Los cuatro producen un ejecutable correcto. Es la clase de robustez que no se nota
-hasta que alguien compila en una carpeta con un espacio en el nombre.
+---
 
-### Los dos flags de `gcc`
+## 6. Conexión con otros módulos
 
-| Flag | Por qué |
+| Origen / Destino | Interacción |
 | --- | --- |
-| `-x assembler` | Le dice a `gcc` **explícitamente** que el archivo es assembly. Sin esto, `gcc` decide por la extensión, y un `.s` mayúscula/minúscula o un nombre inesperado lo haría tratar el archivo como otra cosa |
-| `-no-pie` | Desactiva el ejecutable independiente de posición. El código generado usa direccionamiento `símbolo(%rip)` pero no es PIC completo, así que con PIE activado el enlazado falla |
-
-### El manejo del proceso hijo
-
-- `execvp` **solo retorna si falló**, así que el `perror("gcc")` y el `_exit(127)`
-  que vienen después son el camino de error. El 127 es la convención de "comando
-  no encontrado".
-- `_exit` y no `exit`: en el hijo no hay que correr los `atexit` ni vaciar los
-  buffers heredados del padre, porque eso duplicaría la salida.
-- `WIFEXITED` antes de `WEXITSTATUS`: un proceso que murió por señal no tiene
-  código de salida válido, y preguntarlo sin chequear daría basura.
+| **Recibe de** `cli.c` | Estructura `Options` y macro `BUILDS_EXECUTABLE` |
+| **Recibe de** `main.c` | Descriptor `yyin` abierto sobre el archivo fuente |
+| **Invoca en** `lexer.l` / `bison.y` | `yylex()` (en `TARGET_SCAN`) y `yyparse()` |
+| **Invoca en** `semantic_analyzer.c` | `analyzeSemantics(astRoot, NULL)` |
+| **Invoca en** `intermediate_code.c` | `generateIntermediateCode(astRoot)` |
+| **Invoca en** `optimizer.c` / `live_variable_analysis.c` | `optimizeIntermediateCode` y volcado del CFG con `-debug` |
+| **Invoca en** `object_code.c` / `string_builder.c` | `generateAssembly` y gestión del buffer de salida textual |
+| **Invoca en** `error_handler.c` | Contadores de errores y resumen `compileAborted` |
 
 ---
 
-## 7. Las funciones de escritura
+## 7. Cómo se extiende
 
-### `openOutputFile(path)`
+### Agregar una etapa a `-target`
 
-Un `fopen` en modo `"w"` con el `perror` correspondiente si falla. Centralizado
-para que las tres etapas que escriben archivos reporten el error igual.
+Incorporar el `case` correspondiente en el `switch` de `compile` ejecutando primero las fases previas de las que dependa y luego su función de etapa, además de registrarla en `STAGES` dentro de [CLI y entrada](01-cli-y-entrada.md). Si un valor de `Target` no tiene `case` en `compile`, cae en la rama `default`, que retorna `1` sin emitir mensaje.
 
-### `writeBuiltStringTo(path)`
+### Cambiar el ensamblador o enlazador
 
-Vuelca el acumulador de `string_builder` a un archivo. Lo usan el código
-intermedio y el assembly.
+La invocación externa está encapsulada en el arreglo `assemblerArguments` dentro de `assembleAndLink`. Reemplazar `gcc` por invocaciones separadas a `as` y `ld` solo requiere actualizar dicho arreglo (o encadenar dos llamadas con el mismo esquema `fork`/`execvp`/`waitpid`).
 
-### `writeASTTo(options)`
+### Soportar múltiples archivos de entrada
 
-Escribe el AST con `fprintAST`, y lo usan `-target parse` y `-target sem`. **Son
-la misma función con el árbol en dos estados distintos**: sin anotar y anotado.
-Comparar el `.sint` con el `.sem` del mismo programa es exactamente ver qué
-agregó el análisis semántico.
-
-### El borrado ante error
-
-```c
-remove(options->output);
-```
-
-Si la escritura falla a mitad de camino, el archivo parcial **se borra**. Eso
-sostiene la garantía de que un error nunca deja un archivo de salida que podría
-parecer válido.
+Actualmente `main` abre un único archivo y ejecuta `compile` una sola vez. Compilar y enlazar múltiples unidades requeriría mantener la tabla de símbolos global y acumular las listas TAC entre archivos antes de invocar al backend.
 
 ---
 
-## 8. Conexión con las fases vecinas
+## 8. Validación
 
-| Viene de | Qué cruza la frontera |
-| --- | --- |
-| `cli.c` | La estructura `Options` y la macro `BUILDS_EXECUTABLE` |
-| `main.c` | El `FILE *` ya abierto en `yyin` |
+La suite `tests/test_cli.c` ejercita el driver verificando que cada valor de `-target` genere únicamente el archivo esperado, que los errores en cualquier fase retornen `1` sin dejar archivos residuales y que la compilación completa produzca un binario ejecutable funcional.
 
-| Va hacia | Qué llama |
-| --- | --- |
-| `lexer.l` | `yylex()` en bucle, solo en `-target scan` |
-| `bison.y` | `yyparse()` |
-| `semantic_analyzer.c` | `analyzeSemantics(astRoot, NULL)` |
-| `intermediate_code.c` | `generateIntermediateCode(astRoot)` |
-| `optimizer.c` | `optimizeIntermediateCode` |
-| `live_variable_analysis.c` | El volcado del CFG con `-debug` |
-| `object_code.c` | `generateAssembly` |
-| `string_builder.c` | El acumulador de la salida textual |
-| `error_handler.c` | Los contadores y `compileAborted` |
-| El sistema operativo | `fork`, `execvp`, `waitpid`, `fopen`, `remove` |
-
-**Es el único archivo que incluye a todas las fases.** Eso lo vuelve el punto de
-acoplamiento del proyecto, y es el precio correcto a pagar: la alternativa sería
-que cada fase llamara a la siguiente, y entonces ninguna se podría ejecutar
-aislada ni testear sola.
-
----
-
-## 9. Cómo se extiende
-
-### Una etapa nueva de `-target`
-
-Un `case` en el `switch` de `compile`, con el prefijo acumulativo de las fases
-anteriores y la llamada a su propia función de etapa. Más la fila en `STAGES` de
-la [CLI y entrada](01-cli-y-entrada.md).
-
-Si se olvida el `case`, cae en el `default` que **devuelve 1 sin mensaje**: el
-compilador falla silenciosamente para ese target. Es mejor que hacer algo
-incorrecto, pero sin explicación.
-
-### Otro ensamblador o enlazador
-
-`assembleAndLink` tiene el arreglo de argumentos en una sola declaración. Cambiar
-`gcc` por `as` + `ld` es reescribir ese arreglo y, probablemente, hacer dos
-`fork` en vez de uno. El patrón de `fork`/`execvp`/`waitpid` se reusa igual.
-
-### Compilar varios archivos
-
-Hoy `main` abre uno y `compile` corre una vez. Soportar varios exigiría decidir
-qué significa: ¿un ejecutable por archivo, o enlazar todos juntos? La segunda
-opción pide que el TAC y la tabla de símbolos sobrevivan entre archivos, que es
-un cambio de fondo en el front-end, no acá.
-
-### Mover el optimizador de lugar
-
-Está enchufado en `buildIntermediateCode` (§5), que es el único punto por donde
-pasan los tres consumidores del TAC. Moverlo a otro lado rompería que `-opt`
-afecte a las tres salidas con una sola línea.
-
----
-
-## 10. Trampas y límites conocidos
-
-- **El `default` del `switch` devuelve 1 sin mensaje** (§9).
-- **El cast que descarta el `const` de la lista TAC** está en la línea 69 (§5).
-  No es un descuido.
-- **`-target scan` no construye el AST**, así que un programa con error de
-  sintaxis pasa `-target scan` sin problema: el escaneo solo mira tokens.
-- **Un error léxico no corta el parseo** (§4): se reporta al final del
-  `runParse`. Eso significa que ante un símbolo inválido, Bison igual intenta
-  parsear y puede emitir además un error de sintaxis derivado.
-- **El `Scope` del análisis semántico se descarta** y **el AST nunca se libera**.
-  Son fugas al salir, deliberadas: el proceso termina y el sistema operativo
-  recupera todo. Está anotado en la documentación del [AST](../03-lexico-sintactico-y-ast/04-ast.md) y de la [tabla de símbolos](../04-semantico/01-tabla-de-simbolos.md).
-- **`MAX_PATH_LENGTH` es 4096** y el chequeo de truncamiento existe, pero el
-  nombre del temporal se deriva del de salida, así que un `-o` de 4090 caracteres
-  haría fallar la compilación con un mensaje sobre la ruta intermedia y no sobre
-  el `-o`.
-- **El assembly intermedio se borra salvo con `-debug`.** Si una compilación
-  falla en el ensamblado, el `.tmp.s` **se borra igual**, así que para inspeccionar
-  qué assembly rompió hay que volver a correr con `-debug`.
-- **`-no-pie` es obligatorio** con el código que genera el back-end (§6).
-  Quitarlo hace fallar el enlazado, no el ensamblado, y el mensaje de `ld` no es
-  obvio.
-
----
-
-## 11. La teoría detrás
-
-- **Driver de compilador**: el componente que secuencia las fases y maneja la
-  entrada/salida. En los compiladores reales es también quien decide qué
-  herramientas externas invocar —preprocesador, ensamblador, enlazador— y `gcc`
-  mismo es, en rigor, un driver que llama a `cpp`, `cc1`, `as` y `ld`. Lo de acá
-  es la versión mínima del mismo patrón.
-- **Compilación por etapas y puntos de corte**: que se pueda detener el pipeline
-  en cada fase y volcar su representación intermedia no es solo un requisito del
-  enunciado, es la herramienta de depuración más importante de un compilador.
-  `gcc` tiene los equivalentes: `-E`, `-fdump-tree-*`, `-S`.
-- **Separación de fases y acoplamiento en un punto**: las fases no se conocen
-  entre sí y el driver las conoce a todas. Concentrar el acoplamiento en un solo
-  módulo es lo que permite que cada fase se compile y se teste por separado, que
-  es lo que hacen las suites unitarias del proyecto, cada una sin enlazar las
-  etapas anteriores a la que prueba.
-- **Creación de procesos en POSIX**: `fork` duplica el proceso, `execvp` reemplaza
-  la imagen del hijo por otro programa, y `waitpid` espera su terminación. Es el
-  mecanismo de base sobre el que `system()` está construido, y usarlo directo es
-  lo que evita el shell (§6).
-- **Inyección por el shell**: pasar nombres de archivo a través de un shell los
-  expone a la interpretación de metacaracteres. Evitarlo pasando un arreglo de
-  argumentos es la misma razón por la que en cualquier lenguaje se recomienda la
-  forma con lista sobre la forma con cadena al lanzar subprocesos.
-- **Códigos de salida como protocolo**: `0` éxito, `1` error de compilación,
-  `127` comando no encontrado. Es lo que permite encadenar el compilador en un
-  `&&` de shell o en un script de tests.
-
----
-
-## 12. Cómo se valida
-
-- **Suite:** `tests/test_cli.c` cubre el driver de punta a punta: cada `-target`
-  produce **solo** su archivo, los errores devuelven 1 y no dejan salida, y el
-  ejecutable se genera y corre. Es testing de integración aunque esté en la suite
-  de la CLI.
-- **A mano**, el recorrido completo por las etapas sobre un mismo programa:
+Comprobación manual de todas las etapas sobre un programa de ejemplo:
 
 ```bash
 for etapa in scan parse sem codinter assembly; do
@@ -471,20 +254,10 @@ for etapa in scan parse sem codinter assembly; do
 done
 ```
 
-  Debe dejar `programa.lex`, `.sint`, `.sem`, `.ci` y `.ass`, **sin imprimir
-  nada**.
-
-- **Ver el assembly que produjo un ejecutable**, que es para lo que sirve que
-  `-debug` conserve el intermedio:
+Para conservar e inspeccionar el archivo ensamblador intermedio `.tmp.s` generado al compilar un ejecutable:
 
 ```bash
-./mi_compilador -debug examples/factorial.ctds 2>&1 | grep "Assembly intermedio"
-```
-
-- **Y los casos del subproceso**, que son los que rompen en silencio:
-
-```bash
-./mi_compilador -o "con espacios.out" examples/factorial.ctds && ./"con espacios.out"
+./mi_compilador -debug examples/factorial.ctds
 ```
 
 ---

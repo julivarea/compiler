@@ -1,33 +1,21 @@
 # Utilidades y Tipos Base
 
-**Archivos:** `include/string_builder.h`, `src/core/string_builder.c`,
-`include/types.h` (205 líneas)
+**Archivos:** `include/string_builder.h`, `src/core/string_builder.c`, `include/types.h`
 
-El acumulador con el que se arma la salida de texto de cada etapa, y los dos
-enumerados que atraviesan todo el compilador.
+Infraestructura transversal compartida por las etapas del compilador: el acumulador dinámico de texto (`string_builder`) empleado para construir la representación textual de TAC y de ensamblador x86-64, y las enumeraciones base (`DataType` y `OperationType`) definidas en `types.h`.
 
 ---
 
-## 1. Qué problema resuelve
+## 1. Propósito y alcance
 
-Dos cosas chicas y transversales:
-
-**`string_builder`** resuelve que la salida de una etapa se construye en cientos
-de pedacitos —una línea de TAC, una instrucción de assembly— y recién al final se
-sabe cuánto mide. Acumula en memoria y crece solo.
-
-**`types.h`** resuelve que `DataType` y `OperationType` los necesitan el AST, la
-tabla de símbolos, el chequeo de tipos, el TAC y el generador de código. Si
-vivieran en cualquiera de esos headers, todos dependerían de ese módulo por un
-enum.
-
-Ninguno de los dos es una fase. Son la infraestructura que las fases comparten.
+- **`string_builder`:** permite construir en memoria la salida textual de una etapa mediante llamadas sucesivas de formato (`buildString`, `buildStringf`), redimensionando el buffer automáticamente antes de volcar el resultado completo a un archivo.
+- **`types.h`:** concentra los tipos de datos y operadores del lenguaje en un encabezado sin dependencias internas, evitando acoplar entre sí al AST, la tabla de símbolos, el analizador semántico, el generador TAC y el backend.
 
 ---
 
-## 2. `string_builder`: un acumulador global
+## 2. Acumulador de cadenas (`string_builder`)
 
-### La interfaz
+### Interfaz pública y estado interno
 
 ```c
 void        buildString(const char *string);
@@ -37,7 +25,7 @@ bool        hasStringBuilderError(void);
 void        resetBuildString(void);
 ```
 
-Cinco funciones y **un solo acumulador**, en variables estáticas del `.c`:
+El módulo administra un único buffer estático global en `src/core/string_builder.c`:
 
 ```c
 static char  *code_buffer = NULL;
@@ -46,45 +34,23 @@ static size_t code_cap    = 0;
 static bool   builderFailed = false;
 ```
 
-**No hay una estructura `StringBuilder` que se pueda instanciar.** Hay uno y es
-global. Eso vuelve la API trivial de usar —no hay que pasar un puntero a cada
-`buildStringf`— y es lo que permite que `object_code.c` emita assembly desde 50
-lugares distintos sin acarrear nada.
+Al ser una instancia única en lugar de una estructura pasada por parámetro, los módulos emisores (como `object_code.c`, que realiza 50 llamadas a `buildString`/`buildStringf`) no necesitan propagar un puntero de contexto en sus firmas. Como contrapartida, no es posible construir dos salidas en paralelo y cada etapa debe iniciar su emisión con `resetBuildString()` (que libera el buffer previo y reinicia el estado). Si nunca se escribió en el buffer, `getBuiltString()` retorna `""` en lugar de `NULL`.
 
-El precio es que **no se pueden armar dos salidas a la vez**, y por eso el patrón
-de uso siempre empieza con `resetBuildString()`.
+### Ciclo de uso y consumidores
 
-### El ciclo de uso
-
-Lo usan tres etapas, siempre igual:
+Las etapas de código intermedio y de código objeto utilizan el mismo esquema en `driver.c`:
 
 ```c
-resetBuildString();                              /* 1. vaciar */
-formatTACList(tacList);                          /* 2. llenar desde donde sea */
-if (hasStringBuilderError()) { ...; return 1; }   /* 3. chequear */
-writeBuiltStringTo(options->output);             /* 4. volcar */
+resetBuildString();                              /* 1. Reiniciar buffer y flag de error */
+formatTACList(tacList);                          /* 2. Acumular salida de la etapa */
+if (hasStringBuilderError()) { ...; return 1; }  /* 3. Verificar fallos de memoria */
+writeBuiltStringTo(options->output);             /* 4. Volcar a disco */
 ```
 
-El paso 3 no es opcional: si una reserva de memoria falló, el acumulador tiene
-**texto incompleto** y escribirlo produciría un archivo truncado que parece
-válido. Ver §3.
+- `object_code.c` emite todas las directivas e instrucciones de ensamblador x86-64 directamente sobre `string_builder`.
+- `tac.c` realiza una única llamada desde `printTACInstruction`, la cual delega el formateo en `formatTACInstruction` (que opera sobre un buffer local del llamador, permitiendo reutilizar el mismo formato en distintos destinos; ver [representación TAC](../05-codigo-intermedio/01-representacion-tac.md)).
 
-### Quiénes lo usan, y cuánto
-
-| Archivo | Llamadas |
-| --- | --- |
-| `object_code.c` | **50** |
-| `driver.c` | 7 |
-| `tac.c` | 1 |
-
-El reparto cuenta una historia: el generador de código objeto emite todo el
-assembly como texto directo, el driver lo resetea y lo vuelca, y el TAC lo usa
-**una sola vez** —`printTACInstruction` delega en `formatTACInstruction`, que
-escribe a un buffer del llamador y no al acumulador. Esa indirección es lo que
-permite que el formato del TAC tenga tres consumidores distintos (ver la
-[representación TAC](../05-codigo-intermedio/01-representacion-tac.md)).
-
-### El crecimiento
+### Crecimiento geométrico y prevención de desbordes
 
 ```c
 static bool sb_ensure_capacity(size_t needed) {
@@ -105,80 +71,37 @@ static bool sb_ensure_capacity(size_t needed) {
 }
 ```
 
-Duplicación desde 64 bytes, que es el patrón estándar: N agregados cuestan
-O(log N) reservas en lugar de N.
+El buffer comienza en 64 bytes y duplica su capacidad cada vez que se agota, logrando un costo amortizado $O(1)$ por inserción. Antes de redimensionar, valida dos condiciones de desborde de entero sobre `size_t`:
 
-**Los dos chequeos de desborde son lo notable.** El primero verifica que
-`code_len + needed + 1` no desborde el `size_t`; el segundo que `new_cap * 2` no
-desborde. Sin ellos, un desborde daría una capacidad **menor** que la necesaria,
-`realloc` tendría éxito con un buffer chico y el `memcpy` siguiente escribiría
-fuera de él. Es la clase de defensa que no se nota nunca y evita una corrupción
-silenciosa de memoria.
+1. Que `code_len + needed + 1` (incluyendo el byte para `'\0'`) no supere `SIZE_MAX`.
+2. Que la duplicación `new_cap * 2` no desborde al calcular la nueva capacidad.
 
-El `+ 1` de `required` es para el terminador nulo, que `buildString` escribe
-siempre después de copiar.
-
-### `buildStringf`: por qué `va_copy`
+### Formateo en dos pasos con `va_copy` (`buildStringf`)
 
 ```c
 va_list ap, ap_copy;
 va_start(ap, format);
 va_copy(ap_copy, ap);
-int len = vsnprintf(NULL, 0, format, ap_copy);   /* 1. cuanto mide */
+int len = vsnprintf(NULL, 0, format, ap_copy);   /* 1. Calcular longitud exacta */
 va_end(ap_copy);
 ...
-if (!sb_ensure_capacity((size_t)len)) { ... }    /* 2. reservar */
-vsnprintf(code_buffer + code_len, code_cap - code_len, format, ap);  /* 3. escribir */
+if (!sb_ensure_capacity((size_t)len)) { ... }    /* 2. Asegurar espacio */
+vsnprintf(code_buffer + code_len, code_cap - code_len, format, ap);  /* 3. Escribir */
 ```
 
-El truco de los dos pasos: `vsnprintf` con destino `NULL` y tamaño 0 **no
-escribe nada y devuelve cuántos caracteres habría necesitado**. Así se puede
-reservar exacto antes de formatear, sin adivinar un tamaño ni truncar.
+La primera llamada a `vsnprintf(NULL, 0, ...)` calcula la cantidad exacta de bytes requeridos sin escribir nada. Dado que recorrer un `va_list` lo consume, se utiliza `va_copy` para medir sobre `ap_copy` y preservar `ap` intacto para la escritura final en el buffer redimensionado.
 
-**`va_copy` es obligatorio y no un detalle de estilo.** Un `va_list` se *consume*
-al recorrerlo: usar el mismo dos veces es comportamiento indefinido. Por eso se
-hace una copia para medir y se reserva el original para escribir. Es el error
-clásico de esta técnica.
+### Manejo de errores mediante bandera persistente (`builderFailed`)
+
+Si `realloc` falla o se detecta un desborde de tamaño, se activa `builderFailed = true`. Mientras esa bandera permanece activa, las llamadas subsiguientes a `buildString` o `buildStringf` retornan inmediatamente sin modificar el buffer, hasta el próximo `resetBuildString()`. De esta forma, el código emisor no necesita verificar el retorno de cada instrucción emitida, y el driver comprueba `hasStringBuilderError()` una sola vez antes de escribir el archivo de salida, evitando dejar archivos truncados en disco.
 
 ---
 
-## 3. `builderFailed`: la bandera pegajosa
+## 3. Tipos y operadores base (`types.h`)
 
-```c
-bool hasStringBuilderError(void) { return builderFailed; }
-```
+El archivo `include/types.h` define dos enumerados y declara una función auxiliar de conversión a texto.
 
-Si cualquier reserva falla, la bandera se prende y **no se apaga hasta el
-próximo `resetBuildString`**. Las funciones que siguen agregando texto no hacen
-nada, pero no revientan.
-
-Eso es lo que convierte una falta de memoria en un **error reportable** en lugar
-de un archivo truncado:
-
-```c
-resetBuildString();
-generateAssembly(tacList, options->optimizations);
-if (hasStringBuilderError()) {
-    fprintf(stderr, "Error interno: no se pudo generar la salida de assembly.\n");
-    return 1;
-}
-```
-
-El patrón es el mismo que `tacMemoryError` en el generador de TAC y
-`objectCodeErrors` en el de código objeto: **una bandera que sobrevive al error y
-se consulta al final**, en lugar de propagar un código de retorno por cincuenta
-funciones. Para fallas que abortan toda la etapa es el patrón correcto.
-
-`getBuiltString` devuelve `""` y no `NULL` si nunca se escribió nada, así que el
-llamador puede pasarlo a `fprintf` sin chequear.
-
----
-
-## 4. `types.h`: dos enumerados y una declaración
-
-El header entero son 56 líneas y no tiene `.c`: **no existe `src/types.c`**.
-
-### `DataType`: los tipos del lenguaje, más dos
+### `DataType`
 
 ```c
 typedef enum DataType {
@@ -190,25 +113,14 @@ typedef enum DataType {
 } DataType;
 ```
 
-Los tres primeros son los tipos de C-TDS. Los otros dos **no son tipos del
-lenguaje sino valores de control**, y entender la diferencia importa:
+Además de los tipos primitivos del lenguaje (`TYPE_INT`, `TYPE_BOOL`, `TYPE_FLOAT`), incluye dos valores de control:
 
-| Valor | Qué significa |
+| Valor | Uso en el compilador |
 | --- | --- |
-| `TYPE_VOID` | "sin tipo": el retorno de un método `void`, y también **el valor provisorio** de un nodo recién construido antes del análisis semántico |
-| `TYPE_ERROR` | "el tipo no se pudo determinar". Es lo que **se propaga en silencio** para evitar cascadas de errores |
+| `TYPE_VOID` | Representa tanto el tipo de retorno de métodos `void` como el estado inicial provisorio de los nodos del AST antes de que corra el análisis semántico. |
+| `TYPE_ERROR` | Valor centinela asignado cuando falla la validación de tipos de una subexpresión. Se propaga sin emitir nuevos diagnósticos para evitar cascadas de errores (ver [chequeo de tipos](../04-semantico/02-chequeo-de-tipos.md)). |
 
-`TYPE_ERROR` es la pieza central de la política de errores del chequeo de tipos:
-una expresión con un operando inválido devuelve `TYPE_ERROR`, y cada operación
-que la consuma devuelve `TYPE_ERROR` **sin reportar nada nuevo**. Así un error
-primario produce exactamente un mensaje. La [chequeo de tipos](../04-semantico/02-chequeo-de-tipos.md) lo
-desarrolla.
-
-Que `TYPE_VOID` cumpla dos papeles —tipo de retorno y "todavía no se sabe"— es
-más discutible: un `TYPE_UNKNOWN` separado sería más claro, y haría que leer
-`TYPE_VOID` en una expresión fuera detectable como error.
-
-### `OperationType`: los doce operadores
+### `OperationType`
 
 ```c
 typedef enum OperationType {
@@ -217,185 +129,59 @@ typedef enum OperationType {
 } OperationType;
 ```
 
-Doce valores para los doce operadores del lenguaje: cinco aritméticos binarios,
-tres relacionales, dos lógicos binarios y dos unarios.
+Enumera los doce operadores del AST (cinco aritméticos binarios, tres relacionales, dos lógicos binarios y dos unarios). A diferencia de `Target` en [CLI y entrada](01-cli-y-entrada.md), el orden de sus constantes no tiene significado semántico. Los operadores lógicos `OP_AND` y `OP_OR` no poseen instrucciones equivalentes en TAC, ya que el generador de código intermedio los traduce directamente a secuencias de saltos condicionales con evaluación por cortocircuito (ver [representación TAC](../05-codigo-intermedio/01-representacion-tac.md)).
 
-**El orden es arbitrario** —`OP_UMINUS` y `OP_NOT` quedaron entre `OP_ADD` y
-`OP_SUB`— y nada depende de él, al contrario del enum `Target` de la
-[CLI y entrada](01-cli-y-entrada.md), cuyo orden sí refleja el pipeline.
-
-`OP_AND` y `OP_OR` existen en este enum pero **no tienen opcode de TAC
-equivalente**: el generador los desvía a la secuencia de saltos del corto
-circuito antes de llegar a la traducción. Es la asimetría más importante entre
-este enum y el de operaciones TAC, y está explicada en la
-[representación TAC](../05-codigo-intermedio/01-representacion-tac.md).
-
-### `getDataTypeName`: declarada acá, definida en otro módulo
+### Ubicación de `getDataTypeName`
 
 ```c
-const char *getDataTypeName(DataType type);   /* en types.h */
+const char *getDataTypeName(DataType type);
 ```
 
-La implementación está en **`src/parser/ast.c`**, no en un `types.c`. Devuelve
-`"INT"`, `"BOOL"`, `"FLOAT"`, `"VOID"`, `"ERROR"` o `"UNKNOWN"`, y la usan los
-mensajes de error del semántico y el impresor del AST.
-
-Es una incoherencia de ubicación: la declaración vive en el módulo de tipos y el
-código en el del AST. Funciona porque todo se enlaza junto, pero significa que
-cualquier unidad que use `getDataTypeName` depende de que `ast.c` esté en el
-enlazado aunque no use el AST. Crear un `types.c` con esa única función sería la
-corrección.
-
-### Quién lo incluye
-
-Ocho archivos, y todos son headers:
-
-```
-ast.h   function_frame.h   object_code.h   parser_helpers.h
-semantic_analyzer.h   symbol_table.h   tac.h   type_checker.h
-```
-
-Que lo incluyan los **headers** y no los `.c` es lo que hace que el enum llegue a
-todo el proyecto por transitividad: incluir `ast.h` ya trae `DataType`. Es el
-rol de un header de tipos base, y la razón de que no incluya nada del compilador:
-si `types.h` dependiera de algo, ese algo sería dependencia de todos.
+Aunque su prototipo se declara en `include/types.h`, su implementación (`"INT"`, `"BOOL"`, `"FLOAT"`, `"VOID"`, `"ERROR"`, `"UNKNOWN"`) se encuentra definida en `src/parser/ast.c` (no existe un archivo `src/types.c`). Por ello, cualquier binario de prueba que invoque a `getDataTypeName` debe enlazar `ast.c`.
 
 ---
 
-## 5. Conexión con las fases vecinas
+## 4. Dependencias y acoplamiento
 
-| Quién usa `string_builder` | Para qué |
-| --- | --- |
-| `object_code.c` | Emitir todo el assembly como texto directo |
-| `tac.c` | Una llamada: `printTACInstruction` |
-| `driver.c` | Resetear, chequear el error y volcar al archivo |
+`types.h` no incluye ningún otro encabezado y `string_builder.h` solo incluye `<stdbool.h>`, constituyendo las hojas del grafo de dependencias del proyecto.
 
-| Quién usa `types.h` | Para qué |
-| --- | --- |
-| Prácticamente todo el compilador | `DataType` viaja en los nodos del AST, en los símbolos, en los operandos del TAC y en el marco de pila |
-
-**`types.h` no incluye nada y `string_builder.h` solo `<stdbool.h>`.** Son las dos
-hojas del grafo de dependencias del proyecto, y eso es lo que los hace seguros de
-incluir desde cualquier parte.
+`types.h` es incluido directamente por ocho encabezados (`ast.h`, `function_frame.h`, `object_code.h`, `parser_helpers.h`, `semantic_analyzer.h`, `symbol_table.h`, `tac.h` y `type_checker.h`), propagando `DataType` de forma transitiva a todas las fases del compilador.
 
 ---
 
-## 6. Cómo se extiende
+## 5. Cómo se extiende
 
-### Un tipo de dato nuevo (`char`, `double`)
+### Agregar un nuevo tipo de dato
 
-Un valor en `DataType` y su nombre en `getDataTypeName`. Después, **cada `switch`
-sobre `DataType` del proyecto** necesita su caso: el chequeo de tipos, la
-generación de TAC, el marco de pila (para el tamaño de la ranura) y el generador
-de código objeto. Ninguno de esos `switch` avisa si falta un caso, porque todos
-tienen `default`.
+1. Incorporar la constante en `DataType` (`include/types.h`) y su representación textual en `getDataTypeName` (`src/parser/ast.c`).
+2. Actualizar todos los `switch` y validaciones sobre `DataType` en el analizador semántico, el chequeo de tipos, la generación de TAC, el dimensionamiento de `FunctionFrame` y la emisión de código objeto (teniendo en cuenta que dichos `switch` poseen rama `default`, por lo que el compilador de C no advertirá automáticamente sobre casos faltantes).
 
-### Un operador nuevo
+### Agregar un nuevo operador
 
-Un valor en `OperationType`, su símbolo en `getOperationName` de `ast.c`, su
-regla de tipos en el chequeo y su traducción en el TAC. La
-[chequeo de tipos](../04-semantico/02-chequeo-de-tipos.md) tiene el recorrido completo para `!=`.
+1. Añadir la constante en `OperationType` (`include/types.h`) y su nombre en `getOperationName` (`src/parser/ast.c`).
+2. Incorporar su regla de validación en el [chequeo de tipos](../04-semantico/02-chequeo-de-tipos.md) y su traducción en el generador de código intermedio (y en el backend si requiere una nueva operación TAC).
 
-### Varios acumuladores a la vez
+### Soportar múltiples instancias de `string_builder`
 
-Hoy hay uno global. Convertirlo en una estructura pasable por parámetro es
-mecánico pero toca las **74 llamadas** de los cuatro archivos que lo usan. Haría
-falta solo si alguna vez hiciera falta armar dos salidas simultáneas, que hoy no
-pasa: las etapas se ejecutan una después de la otra.
+Si se requiriera construir más de una salida textual en simultáneo, las variables estáticas de `string_builder.c` deberían encapsularse en un `struct StringBuilder` pasado por puntero a las funciones del módulo, actualizando los puntos de llamada en `object_code.c`, `driver.c` y `tac.c`.
 
-### Un `types.c`
+### Separar la implementación de `types.c`
 
-Mover `getDataTypeName` de `ast.c` a un `src/types.c` nuevo, agregarlo a
-`build.sh` y a las suites que lo necesiten. Corrige la incoherencia de §4 y es un
-cambio de diez líneas.
+Para eliminar la dependencia de enlace hacia `ast.c` al usar `getDataTypeName`, se puede mover dicha función a un archivo `src/core/types.c` e incluirlo en `build.sh` y `test_suite.sh`.
 
 ---
 
-## 7. Trampas y límites conocidos
+## 6. Validación
 
-- **El acumulador es global y único** (§2). Dos salidas simultáneas no son
-  posibles, y olvidar el `resetBuildString` hace que la segunda etapa concatene
-  sobre la primera.
-- **`hasStringBuilderError` hay que consultarlo** (§3). Si no, una falta de
-  memoria produce un archivo truncado sin aviso.
-- **`va_copy` es obligatorio** en `buildStringf` (§2). Reusar el `va_list` sin
-  copiarlo es comportamiento indefinido, y es un error que suele "funcionar" en
-  una arquitectura y romper en otra.
-- **`getDataTypeName` está declarada en `types.h` y definida en `ast.c`** (§4).
-- **`TYPE_VOID` significa dos cosas**: "método sin retorno" y "tipo todavía no
-  resuelto" (§4). Un nodo recién construido tiene `TYPE_VOID` y eso no quiere
-  decir que sea void.
-- **`OP_AND` y `OP_OR` no tienen opcode TAC** (§4). Buscar un `TAC_AND` es
-  perder el tiempo: no existe y es a propósito.
-- **El orden de `OperationType` es arbitrario** (§4), al contrario del de
-  `Target`. No conviene asumir nada de él.
-- **El `perror` de `sb_ensure_capacity` imprime en inglés**
-  (`string_builder realloc failed`), a diferencia del resto de los mensajes del
-  compilador. Es el único lugar con esa inconsistencia, y solo aparece si falla
-  un `realloc`.
-- **`resetBuildString` libera el buffer entero** en lugar de solo poner
-  `code_len = 0`. Es correcto pero significa que las etapas sucesivas vuelven a
-  reservar desde 64 bytes y a duplicar; conservar la capacidad sería más rápido y
-  dejaría memoria reservada entre etapas.
+Ambos componentes se validan de forma transversal en las suites unitarias y de integración: `test_tac.c`, `test_optimizer.c` y `test_object_code.c` verifican carácter por carácter las salidas generadas mediante `string_builder`, mientras que `DataType` y `OperationType` intervienen en todas las pruebas desde el AST hasta el código objeto.
 
----
-
-## 8. La teoría detrás
-
-- **Arreglo dinámico amortizado**: duplicar la capacidad al agotarla da un costo
-  amortizado constante por agregado. Es la misma estructura que `NodeArray`, `TACList` y los arreglos de `Scope` y `FunctionFrame`:
-  el proyecto la reimplementa cinco veces porque C no tiene una en su biblioteca
-  estándar.
-- **Medir antes de escribir**: `vsnprintf(NULL, 0, ...)` devolviendo la longitud
-  necesaria es la forma correcta de formatear a un buffer dinámico. La alternativa
-  —reservar "suficiente" y esperar— es la causa clásica de desbordes de buffer en
-  C.
-- **Funciones variádicas**: `va_list`, `va_start`, `va_copy`, `va_end`. La regla
-  que importa es que un `va_list` se consume al recorrerlo, de ahí `va_copy`.
-- **Desborde de entero en cálculos de tamaño**: multiplicar o sumar tamaños sin
-  chequear es el origen de una familia entera de vulnerabilidades, porque un
-  desborde produce una reserva **más chica** de lo pedido y la escritura posterior
-  se va de rango. Los dos chequeos de §2 son la defensa estándar.
-- **Error pegajoso** (*sticky error flag*): acumular el fallo en una bandera y
-  consultarla al final, en lugar de propagar un código por cada llamada. Es
-  apropiado cuando cualquier fallo invalida toda la operación, que es el caso de
-  generar la salida de una etapa. `errno` y el `ferror` de los `FILE *` de C
-  funcionan igual.
-- **Headers de tipos base**: concentrar los tipos compartidos en un header sin
-  dependencias es lo que evita que módulos que no se usan entre sí terminen
-  acoplados. Es el mismo criterio que lleva a tener un `types.h` en casi cualquier
-  proyecto en C de cierto tamaño.
-- **Valores centinela en un enumerado**: `TYPE_ERROR` y `TYPE_VOID` no son tipos
-  del lenguaje sino estados del análisis. Modelarlos como valores del mismo enum
-  es cómodo y tiene el costo de que el tipo no distingue "un tipo" de "la ausencia
-  de uno"; en un lenguaje con tipos opcionales serían un `Option<DataType>`.
-
----
-
-## 9. Cómo se valida
-
-- **Suite:** ninguno de los dos tiene una propia. Se ejercitan en todas las
-  suites que generan salida: `test_tac.c`, `test_object_code.c` y
-  `test_optimizer.c` comparan texto producido con `string_builder`, y `DataType`
-  aparece en todas.
-- **La validación de `string_builder` es indirecta y fuerte**: si el acumulador
-  tuviera un error de límites, el `.ci` o el `.ass` saldrían corruptos y los tests
-  de esas suites fallarían comparando texto. Que 294 tests pasen comparando
-  salidas carácter por carácter es la prueba de que funciona.
-- **A mano**, para verificar que no se pierde texto en una salida grande:
+Para verificar manualmente la integridad del buffer en salidas extensas:
 
 ```bash
 ./mi_compilador -target assembly examples/programa.ctds
-wc -l examples/programa.ass        # debe tener contenido, no estar truncado
-gcc -x assembler examples/programa.ass -o /tmp/p -no-pie && echo "ensambla"
+gcc -x assembler examples/programa.ass -o /tmp/programa.out -no-pie
 ```
-
-  Que el assembly **ensamble** es la verificación real: un acumulador que pierde
-  caracteres produce texto que `gcc` rechaza.
 
 ---
 
-Con esto se completa el bloque de infraestructura: ya está cubierto todo lo que
-el compilador hace antes de mirar una sola letra del programa.
-
-**Siguiente:** [Análisis Léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md) · empieza el recorrido de las fases
+**Siguiente:** [Análisis Léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md)

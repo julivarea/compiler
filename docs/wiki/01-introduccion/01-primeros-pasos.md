@@ -1,6 +1,6 @@
 # Primeros Pasos
 
-Guía rápida para compilar, probar y ejecutar el compilador.
+Guía para compilar, ejecutar la suite de pruebas y utilizar el compilador desde la línea de comandos.
 
 ---
 
@@ -10,32 +10,25 @@ Guía rápida para compilar, probar y ejecutar el compilador.
 - **Flex** (versión 2.6 o superior)
 - **Bison** (versión 3.x)
 
-Para verificar que estén instalados:
+Para verificar las versiones instaladas:
 
 ```bash
 gcc --version && flex --version && bison --version
 ```
 
-Para levantar esta documentación hace falta además `uv`; eso está explicado en la
-sección *Documentación* del `README.md` del repositorio.
+Para servir la documentación localmente se requiere además `uv` (ver sección *Documentación* en el `README.md` del repositorio).
 
 ---
 
 ## Compilación
 
-Compila el parser, el scanner y todos los módulos del compilador, generando el
-ejecutable `./mi_compilador` en la raíz del repositorio:
+El script principal genera el analizador léxico, el analizador sintáctico y compila todos los módulos en el ejecutable `./mi_compilador` en la raíz del repositorio:
 
 ```bash
 bash build.sh
 ```
 
-Hay que volver a correrlo después de cualquier cambio en `src/` o `include/`. Si
-se agrega un `.c` nuevo, hay que sumarlo a mano a la lista de `gcc` en
-`build.sh` y a las suites de `test_suite.sh` que lo necesiten.
-
-La compilación no emite ningún *warning*. Si aparece alguno, se corrige antes de
-seguir.
+Debe ejecutarse nuevamente tras cualquier modificación en `src/` o `include/`. Si se incorpora un nuevo archivo `.c`, debe agregarse a la invocación de `gcc` en `build.sh` y a las suites correspondientes en `test_suite.sh`. La compilación está configurada para no emitir *warnings*.
 
 ---
 
@@ -45,57 +38,35 @@ seguir.
 bash test_suite.sh
 ```
 
-Compila y corre once suites con Unity: diez unitarias, una por módulo (lexer,
-parser, AST, tabla de símbolos, análisis semántico, TAC, análisis de variables
-vivas, optimizador, código objeto y línea de comandos), y una de integración. En
-total **294 tests**.
+Compila y ejecuta once suites basadas en Unity: diez suites unitarias (lexer, parser, AST, tabla de símbolos, análisis semántico, TAC, análisis de variables vivas, optimizador, código objeto y línea de comandos) y una suite de integración, sumando 294 tests.
 
-### Cómo está organizada la batería
+### Organización de la batería de pruebas
 
-Cada suite unitaria prueba **una sola etapa**: su Arrange arma a mano la salida de
-la etapa anterior, el Act ejecuta la etapa bajo prueba y el Assert mira solo lo que
-esa etapa produce. Así, un defecto del parser no hace fallar los tests del
-optimizador, y un test rojo apunta directamente al módulo con el problema. Cada
-suite enlaza solo los fuentes de su etapa y los módulos de datos que recibe.
+Cada suite unitaria evalúa una única etapa del pipeline: la fase *Arrange* construye la estructura de entrada (equivalente a la salida de la etapa previa), *Act* ejecuta el módulo bajo prueba y *Assert* verifica únicamente su salida. Cada binario de prueba enlaza solo los archivos fuente de su etapa y las estructuras de datos de las que depende.
 
-| Suite | Entrada que arma el test | Cómo la arma |
+| Suite | Entrada | Construcción de la entrada |
 | --- | --- | --- |
-| `test_lexer.c`, `test_parser.c`, `test_ast.c` | Texto C-TDS | Cadena con el programa |
-| `test_semantic.c` | AST **sin anotar** (lo que entrega el parser) | `tests/support/ast_builder.h`: `astProgram`, `astMethod`, `astAssignment`, … |
-| `test_tac.c` | AST **anotado** (uid, alcance y tipos resueltos) | `ast_builder.h`: `astGlobal`, `astLocal`, `astUse`, `astStore`, `astInvoke`, … |
-| `test_live_variable_analysis.c`, `test_optimizer.c`, `test_object_code.c` | TAC | Instrucciones construidas a mano, o el listado en formato `.ci` con `buildTAC` (`tests/support/tac_builder.h`) |
-| `test_integration.c` | Texto C-TDS | Compila de punta a punta, ejecuta y compara el código de salida |
+| `test_lexer.c`, `test_parser.c`, `test_ast.c` | Código fuente C-TDS | Cadena de texto en el test |
+| `test_semantic.c` | AST sin anotar | Constructores de `tests/support/ast_builder.h` (`astProgram`, `astMethod`, `astAssignment`, …) |
+| `test_tac.c` | AST anotado (`uid`, alcance y tipos resueltos) | Constructores de `ast_builder.h` (`astGlobal`, `astLocal`, `astUse`, `astStore`, `astInvoke`, …) |
+| `test_live_variable_analysis.c`, `test_optimizer.c`, `test_object_code.c` | Lista TAC | Instrucciones manuales o texto en formato `.ci` parseado con `buildTAC` (`tests/support/tac_builder.h`) |
+| `test_integration.c` | Código fuente C-TDS | Compilación completa, ejecución del binario y verificación del código de salida |
 
-Dos excepciones, deliberadas:
+Existen dos particularidades en este esquema:
 
-- **Lexer, parser y AST parten de texto.** El parser consume tokens llamando a
-  `yylex` directamente, así que no hay una "salida del lexer" que se pueda armar
-  por separado; el texto es la entrada natural de esas tres suites.
-- **`test_integration.c` atraviesa todas las etapas a propósito.** Es la única
-  suite de punta a punta y tiene pocos tests, simples: un programa mínimo que
-  corre de principio a fin, los ejemplos de `examples/`, llamadas y pasaje por
-  pila, ámbitos, cortocircuito, los límites del generador y tres programas que
-  deben dar el mismo resultado con y sin optimizar. El detalle de cada etapa ya
-  lo cubren las suites unitarias.
-  Un fallo acá sin un fallo en las suites unitarias señala un problema de
-  integración entre etapas o un caso que ninguna suite unitaria cubre todavía.
+- **Lexer, parser y AST parten de texto fuente:** dado que Bison invoca a `yylex` directamente durante el análisis sintáctico, las tres primeras suites toman cadenas con código C-TDS como entrada.
+- **`test_integration.c` evalúa el pipeline de punta a punta:** verifica la interacción entre todas las fases mediante programas completos (los ejemplos de `examples/`, llamadas y pasaje de argumentos por pila, ámbitos, cortocircuito, casos límite del generador y equivalencia semántica con y sin optimizaciones).
 
-Para agregar un caso a una etapa intermedia conviene obtener su entrada con el
-propio compilador y pegarla en el test: `-target codinter` imprime el TAC en el
-formato que acepta `buildTAC`, y `-target sem` muestra el AST anotado que hay que
-reproducir con `ast_builder.h`.
+Para construir casos de prueba en etapas intermedias se puede utilizar el propio compilador: `-target codinter` emite el TAC en el formato aceptado por `buildTAC`, y `-target sem` muestra la estructura del AST anotado a reproducir mediante `ast_builder.h`.
 
-La salida muestra una línea `[PASS]`/`[FAIL]` por test, agrupada por suite. Si
-alguno falla, se indica la línea del caso y su programa:
+La salida por defecto muestra el estado `[PASS]` o `[FAIL]` de cada test agrupado por suite:
 
 ```
   [FAIL] test_error_if_while_mal_formados
          -> linea 215: deberia RECHAZAR: void main(){ while x < 3 { } }
 ```
 
-El script termina con código 0 si todos pasan y 1 si alguno falla o no compila.
-Para ver la salida cruda de Unity, junto con los *warnings* de Bison y los
-mensajes de error que imprime el compilador en los casos inválidos:
+El script finaliza con código `0` si todas las pruebas pasan y `1` si alguna falla o no compila. Para inspeccionar la salida completa de Unity junto con los mensajes emitidos por el compilador en los casos de error:
 
 ```bash
 VERBOSE=1 bash test_suite.sh
@@ -109,91 +80,72 @@ VERBOSE=1 bash test_suite.sh
 ./mi_compilador [opciones] archivo.ctds
 ```
 
-El archivo de entrada es **obligatorio**, no puede empezar con `-` y **debe
-tener extensión `.ctds`**. No se lee de la entrada estándar.
+El archivo de entrada es obligatorio, no puede comenzar con `-` y debe tener extensión `.ctds`. No se soporta lectura desde `stdin`.
 
-Sin `-target`, el compilador recorre todas las fases y produce el **ejecutable**
-`nombreArchivo.out`:
+Cuando no se especifica `-target`, el compilador ejecuta todas las etapas y genera el ejecutable `nombreArchivo.out`:
 
 ```bash
-./mi_compilador examples/factorial.ctds   # -> examples/factorial.out
-./examples/factorial.out                  # ejecutarlo
+./mi_compilador examples/factorial.ctds   # genera examples/factorial.out
+./examples/factorial.out                  # ejecuta el binario
 ```
 
-Como C-TDS no tiene salida por pantalla, la forma de observar el resultado de un
-programa es el **código de salida de `main`**, que es lo que devuelve el proceso.
-Sirve solo con los programas cuyo `main` devuelve `int`; `factorial.ctds` tiene
-`void main`, así que siempre termina en 0. Un ejemplo que sí devuelve un valor:
+Dado que C-TDS carece de funciones de entrada/salida estándar, el resultado de ejecución se observa a través del código de retorno del proceso (en programas donde `main` retorna `int`; si `main` es `void`, el proceso retorna siempre `0`):
 
 ```bash
 ./mi_compilador examples/dead_code.ctds
-./examples/dead_code.out; echo $?         # -> 10
+./examples/dead_code.out; echo $?         # imprime 10
 ```
 
-### Opciones
+### Opciones de línea de comandos
 
-| Opción | Acción |
+| Opción | Descripción |
 | --- | --- |
-| `-o <salida>` | Nombre del archivo de salida, en vez del que se deduce de la etapa |
-| `-target <etapa>` | Compila hasta esa etapa: `scan`, `parse`, `sem`, `codinter`, `assembly` |
-| `-opt [nombre]` | Aplica optimizaciones; `all` son todas. Por defecto ninguna |
-| `-debug` | Imprime información de debugging por `stdout` |
+| `-o <salida>` | Define la ruta del archivo de salida en lugar de deducirla del nombre de entrada |
+| `-target <etapa>` | Ejecuta el pipeline hasta la etapa indicada: `scan`, `parse`, `sem`, `codinter`, `assembly` |
+| `-opt [nombre]` | Habilita optimizaciones (`all` o lista separada por comas). Desactivado por defecto |
+| `-debug` | Imprime información diagnóstica de las etapas en ejecución por `stdout` |
 
-**Sin `-debug`, una compilación exitosa no imprime nada**: el resultado se
-escribe en un archivo. Los errores siempre van a `stderr`, y cualquier error
-(de argumentos, léxico, sintáctico o semántico) termina con código 1 y no deja
-archivo de salida.
+Sin la opción `-debug`, una compilación exitosa no produce salida por consola y escribe únicamente el archivo resultante. Los diagnósticos de error se emiten por `stderr`; ante cualquier error (de invocación, léxico, sintáctico o semántico), el proceso retorna `1` sin dejar archivo de salida.
 
-### Compilar hasta una etapa
+### Salida por etapa (`-target`)
 
-Con `-target`, cada etapa escribe un archivo con el nombre del fuente y su
-propia extensión:
+Al especificar `-target`, el compilador detiene el pipeline tras completar la fase indicada y genera un archivo con la extensión correspondiente:
 
-| `-target` | Salida | Contenido |
+| `-target` | Extensión | Contenido |
 | --- | --- | --- |
-| `scan` | `.lex` | La secuencia de tokens, con su número de línea y su lexema |
-| `parse` | `.sint` | El AST tal como lo construye el parser, sin anotar |
-| `sem` | `.sem` | El AST anotado: tipo y `uid` de cada identificador |
-| `codinter` | `.ci` | El código de tres direcciones |
-| `assembly` | `.ass` | Assembly x86-64 (GNU Assembler, sintaxis AT&T) |
+| `scan` | `.lex` | Secuencia de tokens reconocidos con número de línea y lexema |
+| `parse` | `.sint` | Árbol de sintaxis abstracta (AST) sin anotaciones semánticas |
+| `sem` | `.sem` | AST anotado con tipos resueltos y `uid` de símbolos |
+| `codinter` | `.ci` | Código intermedio de tres direcciones (TAC) |
+| `assembly` | `.ass` | Código ensamblador x86-64 (sintaxis AT&T para GNU Assembler) |
 
-Con `-opt` la extensión pasa a ser `.opt`.
+Si se combina `-target` con `-opt`, la extensión de salida pasa a ser `.opt`:
 
 ```bash
-./mi_compilador -target scan examples/factorial.ctds      # -> examples/factorial.lex
-./mi_compilador -target codinter examples/factorial.ctds  # -> examples/factorial.ci
+./mi_compilador -target scan examples/factorial.ctds               # -> examples/factorial.lex
+./mi_compilador -target codinter examples/factorial.ctds           # -> examples/factorial.ci
 ./mi_compilador -opt all -target codinter examples/factorial.ctds  # -> examples/factorial.opt
-./mi_compilador -o miprograma examples/factorial.ctds     # -> miprograma (ejecutable)
+./mi_compilador -o miprograma examples/factorial.ctds              # -> miprograma (ejecutable)
 ```
 
 ---
 
-## Prueba de humo
+## Verificación Rápida
 
-Después de cada cambio, estos dos pasos en orden:
+Tras realizar cambios en el código fuente, se recomienda recompilar y ejecutar la batería de pruebas:
 
 ```bash
 ./build.sh && ./test_suite.sh
 ```
 
-El `&&` importa: si la build falla, no tiene sentido correr los tests. Y ojo que
-los dos scripts regeneran Flex y Bison por su cuenta, así que `test_suite.sh`
-compila su propia copia y **no** valida el ejecutable que dejó `build.sh`. Por
-eso al final conviene probar el compilador de verdad sobre un ejemplo:
+Dado que `test_suite.sh` compila sus propios binarios de prueba de manera independiente, para verificar también el ejecutable `./mi_compilador` generado por `build.sh` se puede compilar `examples/programa.ctds` (que ejercita todas las construcciones de la gramática) y comprobar el rechazo de programas inválidos:
 
 ```bash
 ./mi_compilador examples/programa.ctds
+./mi_compilador examples/programa_con_error.ctds   # debe reportar error semántico y salir con 1
 ```
 
-`programa.ctds` usa todas las construcciones de la gramática, así que sirve de
-prueba de humo de todas las fases de una sola pasada. Para chequear que los
-errores se siguen detectando, `./mi_compilador examples/programa_con_error.ctds`
-tiene que reportar un error semántico y salir con código 1.
-
-Para verificar que una optimización no cambió la semántica, el chequeo es
-compilar el mismo programa con y sin `-opt all`, ejecutar los dos binarios y
-comparar sus códigos de salida: tienen que coincidir entre sí y con el valor
-esperado.
+Para validar que las pasadas de optimización preserven el comportamiento observable, se compila un mismo programa con y sin `-opt all`, se ejecutan ambos binarios y se verifica que sus códigos de salida coincidan.
 
 ---
 

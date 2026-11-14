@@ -2,62 +2,49 @@
 
 **Archivos:** `include/ast.h`, `src/parser/ast.c` (535 líneas)
 
-La estructura que produce el [parser](02-analisis-sintactico.md) y que consumen
-todas las fases siguientes.
+Estructura arbórea construida por el [parser](02-analisis-sintactico.md), anotada en el lugar por el análisis semántico y recorrida por el generador de código intermedio.
 
 ---
 
 ## 1. Qué problema resuelve
 
-Representar el programa como un árbol donde cada nodo es una construcción del
-lenguaje y sus hijos son sus partes, descartando todo lo que era solo sintaxis
-(paréntesis, llaves, comas, palabras clave). Es **la interfaz entre el front-end
-y el resto del compilador**: el semántico lo anota y el generador de TAC lo
-recorre.
+Representar la estructura jerárquica del programa donde cada nodo modela una construcción del lenguaje y sus hijos representan sus subcomponentes, descartando los elementos puramente sintácticos (paréntesis, llaves, comas, punto y coma, palabras clave).
 
-Si hay una estructura que conviene conocer de memoria para la defensa, es esta.
+El AST es la primera representación intermedia del compilador: conecta el front-end con el análisis semántico (que decora sus nodos con tipos y símbolos resueltos) y con la generación de [TAC](../05-codigo-intermedio/01-representacion-tac.md).
 
-### Qué construcciones tienen nodo y cuáles delegan
+### Qué construcciones generan nodo y cuáles delegan
 
-El criterio de diseño del árbol es directo: **si una construcción de la gramática no aporta significado propio, no se convierte en un nodo del AST sino que delega en su hijo.**
+Si una producción de la gramática solo agrupa alternativas sintácticas sin introducir semántica propia, delega directamente en su hijo (`{ $$ = $1; }`):
 
-- **`Statement` y `Expression` delegan (`{ $$ = $1; }`):** son categorías puramente sintácticas que agrupan alternativas (asignaciones, llamadas, operaciones, literales). No existen `STATEMENT_NODE` ni `EXPRESSION_NODE` porque envolverían sin aportar información nueva.
-- **`Block` sí crea `BLOCK_NODE`:** aunque aparece dentro de `Statement`, agrupa una lista de declaraciones y sentencias y además delimita un ámbito léxico en el programa.
+- **`Statement` y `Expression` delegan:** no existen `STATEMENT_NODE` ni `EXPRESSION_NODE`; cada alternativa produce directamente su nodo específico (`ASSIGNMENT_NODE`, `OPERATOR_NODE`, `CONSTANT_NODE`, etc.), y `'(' Expression ')'` devuelve el subárbol interno sin envolverlo.
+- **`Block` genera `BLOCK_NODE`:** agrupa una secuencia de declaraciones y sentencias y delimita además un nuevo ámbito léxico durante el análisis semántico.
 
 ---
 
 ## 2. Interfaz pública
 
-| Función | Para qué |
+`include/ast.h` define el enum `NodeType`, la estructura `NodeAST`, las macros de acceso a hijos (§6) y las siguientes funciones públicas:
+
+| Función | Propósito |
 | --- | --- |
-| `newNode(nodeType, symbol, left, mid, right)` | Constructor genérico, hasta tres hijos |
-| `newOperatorNode(operation, left, right)` | Nodo de operación unaria o binaria |
-| `newMethodDeclaration(returnType, name, parameters, body)` | Declaración de método |
-| `newParameterDeclaration(type, id)` | Declaración de un parámetro formal |
-| `newIdentifierNode(id)` | Referencia a un identificador (`ID_NODE`) |
-| `newAssignmentNode(id, expression)` | Asignación |
-| `newMethodCallNode(id, arguments)` | Llamada; adopta la lista de argumentos |
-| `newBlockNode(items)` | Bloque; adopta la lista de declaraciones y sentencias |
-| `newParametersNode(parameters)` | Contenedor de parámetros; adopta la lista |
-| `newReturnNode(expression)` | `return`, con o sin expresión |
-| `newWhileNode(condition, body)` | `while` |
-| `newIfElseNode(condition, ifBlock, elseBlock)` | `if`, con o sin `else` |
-| `newIntLiteralNode(int)` / `newFloatLiteralNode(float)` / `newBoolLiteralNode(int)` | Literales |
-| `freeAST(node)` | Libera un subárbol en postorden |
-| `resolveNodeSymbol(node, declared)` | Reapunta una referencia al símbolo declarado y libera el provisorio (§8) |
-| `fprintAST(out, node, level)` | Imprime el árbol a un stream |
-| `printAST(node, level)` | Lo mismo, a `stdout` |
+| `newNode(nodeType, symbol, left, mid, right)` | Constructor genérico de hasta tres hijos; compacta hijos `NULL` (§5) |
+| `newOperatorNode(operation, left, right)` | Construye un `OPERATOR_NODE` unario (`right == NULL`) o binario y asigna `operationType` |
+| `newMethodDeclaration(returnType, name, parameters, body)` | Construye un `METHOD_DECLARATION_NODE` y registra `parameters` en `symbol->parameters` |
+| `newParameterDeclaration(type, id)` | Construye un `VARIABLE_DECLARATION_NODE` para un parámetro formal |
+| `newIdentifierNode(id)` | Construye un `ID_NODE` con símbolo provisorio y `TYPE_VOID` |
+| `newAssignmentNode(id, expression)` | Construye un `ASSIGNMENT_NODE` con símbolo destino provisorio y la expresión como hijo |
+| `newMethodCallNode(id, arguments)` | Construye un `METHOD_CALL_NODE` y adopta la lista de argumentos |
+| `newBlockNode(items)` | Construye un `BLOCK_NODE` y adopta la lista de declaraciones y sentencias |
+| `newParametersNode(parameters)` | Construye un `PARAMETERS_NODE` y adopta la lista de parámetros |
+| `newReturnNode(expression)` | Construye un `RETURN_NODE` con 0 o 1 hijo |
+| `newWhileNode(condition, body)` | Construye un `WHILE_NODE` con `[condition, body]` |
+| `newIfElseNode(condition, ifBlock, elseBlock)` | Construye un `IF_ELSE_NODE` con 2 o 3 hijos |
+| `newIntLiteralNode(int)` / `newFloatLiteralNode(float)` / `newBoolLiteralNode(int)` | Construyen un `CONSTANT_NODE` del tipo correspondiente |
+| `resolveNodeSymbol(node, declared)` | Reapunta un nodo al `Symbol` declarado en la tabla y libera el símbolo provisorio (§7) |
+| `freeAST(node)` | Libera recursivamente un subárbol en **postorden** (hijos antes que el padre) |
+| `fprintAST(out, node, level)` / `printAST(node, level)` | Imprimen el árbol en **preorden** con indentación jerárquica (`  \| ` por nivel) |
 
-Más el enum `NodeType`, la estructura `NodeAST` y ocho macros de acceso (§7).
-
-**Hay un constructor con nombre por cada construcción del lenguaje.** Las
-acciones de `bison.y` llaman a `newWhileNode($3, $5)` y no a
-`newNode(WHILE_NODE, NULL, $3, $5, NULL)`: la acción dice qué se construye, y el
-orden de los hijos de cada nodo queda escrito una sola vez, acá.
-
-**Quién lo usa:** `bison.y` para construirlo; `semantic_analyzer.c` y
-`type_checker.c` para anotarlo; `intermediate_code.c` para generar el TAC;
-`driver.c` para imprimirlo en `-target parse` y `-target sem`.
+Adicionalmente, `ast.c` define `getDataTypeName(type)` (declarada en `types.h`; ver [utilidades y tipos](../02-infraestructura/04-utilidades-y-tipos.md)) y las funciones internas `newSymbolNode` (factoriza la creación de nodos con `Symbol`), `resolveNodeArray` (adopta en $O(1)$ el buffer de un `NodeArray` creado en [acciones del parser](03-acciones-del-parser.md)), `describeNode` y `getOperationName` (formatean cada línea de salida de `.sint` y `.sem`). Si falla una reserva de memoria en cualquier constructor, el propio constructor libera el nombre, el símbolo y los subárboles ya recibidos para no dejar fugas.
 
 ---
 
@@ -65,90 +52,57 @@ orden de los hijos de cada nodo queda escrito una sola vez, acá.
 
 ```c
 typedef struct NodeAST {
-    NodeType nodeType;           /* Categoría sintáctica */
-    DataType type;               /* Tipo de dato inferido o declarado */
+    NodeType nodeType;           /* Categoría sintáctica del nodo */
+    DataType type;               /* Tipo de dato declarado o inferido */
     Symbol *symbol;              /* Símbolo asociado (NULL si no aplica) */
-    OperationType operationType; /* Operador (solo válido en OPERATOR_NODE) */
-    int line;                    /* Línea del fuente */
-    struct NodeAST **children;   /* Arreglo dinámico de hijos */
-    int childCount;              /* Cuántos hijos hay */
+    OperationType operationType; /* Operador (válido solo si nodeType == OPERATOR_NODE) */
+    int line;                    /* Línea en el código fuente */
+    struct NodeAST **children;   /* Arreglo dinámico de punteros a hijos */
+    int childCount;              /* Cantidad de hijos */
 } NodeAST;
 ```
 
-Siete campos, y conviene saber por qué está cada uno:
-
-| Campo | Por qué existe |
+| Campo | Rol en el compilador |
 | --- | --- |
-| `nodeType` | Lo que discrimina el `switch` de todas las fases. Es el "qué soy" |
-| `type` | El tipo de dato. Lo pone el **análisis semántico**, no el parser: al construirse vale `TYPE_VOID` |
-| `symbol` | El nombre y los datos del identificador o constante. `NULL` en los nodos que no nombran nada (`BLOCK_NODE`, `IF_ELSE_NODE`, `WHILE_NODE`, `RETURN_NODE`, `OPERATOR_NODE`, `PARAMETERS_NODE`) |
-| `operationType` | Qué operador es. **Solo tiene sentido si `nodeType == OPERATOR_NODE`**: ver §12 |
-| `line` | Para que los errores de las fases posteriores apunten a algún lugar del fuente. Ver §9 |
-| `children` / `childCount` | Los hijos. Arreglo y no punteros fijos: ver abajo |
+| `nodeType` | Discriminante evaluado en los `switch` del análisis semántico, chequeo de tipos, impresión y TAC |
+| `type` | Inicializado en `TYPE_VOID` por `newNode` (salvo en declaraciones tipadas y literales); completado por el análisis semántico |
+| `symbol` | Puntero al `Symbol` con el nombre o valor literal. Es `NULL` en nodos estructurales (`BLOCK_NODE`, `IF_ELSE_NODE`, `WHILE_NODE`, `RETURN_NODE`, `OPERATOR_NODE`, `PARAMETERS_NODE`) |
+| `operationType` | Operador aritmético, relacional o lógico. Solo lo inicializa `newOperatorNode` |
+| `line` | Línea de origen para diagnósticos semánticos (ver §8) |
+| `children` / `childCount` | Arreglo contiguo de subárboles hijos |
 
-### Por qué un nodo genérico y no uno por construcción
+### Nodo uniforme frente a unión etiquetada por construcción
 
-La alternativa de manual es una estructura por tipo de nodo (`IfNode` con campos
-`condition`, `thenBlock`, `elseBlock`; `WhileNode` con `condition` y `body`…),
-unidas por una unión etiquetada. Da seguridad de tipos: `ifNode->elseBlock` no
-compila sobre un `while`.
+En lugar de definir una `struct` distinta por cada categoría sintáctica (`IfNode`, `WhileNode`, `BinaryOpNode`, etc.) dentro de una `union`, se utiliza un único tipo `NodeAST` con un arreglo dinámico `children`. Esto unifica el manejo de los nodos de aridad fija (`IF_ELSE_NODE`, `WHILE_NODE`, `OPERATOR_NODE`) con los de aridad variable (`BLOCK_NODE`, `PARAMETERS_NODE`, `METHOD_CALL_NODE`).
 
-Acá se eligió un **nodo genérico con arreglo de hijos**, y la razón es que hay
-construcciones de aridad variable: un bloque tiene N sentencias, un método N
-parámetros, una llamada N argumentos. Con campos fijos esas tres igual
-necesitarían un arreglo, así que se unificó todo en el mismo mecanismo.
-
-El precio es que **el significado de cada posición de `children` no está en el
-tipo**, es una convención. Las macros de §7 son el parche para eso, y la tabla de
-§4 es la convención completa. Es la decisión de diseño más discutible del
-proyecto, y la pregunta "¿por qué no un nodo por construcción?" tiene esa
-respuesta: aridad variable.
+Como contrapartida, el rol semántico de cada posición `children[i]` no está codificado en el sistema de tipos de C sino por convención. Para centralizar esa convención, el orden de los hijos solo se escribe dentro de los constructores de `ast.c` y se lee mediante las macros de acceso de `ast.h` (§6).
 
 ---
 
-## 4. El layout de hijos de cada nodo
+## 4. Layout de hijos por tipo de nodo
 
-**Esta es la tabla que hay que saber.** Verificada contra `bison.y`, contra
-`describeNode` y contra la salida real de `-target sem`.
-
-| `NodeType` | `symbol` | Hijos | `operationType` |
+| `NodeType` | `symbol` | Hijos (`children`) | `operationType` |
 | --- | --- | --- | --- |
-| `BLOCK_NODE` | — | N: declaraciones primero, sentencias después | — |
-| `VARIABLE_DECLARATION_NODE` | La variable | 0 | — |
-| `METHOD_DECLARATION_NODE` | El método | **Siempre 2**: `[parameters, body]` | — |
-| `PARAMETERS_NODE` | — | N declaraciones de parámetro (puede ser 0) | — |
-| `ASSIGNMENT_NODE` | La variable destino | 1: la expresión | — |
-| `RETURN_NODE` | — | 0 o 1: la expresión si la hay | — |
-| `IF_ELSE_NODE` | — | 2: `[cond, ifBlock]` · 3 con else: `[cond, ifBlock, elseBlock]` | — |
-| `WHILE_NODE` | — | 2: `[cond, block]` | — |
-| `OPERATOR_NODE` | — | 1 si es unario, 2 si es binario | **El operador** |
-| `METHOD_CALL_NODE` | El método | N argumentos (puede ser 0) | — |
-| `ID_NODE` | La variable referenciada | 0 | — |
-| `CONSTANT_NODE` | El valor del literal | 0 | — |
+| `BLOCK_NODE` | `NULL` | `N` hijos: declaraciones locales primero, sentencias después | — |
+| `VARIABLE_DECLARATION_NODE` | Variable o parámetro (`VARIABLE_SYMBOL`) | `0` | — |
+| `METHOD_DECLARATION_NODE` | Método (`METHOD_SYMBOL`; `symbol->parameters` apunta a `children[0]`) | Siempre `2`: `[parameters, body]` | — |
+| `PARAMETERS_NODE` | `NULL` | `N` nodos `VARIABLE_DECLARATION_NODE` (puede ser `0`) | — |
+| `ASSIGNMENT_NODE` | Variable destino (`VARIABLE_SYMBOL`, inicialmente provisorio) | `1`: `[expression]` | — |
+| `RETURN_NODE` | `NULL` | `0` (`return;`) o `1` (`[expression]`) | — |
+| `IF_ELSE_NODE` | `NULL` | `2` sin `else`: `[cond, ifBlock]` · `3` con `else`: `[cond, ifBlock, elseBlock]` | — |
+| `WHILE_NODE` | `NULL` | `2`: `[cond, block]` | — |
+| `OPERATOR_NODE` | `NULL` | `1` si es unario (`OP_UMINUS`, `OP_NOT`), `2` si es binario | `OperationType` |
+| `METHOD_CALL_NODE` | Método invocado (`METHOD_SYMBOL`, inicialmente provisorio) | `N` expresiones de argumento (puede ser `0`) | — |
+| `ID_NODE` | Variable referenciada (`VARIABLE_SYMBOL`, inicialmente provisorio) | `0` | — |
+| `CONSTANT_NODE` | Literal sin nombre (`CONSTANT_SYMBOL`, `id == NULL`) | `0` | — |
 
-Tres consecuencias que se usan todo el tiempo:
+Invariantes relevantes para las fases consumidoras:
 
-- **Un `if` sin `else` tiene 2 hijos, no 3 con el tercero en `NULL`.** La forma de
-  preguntar si hay rama else es `GET_ELSE_BLOCK(node) == NULL`, que devuelve
-  `NULL` porque `childCount` es 2.
-- **`METHOD_DECLARATION_NODE` siempre tiene exactamente 2 hijos**, incluso si el
-  método no tiene parámetros: en ese caso `children[0]` es un `PARAMETERS_NODE`
-  vacío, no `NULL`. Por eso ninguna fase necesita chequear antes de entrar.
-- **Un bloque mezcla declaraciones y sentencias en un solo arreglo**, en el orden
-  del fuente. La gramática garantiza que las declaraciones vienen primero.
+- **`IF_ELSE_NODE` sin rama `else` tiene `childCount == 2`**, no 3 con `children[2] == NULL`. La presencia de rama `else` se consulta mediante `GET_ELSE_BLOCK(node) != NULL`.
+- **`METHOD_DECLARATION_NODE` tiene siempre 2 hijos:** cuando un método no recibe parámetros, `children[0]` es un `PARAMETERS_NODE` con `childCount == 0`, nunca `NULL`. Además, `newMethodDeclaration` guarda ese mismo puntero en `symbol->parameters` para que el chequeador de tipos valide aridad y tipos en las llamadas.
+- **Representación de literales en `CONSTANT_NODE`:** su `Symbol` se crea con `id = NULL`; los literales booleanos almacenan `1` o `0` en `symbol->value.intValue`.
 
-### Verificación
-
-```c
-void main(){
-    int a;
-    a = 1;
-    while (a < 3) { a = a + 1; }
-    if (a > 2) { a = 5; }
-    if (a > 9) { a = 6; } else { a = 7; }
-    return;
-}
-```
+Ejemplo de salida en `-target sem`:
 
 ```
   |   | Bloque
@@ -156,21 +110,21 @@ void main(){
   |   |   | Asignacion a: a #2 (Tipo INT)
   |   |   |   | Constante INT: 1
   |   |   | While
-  |   |   |   | Operacion: <          <- hijo 0: condicion
-  |   |   |   | Bloque                <- hijo 1: cuerpo
+  |   |   |   | Operacion: <          <- children[0]: condición
+  |   |   |   | Bloque                <- children[1]: cuerpo
   |   |   | If-Else
-  |   |   |   | Operacion: >          <- hijo 0
-  |   |   |   | Bloque                <- hijo 1, sin else: solo 2 hijos
+  |   |   |   | Operacion: >          <- children[0]: condición
+  |   |   |   | Bloque                <- children[1]: bloque then (childCount == 2)
   |   |   | If-Else
   |   |   |   | Operacion: >
-  |   |   |   | Bloque                <- hijo 1
-  |   |   |   | Bloque                <- hijo 2: rama else
-  |   |   | Return                    <- 0 hijos: return sin expresion
+  |   |   |   | Bloque                <- children[1]: bloque then
+  |   |   |   | Bloque                <- children[2]: bloque else (childCount == 3)
+  |   |   | Return                    <- childCount == 0
 ```
 
 ---
 
-## 5. La compactación de hijos en `newNode`
+## 5. Compactación de hijos en `newNode`
 
 ```c
 int count = 0;
@@ -180,163 +134,20 @@ if (mid)   temp[count++] = mid;
 if (right) temp[count++] = right;
 ```
 
-`newNode` recibe hasta tres hijos y **descarta los `NULL`, corriendo los que
-quedan hacia la izquierda**. O sea que la posición en la que un hijo termina no
-es necesariamente la posición del parámetro.
+`newNode` recibe hasta tres punteros y compacta hacia la izquierda los que no son `NULL`, reservando `children` únicamente para los `count` hijos presentes (o dejando `children = NULL` si `count == 0`):
 
-Hoy los constructores con nombre siempre pasan los hijos presentes primero y los
-opcionales al final, así que la compactación solo elimina los ausentes del
-final:
-
-| Constructor | Llama a `newNode` con | Resultado |
+| Constructor | Argumentos pasados a `newNode` | `childCount` resultante |
 | --- | --- | --- |
-| `newIfElseNode(cond, ifBlock, NULL)` | `(cond, ifBlock, NULL)` | 2 hijos: `if` sin `else` |
-| `newReturnNode(NULL)` | `(NULL, NULL, NULL)` | 0 hijos: `return` sin expresión |
-| `newWhileNode(cond, body)` | `(cond, body, NULL)` | 2 hijos |
-| `newMethodDeclaration(...)` | `(parameters, body, NULL)` | 2 hijos: `parameters` nunca es `NULL` |
+| `newIfElseNode(cond, ifBlock, NULL)` | `(cond, ifBlock, NULL)` | `2` |
+| `newIfElseNode(cond, ifBlock, elseBlock)` | `(cond, ifBlock, elseBlock)` | `3` |
+| `newReturnNode(NULL)` | `(NULL, NULL, NULL)` | `0` |
+| `newOperatorNode(OP_NOT, expr, NULL)` | `(expr, NULL, NULL)` | `1` |
 
-**Es carga estructural igual**: es lo que hace que un `if` sin `else` tenga
-`childCount == 2` y que `GET_ELSE_BLOCK` devuelva `NULL` por rango. Si alguien
-pasara un `NULL` en el medio, el hijo siguiente se correría un lugar y las macros
-de §7 leerían otra cosa. Por eso el orden de los argumentos de `newNode` vive
-dentro de los constructores con nombre y no en las acciones de la gramática.
+Debido a esta compactación, los hijos obligatorios deben pasarse siempre antes que los opcionales; si un argumento intermedio fuera `NULL` y uno posterior no lo fuera, el hijo posterior se desplazaría de índice y rompería las posiciones esperadas por las macros de acceso.
 
 ---
 
-## 6. Inventario de funciones
-
-### `newNode(nodeType, symbol, left, mid, right)`
-
-El constructor genérico. Reserva el nodo, pone `type = TYPE_VOID`, `line =
-yylineno`, compacta los hijos (§5) y aplica la heurística de línea (§9).
-
-**No inicializa `operationType`.** Ver §12.
-
-### `newOperatorNode(operation, left, right)`
-
-Envuelve a `newNode` con `OPERATOR_NODE` y después setea `operationType`. Para un
-unario se llama con `right == NULL` y el nodo queda con un solo hijo.
-
-Si el `newNode` falla, libera los dos subárboles que recibió: no los deja
-colgando sin dueño.
-
-### `newSymbolNode(...)` (privada): los nodos que llevan símbolo
-
-```c
-static NodeAST *newSymbolNode(NodeType nodeType, SymbolType symbolType, DataType dataType,
-                              char *id, NodeAST *parameters, NodeAST *left, NodeAST *mid);
-```
-
-El constructor común de todo nodo que nombra algo: crea el `Symbol` con
-`newSymbol(id, symbolType, dataType, parameters)`, lo envuelve en un nodo con
-`newNode` y pone `node->type = dataType`. Si cualquiera de las dos reservas
-falla, libera el nombre, el símbolo y los subárboles que recibió.
-
-Siete constructores públicos son una línea sobre ella:
-
-| Constructor | `NodeType` | `SymbolType` | Hijos |
-| --- | --- | --- | --- |
-| `newMethodDeclaration` | `METHOD_DECLARATION_NODE` | `METHOD_SYMBOL` | `[parameters, body]`; además guarda `parameters` en `symbol->parameters` |
-| `newParameterDeclaration` | `VARIABLE_DECLARATION_NODE` | `VARIABLE_SYMBOL` | 0 |
-| `newIdentifierNode` | `ID_NODE` | `VARIABLE_SYMBOL` (provisorio, tipo `VOID`) | 0 |
-| `newAssignmentNode` | `ASSIGNMENT_NODE` | `VARIABLE_SYMBOL` (provisorio) | `[expression]` |
-| `newMethodCallNode` | `METHOD_CALL_NODE` | `METHOD_SYMBOL` (provisorio) | los argumentos, adoptados de la lista |
-| `newConstantNode` (privada) | `CONSTANT_NODE` | `CONSTANT_SYMBOL` | 0 |
-
-`symbol->parameters` es lo que después usa el chequeo de tipos para validar la
-aridad y los tipos de las llamadas.
-
-### Los constructores que adoptan una lista: `resolveNodeArray` (privada)
-
-`newBlockNode`, `newParametersNode` y `newMethodCallNode` reciben el `NodeArray`
-que armó la gramática y lo convierten en los hijos del nodo con
-`resolveNodeArray`, **sin copiar**: el nodo adopta el buffer de punteros y se
-libera solo el contenedor. Si el nodo no se pudo crear, libera los nodos de la
-lista. El detalle está en la [acciones del parser](03-acciones-del-parser.md).
-
-### `newReturnNode`, `newWhileNode`, `newIfElseNode`
-
-Una línea cada una sobre `newNode`, sin símbolo, con los hijos en el orden de la
-tabla de §4.
-
-### `newIntLiteralNode`, `newFloatLiteralNode`, `newBoolLiteralNode`
-
-Las tres tienen la misma forma: piden un `CONSTANT_NODE` a `newConstantNode` y
-le guardan el valor en la unión de su `Symbol`.
-
-Dos detalles:
-
-- **El símbolo de una constante no tiene nombre**: `newSymbol(NULL, ...)`. No hay
-  identificador que nombrar.
-- **Los booleanos usan `value.intValue`**, no un campo propio: `true` es 1 y
-  `false` es 0. Esa representación se mantiene en todo el compilador, hasta el
-  assembly.
-
-### `freeAST(node)`
-
-Recorrido **postorden**: primero los hijos, después el arreglo, después el
-símbolo si le pertenece, y al final el nodo. El orden importa: liberar el nodo
-antes que los hijos perdería los punteros.
-
-La regla de propiedad del símbolo es lo interesante, y está en §8.
-
-### `resolveNodeSymbol(node, declared)`
-
-La usan el análisis semántico y el chequeo de tipos al resolver una referencia
-(un `ID_NODE`, el destino de una asignación o una llamada) contra la tabla de
-símbolos:
-
-```c
-void resolveNodeSymbol(NodeAST *node, Symbol *declared) {
-    bool isProvisional = (node->symbol != NULL && node->symbol->uid == 0);
-    if (isProvisional) {
-        freeSymbol(node->symbol);
-    }
-    node->symbol = declared;
-}
-```
-
-Libera el símbolo provisorio que había creado el parser solo para llevar el
-nombre, y deja el nodo apuntando al declarado. Si el nodo ya apuntaba a un
-símbolo registrado (`uid != 0`), solo reasigna: así una segunda resolución del
-mismo nodo no libera el símbolo de la tabla.
-
-### `fprintAST(out, node, level)` y `printAST(node, level)`
-
-El impresor. Recorrido **preorden** con indentación de `  | ` por nivel: primero
-se describe el nodo, después se bajan los hijos con `level + 1`.
-
-`printAST` es `fprintAST(stdout, ...)`. Los dos se usan: `driver.c` llama a
-`fprintAST` para escribir el archivo `.sint`/`.sem` y a `printAST` para la salida
-de `-debug`.
-
-### `describeNode(out, node)` (privada)
-
-El `switch` que imprime una línea por tipo de nodo. Es lo que define el formato
-de los archivos `.sint` y `.sem`, así que **cambiarlo cambia la salida de dos
-etapas**.
-
-Vale notar qué incluye cada línea, porque es lo que se lee al depurar:
-`Declaracion Variable: a #2 (Tipo INT)` muestra nombre, `uid` y tipo;
-`Operacion: +` muestra el operador; las constantes muestran el valor.
-
-El `default` imprime `Nodo Desconocido (Tipo %d)`, que es la red de seguridad si
-se agrega un `NodeType` y se olvida el caso acá.
-
-### `getOperationName(operation)` (privada)
-
-Traduce el `OperationType` al símbolo que se imprime. `OP_UMINUS` se muestra como
-`- (unario)` para distinguirlo de la resta.
-
-### `getDataTypeName(type)`
-
-Traduce el `DataType` a `"INT"`, `"BOOL"`, `"FLOAT"`, `"VOID"`, `"ERROR"` o
-`"UNKNOWN"`. **Está declarada en `types.h` pero definida acá**, que es una
-pequeña incoherencia de ubicación: pertenece conceptualmente a [utilidades y tipos](../02-infraestructura/04-utilidades-y-tipos.md).
-
----
-
-## 7. Las macros de acceso
+## 6. Macros de acceso
 
 ```c
 #define GET_CHILD(node, index) ((node)->childCount > (index) ? (node)->children[(index)] : NULL)
@@ -349,24 +160,33 @@ pequeña incoherencia de ubicación: pertenece conceptualmente a [utilidades y t
 #define GET_WHILE_BLOCK(node)  GET_CHILD(node, 1)
 ```
 
-Son **nombres para las posiciones de la tabla de §4**. Siete de las ocho son
-alias de `GET_CHILD(node, 0)` o `(node, 1)`: `GET_EXPRESSION`, `GET_LEFT` y
-`GET_CONDITION` son literalmente lo mismo. La diferencia es de documentación:
-`GET_CONDITION(ifNode)` dice qué se está leyendo, `node->children[0]` no.
-
-**`GET_CHILD` chequea el rango** y devuelve `NULL` si el índice no existe. Eso es
-lo que hace que `GET_ELSE_BLOCK` sea seguro sobre un `if` sin else, y lo que
-permite que el código de las fases posteriores no tenga que mirar `childCount`.
-
-Al ser macros y no funciones, `node` se evalúa varias veces: pasarles una
-expresión con efectos secundarios (`GET_LEFT(siguiente())`) la ejecutaría tres
-veces. En el proyecto siempre se les pasa una variable, así que no se nota.
+Documentan el rol del hijo accedido según el layout de §4 y verifican el límite `childCount > index`, devolviendo `NULL` cuando un hijo opcional no está presente (como `GET_ELSE_BLOCK` en un `if` sin `else` o `GET_EXPRESSION` en un `return;` vacío).
 
 ---
 
-## 8. La regla de propiedad de los símbolos
+## 7. Propiedad de memoria de los símbolos
 
-En `freeAST`:
+Durante el parseo, cada nodo con nombre crea su propio `Symbol`. Sin embargo, tras el análisis semántico, todos los nodos que referencian a una misma variable o método (`ID_NODE`, `ASSIGNMENT_NODE`, `METHOD_CALL_NODE`) pasan a compartir el único `Symbol` registrado en la tabla de símbolos.
+
+### Resolución de referencias (`resolveNodeSymbol`)
+
+Cuando el análisis semántico o el chequeador de tipos vinculan una referencia con su declaración en la tabla de símbolos, invocan `resolveNodeSymbol`:
+
+```c
+void resolveNodeSymbol(NodeAST *node, Symbol *declared) {
+    bool isProvisional = (node->symbol != NULL && node->symbol->uid == 0);
+    if (isProvisional) {
+        freeSymbol(node->symbol);
+    }
+    node->symbol = declared;
+}
+```
+
+Los símbolos creados por el parser nacen con `uid == 0`; `appendSymbol` les asigna un `uid > 0` recién al insertarlos en un ámbito. `resolveNodeSymbol` libera el símbolo provisorio (`uid == 0`) antes de reapuntar `node->symbol` al símbolo declarado. Si el nodo ya apuntaba a un símbolo registrado (`uid != 0`), solo reasigna el puntero sin liberarlo.
+
+### Regla de liberación en `freeAST`
+
+`freeAST` recorre el árbol en postorden y decide si debe liberar `node->symbol` según la siguiente condición:
 
 ```c
 bool hasOwnedSymbol = (node->symbol != NULL &&
@@ -379,48 +199,19 @@ if (hasOwnedSymbol) {
 }
 ```
 
-La pregunta que contesta es: **¿este nodo es dueño de su símbolo, o solo lo
-referencia?** Y es crítica, porque los símbolos se **comparten**: después del
-análisis semántico, todos los `ID_NODE` que mencionan la misma variable apuntan al
-*mismo* `Symbol`, el que está registrado en la tabla de símbolos.
-
-| Condición | Significa |
+| Condición | Motivo por el que el nodo es dueño del `Symbol` |
 | --- | --- |
-| Es una declaración de variable o de método | El nodo creó ese símbolo: es el dueño |
-| Es una constante | El símbolo se creó solo para el literal, nadie más lo comparte |
-| `symbol->uid == 0` | **El símbolo nunca se registró en ningún ámbito**: sigue siendo el provisorio que creó el parser |
+| `VARIABLE_DECLARATION_NODE` o `METHOD_DECLARATION_NODE` | El nodo representa la declaración que originó el símbolo |
+| `CONSTANT_NODE` | El símbolo del literal es exclusivo de ese nodo y no se inserta en la tabla de símbolos |
+| `symbol->uid == 0` | Símbolo provisorio de una referencia que nunca llegó a resolverse (por ejemplo, en un AST liberado tras el parseo o con un identificador no declarado) |
 
-El `uid` lo asigna `appendSymbol` al registrar un símbolo en un ámbito, y arranca
-en 0. Entonces `uid == 0` es la forma de preguntar "¿este símbolo quedó fuera de
-la tabla?". Si está en la tabla (`uid != 0`), liberarlo desde el nodo sería una
-doble liberación: el dueño es la tabla.
+Si una referencia ya fue resuelta (`uid != 0`), `hasOwnedSymbol` es `false` y `freeAST` no toca el símbolo para evitar una doble liberación cuando también se libera el nodo de declaración.
 
-Es una regla que funciona pero que **codifica la propiedad en un valor de dato**
-en lugar de en el tipo. Un campo `bool ownsSymbol` sería más explícito.
-
-### Los dos caminos de un símbolo provisorio
-
-Un símbolo provisorio (`uid == 0`) termina liberado por uno de dos caminos:
-
-1. **Si el semántico resuelve la referencia**, `resolveNodeSymbol` lo libera en
-   el momento de reemplazarlo por el declarado. Antes ese reemplazo era un
-   `node->symbol = resolvedSymbol` directo y el provisorio quedaba inalcanzable:
-   valgrind sobre `examples/factorial.ctds` informaba 8 bloques perdidos desde
-   `newSymbol`.
-2. **Si la referencia no se pudo resolver** (variable no declarada, por ejemplo),
-   el nodo conserva el provisorio y `freeAST` lo libera por la regla del
-   `uid == 0`.
-
-**`freeAST` nunca se llama sobre el árbol completo.** El driver no lo invoca: el
-AST vive hasta que termina el proceso. Las llamadas a `freeAST` están en los
-caminos de error por falta de memoria de `ast.c` y `parser_helpers.c`, y en los
-tests. Para un compilador que procesa un archivo y termina es una decisión
-defendible —el sistema operativo recupera todo— pero conviene poder decirlo como
-decisión y no como olvido.
+En una ejecución normal del compilador (`main.c`), el proceso termina inmediatamente después de la última etapa y el sistema operativo recupera la memoria sin invocar `freeAST(astRoot)`; `freeAST` se utiliza en los caminos de error de alocación y entre casos de prueba en las suites unitarias.
 
 ---
 
-## 9. El campo `line` y su heurística
+## 8. Número de línea y su heurística
 
 ```c
 node->line = yylineno;
@@ -431,184 +222,63 @@ if ((nodeType == IF_ELSE_NODE || nodeType == WHILE_NODE || nodeType == METHOD_DE
 }
 ```
 
-Por defecto, la línea de un nodo es `yylineno` **en el momento de la reducción**,
-que es la línea del *último* token que se consumió. Para una construcción que
-ocupa varias líneas, eso apunta al final y no al principio.
-
-Para `if` y `while` se corrige tomando la línea de la condición (su primer
-hijo), que está mucho más cerca de donde el programador escribió la
-construcción. Para un método, el primer hijo es el `PARAMETERS_NODE`, así que
-toma la línea de la lista de parámetros.
-
-### Verificación del efecto
-
-Con la heurística, un `if` cuya condición está en la línea 4 y cuyo cierre está
-en la 7 reporta la línea 4:
+Como las acciones sintácticas se ejecutan al reducir, `yylineno` refleja la línea del último token de la producción. En construcciones multilínea (`if`, `while`, declaración de método), ese último token es la llave de cierre `}` del cuerpo. Tomar `left->line` (la línea de la condición en `if`/`while`, o de `PARAMETERS_NODE` en un método) hace que los errores semánticos se reporten en la línea del encabezado:
 
 ```c
-    if (a)        // linea 4
-    {
-        a = 2;
-    }             // linea 7
+if (a)        // línea 4 -> reporta: "Error semantico en la linea 4: La condicion del if debe ser de tipo BOOL, pero es INT."
+{
+    a = 2;
+}             // línea 7 (yylineno al momento de reducir el IF_ELSE_NODE)
 ```
 
-```
-Error semantico en la linea 4: La condicion del if debe ser de tipo BOOL, pero es INT.
-```
-
-Sin heurística, una asignación que empieza en la línea 7 y termina en la 9
-reporta la 9:
-
-```c
-    b =           // linea 7
-        a +
-        1;        // linea 9
-```
-
-```
-Error semantico en la linea 9: El tipo de la expresion no coincide con la variable 'b'.
-```
-
-O sea: la precisión de los números de línea **no es uniforme**. Está arreglada
-donde más molestaba (las estructuras de control, que son las más largas) y queda
-aproximada en el resto. Una solución completa pediría que el léxico guardara la
-línea de inicio de cada token y que cada acción de la gramática la propagara.
+En sentencias simples repartidas en varias líneas (como una asignación multilínea sin estructura de control), `node->line` conserva el `yylineno` del `;` final.
 
 ---
 
-## 10. Conexión con las fases vecinas
+## 9. Anotación entre fases
 
-| Viene de | Qué cruza la frontera |
-| --- | --- |
-| `bison.y` y `parser_helpers.c` | Los nodos se crean durante las reducciones con los constructores de acá; las listas que acumula `parser_helpers.c` las adopta `resolveNodeArray` |
-| `symbol_table.c` | `Symbol`, `newSymbol`, `freeSymbol` |
+El AST no se clona ni se reconstruye entre etapas:
 
-| Va hacia | En qué estado |
-| --- | --- |
-| Análisis semántico | `type` en `TYPE_VOID`, `uid` en 0, símbolos provisorios. **El semántico anota el árbol en el lugar** |
-| [Generación de TAC](../05-codigo-intermedio/02-generacion-tac.md) | Árbol ya anotado: `type` resuelto en cada expresión, símbolos apuntando a la tabla |
-
-El punto importante: **el AST no se copia ni se transforma entre fases**. Es la
-misma estructura, que el semántico enriquece. Comparar el `.sint` con el `.sem`
-del mismo programa muestra exactamente qué agrega:
-
-```
-.sint ->   | Declaracion Variable: a #0 (Tipo INT)
-.sem  ->   | Declaracion Variable: a #1 (Tipo INT)
-```
-
-```
-.sint ->   | Asignacion a: a #0 (Tipo VOID)
-.sem  ->   | Asignacion a: a #1 (Tipo INT)
-```
+1. **Salida del parser (`-target parse`, archivo `.sint`):** las expresiones tienen `type = TYPE_VOID` y todos los símbolos tienen `uid = 0`.
+2. **Salida del análisis semántico (`-target sem`, archivo `.sem`):** el analizador semántico y el chequeador de tipos decoran el mismo árbol en el lugar, asignando `uid > 0` a las declaraciones, resolviendo referencias con `resolveNodeSymbol` y anotando el `DataType` resultante en cada nodo de expresión y asignación.
+3. **Entrada a [Generación de TAC](../05-codigo-intermedio/02-generacion-tac.md):** recorre el AST ya anotado (en postorden para expresiones, de modo que los operandos se evalúen antes que la operación) para emitir la lista de instrucciones de tres direcciones.
 
 ---
 
-## 11. Cómo se extiende
+## 10. Cómo se extiende
 
-### Una construcción nueva que necesita nodo propio (`do while`, `for`)
+### Nueva construcción con nodo propio (`do-while`, `for`)
 
-1. Agregar el valor al enum `NodeType`.
-2. Agregar su caso a `describeNode`, o el `.sint` lo va a imprimir como
-   `Nodo Desconocido`.
-3. **Definir y documentar su layout de hijos** en la tabla de §4, y agregar las
-   macros de acceso si hacen falta.
-4. **Un constructor con nombre** (`newDoWhileNode(condition, body)`, por
-   ejemplo) que llame a `newNode` con los hijos obligatorios primero y los
-   opcionales al final, para que la compactación no corra posiciones (§5). Si
-   el nodo se reduce después de su bloque, sumar su `NodeType` a la lista de la
-   heurística de línea de `newNode` (§9).
-5. Agregar el caso en el semántico y el generador de TAC. El
-   `switch` de cada uno tiene un `default`, así que **olvidarse de uno no da error
-   de compilación**: la construcción simplemente no hace nada.
+1. Agregar el identificador al enum `NodeType` en `ast.h`.
+2. Definir su layout de hijos en la tabla de §4 y, de ser necesario, añadir macros de acceso en `ast.h`.
+3. Implementar su constructor con nombre en `ast.c` pasando los hijos obligatorios antes que los opcionales (§5), e incluir el `NodeType` en la heurística de línea de `newNode` si la producción se reduce después de un bloque (§8).
+4. Agregar el caso correspondiente en `describeNode` (`ast.c`) para su impresión en `.sint`/`.sem`.
+5. Incorporar el manejo del nuevo `NodeType` en los `switch` de `semantic_analyzer.c`, `type_checker.c` e `intermediate_code.c` (dichos `switch` poseen `default`, por lo que omitir uno no genera advertencia del compilador).
 
-El punto 5 es el que conviene mencionar en la defensa: agregar un `NodeType` es
-barato, pero hay cuatro lugares que lo tienen que saber y el compilador no avisa
-si falta uno.
+### Nuevo operador
 
-### Un operador nuevo
-
-No toca `NodeType`: alcanza con un valor nuevo en `OperationType` (`types.h`), su
-caso en `getOperationName` y el manejo en las fases posteriores. Reutiliza el
-`OPERATOR_NODE` que ya existe.
-
-### Hacer el layout seguro por tipo
-
-La mejora estructural que más reduciría el riesgo: reemplazar las macros por
-funciones de acceso que validen `nodeType`, por ejemplo
-`NodeAST *getIfElseBlock(NodeAST *node)` que falle si el nodo no es un
-`IF_ELSE_NODE`. Convierte un error silencioso en un error ruidoso, al costo de
-una llamada por acceso.
+No requiere un nuevo `NodeType`: basta con agregar la constante en `OperationType` (`types.h`), su representación textual en `getOperationName` (`ast.c`) y su tratamiento en el chequeador de tipos, TAC y código objeto, reutilizando `OPERATOR_NODE`.
 
 ---
 
-## 12. Trampas y límites conocidos
+## 11. Consideraciones y límites
 
-- **`operationType` no se inicializa en `newNode`.** Solo `newOperatorNode` lo
-  setea. Leerlo en un nodo que no es `OPERATOR_NODE` es leer memoria sin
-  inicializar, y el valor va a ser basura reproducible, que es la peor clase: en
-  una corrida parece funcionar. El header lo aclara ("solo válido en
-  `OPERATOR_NODE`") pero nada lo impide.
-- **La compactación de hijos es carga estructural** (§5). El `if` sin `else` y
-  el `return` sin expresión dependen de ella para tener la cantidad de hijos que
-  esperan las macros.
-- **`type` vale `TYPE_VOID` al construirse**, no es el tipo real. Cualquier fase
-  que lea `type` antes del análisis semántico lee un valor sin sentido. Es lo que
-  se ve en el `.sint`.
-- **Un `if` sin `else` tiene `childCount == 2`**, no 3 con `NULL`. Recorrer con
-  `for (i = 0; i < 3; i++)` lee fuera del arreglo.
-- **El árbol nunca se libera** (§8). Ni `main.c` ni el driver llaman a `freeAST`.
-- **La propiedad del símbolo depende de `uid == 0`**, un valor de dato, no de un
-  campo explícito. Si alguna vez `appendSymbol` empezara a asignar `uid` 0 a algo
-  registrado, la regla se rompería en silencio y produciría dobles liberaciones.
-- **Los `switch` de las fases consumidoras tienen `default` silencioso.** Agregar
-  un `NodeType` y olvidar un caso compila sin avisos.
+- **`operationType` solo se inicializa en `OPERATOR_NODE`:** `newNode` no asigna `node->operationType`; leer ese campo en cualquier otro `NodeType` accede a memoria sin inicializar.
+- **Dependencia del orden de argumentos en `newNode`:** la compactación de hijos `NULL` (§5) exige no pasar nunca un `NULL` delante de un hijo no nulo.
+- **Propiedad de símbolos codificada en `uid == 0`:** la distinción entre símbolo provisorio y símbolo registrado en tabla depende de que `appendSymbol` asigne siempre `uid >= 1` (§7).
+- **`switch` con rama `default` en fases posteriores:** al agregar un `NodeType`, es necesario actualizar manualmente todas las fases consumidoras.
 
 ---
 
-## 13. La teoría detrás
+## 12. Cómo se valida
 
-- **Árbol de sintaxis abstracta** frente a **árbol de parseo** (*parse tree* o
-  *concrete syntax tree*): el árbol de parseo tiene un nodo por cada símbolo de
-  cada producción aplicada, incluidos los terminales sin contenido semántico. El
-  AST conserva solo lo necesario para las fases siguientes. Acá se construye
-  directamente el AST desde las acciones de la gramática, sin materializar nunca
-  el árbol de parseo: `'(' Expression ')'` devuelve el nodo de adentro y los
-  paréntesis no dejan rastro.
-- **Representación intermedia arbórea**: el AST es la primera de las tres
-  representaciones del programa que maneja este compilador. Después vienen el
-  [TAC](../05-codigo-intermedio/01-representacion-tac.md) (lineal, generado en la etapa siguiente) y el assembly. Cada una es más cercana a la máquina y
-  más lejana de la estructura del lenguaje.
-- **Anotación del árbol**: el análisis semántico no genera una estructura nueva
-  sino que **decora** la existente (el campo `type`, los punteros a símbolos
-  resueltos). Es la forma habitual de implementar una gramática de atributos
-  cuando los atributos no se pueden calcular en una sola pasada ascendente.
-- **Recorridos**: `freeAST` es **postorden** (los hijos antes que el padre,
-  porque hay que liberar de abajo hacia arriba) y `fprintAST` es **preorden** (el
-  padre antes que los hijos, porque es el orden en que se lee la indentación). La
-  generación de TAC usa postorden para las expresiones, que es lo que hace que
-  los operandos estén calculados antes de la operación.
-- **Unión etiquetada** (*tagged union*): el patrón que `NodeAST` implementa a
-  mano con `nodeType` como etiqueta. En un lenguaje con tipos algebraicos cada
-  construcción sería un constructor del tipo y el compilador verificaría que no
-  falte ningún caso, que es exactamente la red de seguridad que acá falta (§12).
-
----
-
-## 14. Cómo se valida
-
-- **Suite:** `tests/test_ast.c`. Verifica la forma del árbol que
-  produce cada construcción: cantidad de hijos, orden, layouts de `if`/`while`,
-  declaraciones múltiples y bloques vacíos.
-- **A mano:** los dos archivos que imprimen el árbol son la herramienta de
-  depuración principal de todo el front-end:
+- **Tests unitarios:** `tests/test_ast.c` verifica la creación de cada tipo de nodo, cantidad y orden de hijos, compactación de opcionales (`if` con y sin `else`, `return` con y sin expresión), declaraciones múltiples y liberación con `freeAST`.
+- **Comparación entre árbol sintáctico y árbol anotado:**
 
 ```bash
-./mi_compilador -target parse examples/programa.ctds   # -> .sint, sin anotar
-./mi_compilador -target sem   examples/programa.ctds   # -> .sem, anotado
+./mi_compilador -target parse examples/programa.ctds   # genera .sint (sin anotar)
+./mi_compilador -target sem   examples/programa.ctds   # genera .sem  (anotado)
 ```
-
-  Compararlos con `diff` muestra exactamente lo que agregó el análisis semántico.
 
 ---
 

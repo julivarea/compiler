@@ -2,617 +2,35 @@
 
 **Archivos:** `include/optimizer.h`, `src/optimizer/optimizer.c` (674 líneas)
 
-Las siete transformaciones que reducen el código generado sin cambiar lo que el
-programa hace, sobre las [cuádruplas TAC](../05-codigo-intermedio/01-representacion-tac.md) y apoyadas en
-el [análisis de variables vivas](01-variables-vivas.md).
-
-Este documento describe las optimizaciones implementadas en el compilador C-TDS: qué hace
-cada una, sobre qué representación trabaja, bajo qué condiciones es segura y cómo se verifica.
-
-El enunciado del proyecto (`docs/spec/00-TDS-proyecto.pdf`) deja el conjunto de
-optimizaciones a criterio de cada grupo, acordado con la cátedra, y fija únicamente la interfaz:
-
-> `-opt [optimización]` — Realiza la lista de optimizaciones. `all` realiza todas las
-> optimizaciones soportadas.
+El módulo de optimización aplica hasta siete transformaciones que reducen y simplifican el código generado preservando la semántica del programa. Seis de las pasadas reescriben directamente la lista de [cuádruplas TAC](../05-codigo-intermedio/01-representacion-tac.md) apoyándose en el [análisis de variables vivas](01-variables-vivas.md), mientras que la reducción de fuerza y la fusión de comparación y salto actúan durante la emisión de código objeto.
 
 ---
 
-## 1. Contrato de la línea de comandos
+## 1. Interfaz pública y contrato de `-opt`
+
+### Comportamiento en la línea de comandos
 
 | Invocación | Comportamiento |
-| --- | --- |
-| *(sin `-opt`)* | No se aplica ninguna optimización. **La salida debe ser idéntica a la del compilador sin esta etapa.** |
-| `-opt all` | Se aplican todas las optimizaciones soportadas |
-| `-opt <nombre>` | Se aplica únicamente la indicada |
-
-`src/core/cli.c` parsea la opción y deja el conjunto activo en `Options.optimizations`
-(`OPTIMIZATION_NONE` si se omitió, o el flag correspondiente), y la extensión de salida
-pasa a `.opt`. Si se pasa un nombre desconocido, se informa el error por stderr y se
-aborta la ejecución antes de iniciar el pipeline.
-
-**Requisito no negociable:** sin `-opt`, el compilador tiene que producir exactamente lo mismo
-que antes. Es la propiedad que permite aislar una regresión: si un programa falla con `-opt` y
-anda sin él, el problema está en la optimización y no en el resto del compilador.
-
-### Flags de optimización
-
-| Flag | Optimización |
-| --- | --- |
-| `const-fold` | Plegado de constantes (§3.1) — **implementada** |
-| `const-prop` | Propagación de constantes (§3.1) — **implementada** |
-| `dead-code` | Eliminación de código inalcanzable (§3.2) — **implementada** |
-| `const-branch` | Condición constante en `if` / `while` (§3.3) — **implementada** |
-| `self-assign` | Asignaciones de una variable a sí misma (§3.4) — **implementada** |
-| `peephole` | Mirilla sobre instrucciones contiguas (§3.4) — **parcial** |
-| `strength-reduce` | Reducción de fuerza en multiplicaciones (§3.5) — **implementada** |
-
----
-
-## 2. Dónde se aplica cada optimización
-
-El compilador tiene tres representaciones sobre las que se puede transformar, y la elección no
-es indistinta:
-
-| Nivel | Representación | Conviene para |
-| --- | --- | --- |
-| **AST** | `NodeAST`, antes de generar el TAC | Decisiones que dependen de la estructura del programa: ramas con condición constante, sentencias que no hay que ejecutar |
-| **TAC** | `TACList`, lista de cuádruplas | La mayoría: plegado y propagación de constantes, código inalcanzable, copias redundantes. Es lineal, tipada y fácil de reescribir |
-| **Assembly** | Texto emitido por `object_code.c` | Solo lo que depende de la máquina: elección de instrucción, patrones de mirilla |
-
-**Criterio general: preferir el TAC.** Es la representación para la que la lista de
-instrucciones ya está enlazada (la devuelve `generateIntermediateCode()`), cada operando lleva su tipo y su
-naturaleza (`OPERAND_TEMP`, `OPERAND_CONSTANT`, `OPERAND_VARIABLE`), y una transformación se
-reduce a recorrer y reescribir nodos. Optimizar en el AST obliga a razonar sobre la estructura;
-optimizar en assembly obliga a razonar sobre registros.
-
-### El mecanismo `hasExecute`, y por qué se descartó
-
-El plan original contemplaba optimizar a nivel de AST, y para eso `NodeAST` llevaba un campo
-`hasExecute`: en vez de eliminar nodos del árbol —con el riesgo de romper los punteros de los
-padres— se los marcaba y `generateStatementCode()` los salteaba sin emitir nada.
-
-**Ninguna optimización terminó usándolo.** Las tres candidatas a trabajar sobre el AST
-—asignaciones redundantes (§3.4), código inalcanzable (§3.2) y ramas de condición constante
-(§3.3)— se implementaron sobre el TAC, cada una por su propio motivo, explicado en su sección.
-Al quedar sin usuarios, el campo se eliminó de `NodeAST`.
-
-Vale dejar registrada la decisión porque es la respuesta a "¿por qué no optimizaron el árbol?":
-**sobre el TAC las constantes ya están plegadas y los operandos ya están tipados**, así que casi
-toda transformación que en el AST exigiría reimplementar un evaluador resulta trivial una fase
-más abajo.
-
----
-
-## 3. Catálogo de optimizaciones
-
-### 3.1 Plegado y propagación de constantes
-
-**Flags:** `const-fold`, `const-prop` · **Nivel:** TAC
-
-Cuando los operandos de una operación son constantes, el resultado se calcula en tiempo de
-compilación y la operación desaparece.
-
-```
-// Fuente
-return 1 + 2 + 3;
-
-// TAC sin optimizar          // TAC optimizado
-t1 = 1 + 2                    t1 = 6
-t2 = t1 + 3                   ret t1
-ret t2
-```
-
-Son dos transformaciones distintas que se potencian y conviene implementar juntas:
-
-- **Plegado (`const-fold`):** reemplazar una operación entre constantes por su resultado.
-  `t1 = 1 + 2` pasa a `t1 = 3`.
-- **Propagación (`const-prop`):** si un temporal o una variable tiene un valor constante
-  conocido en ese punto, reemplazar sus usos por la constante. Eso convierte `t2 = t1 + 3` en
-  `t2 = 3 + 3`, que el plegado vuelve a reducir.
-
-Aplicadas de forma alternada hasta que no haya más cambios, la cadena completa colapsa a una
-sola instrucción.
-
-**Precondiciones y cuidados:**
-- La división y el módulo por cero **no se pliegan**: hay que dejar la operación en el código
-  para que el comportamiento en ejecución no cambie.
-- El plegado tiene que respetar la semántica de tipos del lenguaje: `int` de 32 bits con signo
-  y `%` solo entre enteros.
-- La propagación solo vale mientras la variable no haya sido reasignada ni pueda haber sido
-  modificada por una llamada a método (si es global).
-
-**Verificación:** comparar el `.ci` con y sin el flag sobre un programa con aritmética
-constante, y comprobar que el ejecutable devuelve el mismo resultado en ambos casos.
-
-#### Estado: implementada
-
-En `src/optimizer/optimizer.c`. El ejemplo del principio de la sección produce hoy:
-
-```
-// sin -opt                   // con -opt all
-t0 = 1 + 2                    t0 = 3
-t1 = t0 + 3                   t1 = 6
-ret t1                        ret 6
-```
-
-Se ve la cadena completa: se pliega `1 + 2`, se propaga el `3` al operando de la suma
-siguiente, se pliega `3 + 3`, y se propaga el `6` hasta el `ret`. Las dos pasadas se repiten
-hasta que ninguna introduce cambios, con un tope de rondas por si una transformación futura no
-convergiera.
-
-Las dos asignaciones que quedan ya no las lee nadie. Eliminarlas es trabajo de la eliminación
-de código muerto, que todavía no está: con solo estas dos optimizaciones el TAC no se acorta,
-se simplifica.
-
-**Qué hace cada flag por separado.** Ninguna de las dos rinde mucho sola, y es esperable:
-`const-fold` solo actúa cuando los dos operandos ya son literales, y `const-prop` no tiene nada
-que propagar si antes no se plegó algo. Es el caso concreto de lo que anticipa §4.
-
-**Decisiones de implementación:**
-- El plegado **no elimina la instrucción**, la convierte en `TAC_ASSIGN`. Así el destino
-  conserva su valor y cualquier uso posterior sigue siendo válido, sin tener que reescribir la
-  lista enlazada mientras se la recorre.
-- La propagación **descarta todo lo que sabía en cada etiqueta y en cada salto**. A una
-  etiqueta se puede llegar desde cualquier parte, así que lo que valía antes del salto no vale
-  necesariamente después. Es conservador —dentro de un ciclo no se propaga nada— pero nunca
-  incorrecto.
-- En un `call` se olvidan las variables y se conservan los temporales. El callee puede escribir
-  cualquier global, pero no puede alcanzar los temporales de quien lo invoca: C-TDS pasa por
-  valor y no tiene punteros.
-- La tabla de valores conocidos se indexa por el nombre del operando, que ya viene calificado
-  con el `uid`, así que dos variables homónimas de scopes distintos no se confunden.
-
-**Verificado:** 22 programas compilados **dos veces** —con y sin `-opt all`— ejecutando ambos
-binarios y comparando el código de salida entre sí y contra el resultado esperado: 22 de 22
-idénticos. Incluye el caso de **división por cero**, donde ambas versiones abortan igual con
-SIGFPE, que es la prueba de que no se plegó. Los 40 tests siguen pasando y los 12 ejemplos
-conservan su código de salida con y sin el flag.
-
----
-
-### 3.2 Eliminación de código inalcanzable
-
-**Flag:** `dead-code` · **Nivel:** AST o TAC
-
-Todo lo que aparece después de un `return` dentro de un mismo bloque es inalcanzable y no debe
-generar código.
-
-```c
-if (cond) {
-    return true;
-    x = 1;          // inalcanzable
-} else {
-    return false;
-    y = x;          // inalcanzable
-    x = y;
-    x = y + 1;
-}
-```
-
-La transformación es cortar las sentencias posteriores al `return` en cada rama. En el TAC, lo
-equivalente es descartar las instrucciones entre un `ret` y la siguiente etiqueta o `end_func`.
-
-**Relación con el análisis semántico:** el analizador semántico **no** reporta esto como error,
-y es deliberado — está documentado como la decisión 3 de la [análisis semántico](../04-semantico/03-analisis-semantico.md) (§7),
-porque el enunciado no lo prohíbe y pide no informar lo que no es una violación. Que sea válido
-es justamente lo que lo convierte en caso de optimización: el programa es correcto, solo que
-parte de su código no puede ejecutarse nunca.
-
-**Extensión posible (mismo flag, otro alcance):** además del código inalcanzable, está la
-familia de *código muerto* propiamente dicho — asignaciones cuyo resultado nunca se lee. Es más
-costosa porque requiere análisis de vivacidad; conviene dejarla para después de que funcione lo
-anterior.
-
-**Verificación:** un programa con sentencias después de un `return` en ambas ramas de un
-`if/else` no debe generar ninguna instrucción para ellas, y debe devolver el mismo resultado.
-
-#### Estado: implementada
-
-`removeUnreachableCode()` en `src/optimizer/optimizer.c`. Sobre el ejemplo de arriba:
-
-```
-// sin -opt                  // con -opt dead-code
-t0 = cond@2 > 0               t0 = cond@2 > 0
-if t0 false goto L0           if t0 false goto L0
-ret true                      ret true
-x@3 = 1                       L0:
-goto L1                       ret false
-L0:                           L1:
-ret false                     end_func f
-y@4 = x@3
-x@3 = y@4
-t1 = y@4 + 1
-x@3 = t1
-L1:
-end_func f
-```
-
-**Cómo funciona.** Una sola pasada que lleva un estado de "el flujo está vivo". Tras un `ret` o
-un `goto` pasa a muerto y se descarta toda instrucción ejecutable, hasta que una etiqueta lo
-reanima.
-
-**Se extendió a `goto`, no solo a `return`.** El enunciado habla de lo que sigue a un `return`,
-pero el argumento es idéntico —después de un salto incondicional la siguiente instrucción solo
-es alcanzable por una etiqueta— y es donde aparece la mayor parte del código muerto real: en el
-ejemplo, el `goto L1` del final de la rama `then` también desaparece.
-
-**Qué nunca se elimina.** Las instrucciones *estructurales*, que no se ejecutan sino que
-describen una propiedad del programa:
-- Las **etiquetas**, porque son destino de saltos y reanudan el flujo.
-- Los **marcadores de método** (`begin_func` / `end_func`), que delimitan las funciones.
-- Las **declaraciones** (`global`, `local`, `param_decl`). Borrar un `local` porque quedó
-  después de un `return` le sacaría su lugar en el frame a una variable, sin ganar nada en
-  tiempo de ejecución. El costo de conservarlas es un slot sin usar; el de borrarlas, un bug.
-
-**Combinación con §3.1.** Las tres juntas sobre un `if (2 > 1) { return 1+2+3; c = 9; }`
-eliminan el `c = 9` y reducen la aritmética a `ret 6`, dejando la condición como `if true`, que
-es exactamente lo que habilita la optimización de §3.3.
-
-**Lo que todavía no hace.** Las asignaciones que el plegado deja atrás (`t0 = 3`, `t1 = 6`) no
-se eliminan: no son *inalcanzables*, son *muertas* —su resultado no lo lee nadie—, y detectarlo
-requiere el análisis de vivacidad que esta misma sección menciona como extensión. Por eso en
-los ejemplos del repositorio el conteo de instrucciones casi no baja: solo `two_returns.ctds`
-pierde una, su segundo `return`.
-
-**Verificado:** 20 programas compilados dos veces y ejecutados, comparando el código de salida
-entre sí y contra el esperado: 20 de 20. Entre ellos, los siete casos específicos de esta
-optimización —código tras `return`, ambas ramas retornando, `return` dentro de un bloque
-anidado, `goto` intermedio de un `if/else`, `return` dentro de un `while`, y etiquetas que sí
-son alcanzables—. Los 40 tests siguen pasando y los 12 ejemplos conservan su código de salida.
-
----
-
-### 3.3 Condición constante en `if` y `while`
-
-**Flag:** `const-branch` · **Nivel:** TAC *(ver la nota sobre el cambio de nivel más abajo)*
-
-Si la condición de una estructura de control se reduce a una constante, no hace falta evaluarla
-ni emitir el salto.
-
-```c
-if (true) {
-    // este bloque se ejecuta siempre: va directo, sin preguntar la condición
-}
-```
-
-| Caso | Transformación |
-| --- | --- |
-| `if (true) { A }` | Se emite `A` sin condición ni etiquetas |
-| `if (false) { A }` | No se emite nada |
-| `if (true) { A } else { B }` | Se emite `A`; `B` se descarta |
-| `if (false) { A } else { B }` | Se emite `B`; `A` se descarta |
-| `while (false) { A }` | No se emite nada |
-| `while (true) { A }` | El salto de salida se elimina, queda el ciclo infinito |
-
-Se apoya en §3.1: una condición como `if (2 > 1)` recién se vuelve constante después del
-plegado, así que conviene correr esta optimización **después** de la de constantes.
-
-**Verificación:** el `.ci` de un `if (true)` no debe contener ninguna instrucción `if ... goto`
-ni etiquetas asociadas a esa condición.
-
-#### Estado: implementada
-
-`simplifyConstantBranches()` en `src/optimizer/optimizer.c`. Sobre `if (2 > 1) { x = 5; } else { x = 9; }`:
-
-```
-// sin -opt                  // con -opt all
-x@2 = 0                       x@2 = 0
-t0 = 2 > 1                    t0 = true
-if t0 false goto L0           x@2 = 5
-x@2 = 5                       goto L1
-goto L1                       L1:
-L0:                           ret x@2
-x@2 = 9
-L1:
-ret x@2
-```
-
-**Cambio de nivel respecto de lo planificado: se implementó sobre el TAC y no sobre el AST.**
-El motivo es que en el AST las condiciones todavía no están plegadas: `if (2 > 1)` sigue siendo
-una operación entre dos literales, así que a nivel AST solo se reconocería un `if (true)`
-escrito literalmente. Para el resto habría que implementar un segundo evaluador de constantes
-sobre el árbol, duplicando la lógica de §3.1. Sobre el TAC, en cambio, §3.1 ya dejó la
-condición reducida a `true` o `false` y la transformación se vuelve trivial. Resultó entonces a
-la vez más simple y más efectiva.
-
-**Consecuencia:** esta optimización no usa el mecanismo `hasExecute` descrito en §2. Tampoco lo
-usó ninguna otra, y por eso el campo terminó eliminándose de `NodeAST`.
-
-**Cómo funciona.** Un `if <cond> false goto L` salta cuando la condición es falsa y un
-`if <cond> true goto L` cuando es verdadera; si la condición es literal, se sabe de antemano
-cuál de las dos cosas ocurre:
-
-- El salto **nunca** se toma: la instrucción no hace nada y se elimina. El bloque que seguía
-  pasa a ejecutarse siempre, sin preguntar la condición.
-- El salto **siempre** se toma: se reemplaza por un `goto` incondicional, y lo que venía
-  después queda inalcanzable.
-
-**Hizo falta una limpieza extra: eliminar las etiquetas sin referencias.** Sin eso, la
-optimización quedaba a medias y vale la pena explicar por qué. Al resolver el `if` desaparece el
-salto, pero la etiqueta a la que apuntaba sobrevive; y como una etiqueta reanuda el flujo, §3.2
-seguía considerando alcanzable toda la rama muerta que la seguía. En el ejemplo, el `x@2 = 9` no
-se iba. Con `removeUnreferencedLabels()` corriendo antes del análisis de alcance, la rama queda
-expuesta y se elimina. El programa ya era correcto sin esa limpieza —el `goto L1` saltaba por
-encima de la rama muerta—, pero el código no se reducía.
-
-**Orden dentro de la ronda:** esta pasada corre **antes** que §3.2, para que el `goto` que
-genera deje su cola inalcanzable en la misma vuelta.
-
-**Lo que queda sin limpiar.** El `goto L1` seguido inmediatamente de `L1:` es un salto
-redundante, y lo aborda la mirilla de §3.4. Y los `t0 = true` que quedan son asignaciones
-muertas, que necesitan el análisis de vivacidad mencionado en §3.2.
-
-**Verificado:** 25 programas compilados dos veces y ejecutados: 25 de 25 con resultados
-idénticos y correctos. Cubre los seis casos de la tabla de arriba, condicionales constantes
-anidados, y la mezcla de condición constante con condición sobre variable. Y especialmente los
-casos que **no** deben tocarse: `if` y `while` cuya condición depende de una variable,
-`while` anidados, `factorial` y `fib`. Sobre los ejemplos del repositorio,
-`if_not_equals_type.ctds` baja de 12 a 11 instrucciones y `two_returns.ctds` de 7 a 6.
-
----
-
-### 3.4 Asignaciones redundantes y mirilla sobre el assembly
-
-**Flags:** `self-assign` (TAC) y `peephole` (TAC y assembly)
-
-Una asignación de una variable a sí misma no tiene efecto y no debe generar código:
-
-```c
-x = x;      // se ignora por completo
-```
-
-En el TAC, `x@3 = x@3` se traduce a un `movl` desde un slot al mismo slot, o sea dos
-instrucciones de máquina que no hacen nada.
-
-**Mecanismo:** Se implementa directamente sobre el TAC en `removeSelfAssignments()`. Al generar
-TAC, cada operando califica el nombre con su `@uid` único (`tacVariable`), por lo que comparar
-los nombres en el TAC distingue automáticamente variables homónimas en distintos scopes.
-Esto evita contaminar los nodos del AST con campos ad-hoc y centraliza las optimizaciones en la
-lista de cuádruplas. Fue el último cambio de nivel: la versión inicial marcaba el nodo del AST
-con `hasExecute`, y al moverla al TAC ese campo quedó sin usuarios y se eliminó (§2).
-
-**Mirilla (peephole) sobre el assembly.** El mismo criterio se extiende a patrones que solo son
-visibles en el código generado:
-
-| Patrón | Reemplazo |
-| --- | --- |
-| `movl X, %eax` seguido de `movl %eax, X` | Se elimina la segunda |
-| `movl $0, %eax` | `xorl %eax, %eax` (más corta) |
-| Salto a la etiqueta inmediatamente siguiente | Se elimina el salto |
-| Carga de un valor que ya está en el registro | Se elimina la carga |
-
-La mirilla trabaja sobre una ventana de dos o tres instrucciones consecutivas y es la única de
-las optimizaciones de este catálogo que necesariamente va a nivel de assembly, porque los
-patrones que reconoce no existen en el TAC.
-
-**Verificación:** un programa con `x = x;` no debe generar ninguna instrucción para esa
-sentencia, y los patrones de mirilla deben reducir el conteo de instrucciones del `.ass` sin
-cambiar el resultado de la ejecución.
-
-#### Estado: `self-assign` implementada, `peephole` parcial
-
-**Asignaciones redundantes (`self-assign`).** `removeSelfAssignments()` en
-`src/optimizer/optimizer.c`, sobre el TAC, invocada dentro de `optimizeIntermediateCode()`.
-
-```
-// sin -opt                  // con -opt self-assign
-x@2 = 5                       x@2 = 5
-x@2 = x@2                     ret x@2
-ret x@2
-```
-
-La comparación es segura ante ocultamiento porque los operandos en el TAC ya incorporan su
-`@uid` correspondiente: en
-
-```c
-int x;
-int main() { int y; x = 3; { int x; x = 7; y = x; } return y + x; }
-```
-
-las variables generan `x@1` y `x@2`, impidiendo falsos positivos.
-
-**Mirilla (`peephole`).** Implementado el patrón de **salto a la etiqueta inmediatamente
-siguiente**, en `removeRedundantJumps()`, sobre el TAC. Es el único de los cuatro de la tabla
-que conviene resolver ahí: no depende de registros ni de la codificación de las instrucciones,
-solo de que dos instrucciones sean contiguas. Y es donde más rinde, porque §3.3 deja
-exactamente ese patrón al resolver un `if` constante.
-
-Encadenado con las anteriores, un `if (2 > 1) { x = 5; } else { x = 9; }` queda en:
-
-```
-x@2 = 0
-t0 = true
-x@2 = 5
-ret 5
-```
-
-Desaparecieron la condición, la rama muerta, el salto, la etiqueta, y la propagación llegó
-hasta el `ret`.
-
-**La fusión de comparación y salto.** `peephole` también actúa en el generador de código
-objeto: cuando un relacional deja un temporal que lee el salto condicional siguiente
-(`t0 = a < b; if t0 false goto L`), `canFuseConditionAndJump` lo detecta y
-`emitFusedComparisonAndJump` emite un `cmpl` y un único salto (`jge .L`), sin materializar el
-booleano con `setl` + `movzbl` ni volver a compararlo contra cero. La decisión y sus
-condiciones están en el
-[ADR 003](../../decisiones/adr-003-fusion-comparacion-y-salto-condicional.md).
-
-**Pendientes de la mirilla**, los tres que sí dependen de la máquina y van sobre el assembly
-emitido: `movl X, %eax` seguido de `movl %eax, X`, `movl $0, %eax` reemplazado por
-`xorl %eax, %eax`, y la carga de un valor que ya está en el registro.
-
-**Verificado:** 23 programas compilados dos veces y ejecutados, 23 de 23 idénticos y correctos.
-Incluye `x = x` sobre local, global y parámetro, repetido varias veces, el caso de ocultamiento
-descrito arriba, y los casos que **no** deben tocarse (`x = y`, `x = x + 1`). Los 40 tests
-siguen pasando y los 12 ejemplos conservan su código de salida.
-
----
-
-### 3.5 Reducción de fuerza en multiplicaciones por constante
-
-**Flag:** `strength-reduce` · **Nivel:** assembly
-
-Cuando uno de los operandos de una multiplicación es una constante conocida, se puede emitir una
-instrucción más barata que `imull`: si aparece `* 2` se genera una instrucción, y si no, otra.
-
-| Expresión | Instrucción |
-| --- | --- |
-| `x * 2` | `addl %eax, %eax` o `sall $1, %eax` |
-| `x * 4`, `x * 8`, … potencias de dos | `sall $n, %eax` con `n = log2(constante)` |
-| `x * 1` | Ninguna: el resultado es el operando |
-| `x * 0` | `xorl %eax, %eax` |
-| Resto de los casos | `imull` como hasta ahora |
-
-**Precondiciones:**
-- El desplazamiento aritmético es correcto para la multiplicación con signo; para la **división**
-  por potencias de dos **no** alcanza con `sarl`, porque el redondeo de los negativos difiere del
-  que exige la división entera. Si se quisiera extender a división habría que agregar la
-  corrección de signo, o directamente dejarla afuera.
-
-**Verificación:** el `.ass` de `x * 2` no debe contener `imull`, y el ejecutable debe devolver el
-mismo valor que sin el flag, incluyendo el caso de operandos negativos.
-
-#### Estado: implementada
-
-`emitStrengthReducedMultiplication()` en `src/object_code/object_code.c`. Es la única optimización del
-catálogo que vive en el generador de código objeto, porque elegir entre `imull` y `sall` es una
-decisión sobre instrucciones de máquina y el TAC no las conoce.
-
-```
-// sin -opt                      // con -opt strength-reduce
-movl -4(%rbp), %eax               movl -4(%rbp), %eax
-imull %edx, %eax                  sall $1, %eax
-```
-
-Lo emitido para cada multiplicador, verificado sobre el `.ass`:
-
-| Expresión | Instrucción emitida |
-| --- | --- |
-| `x * 0` | `xorl %eax, %eax` |
-| `x * 1` | ninguna: se carga y se guarda el operando |
-| `x * 2`, `* 4`, `* 8`, `* 16` | `sall $1`, `$2`, `$3`, `$4` |
-| `x * 3` y demás no potencias | `imull %edx, %eax` |
-
-**Para pasarle el flag al generador** hizo falta agregarle un parámetro a `generateAssembly()`.
-Las optimizaciones anteriores viven todas en `src/optimizer/optimizer.c` y transforman el TAC antes de
-emitir; esta decide **al emitir**, así que necesita saber si está activa.
-
-**La constante puede estar de cualquiera de los dos lados:** `2 * x` se reduce igual que
-`x * 2`.
-
-**Por qué el desplazamiento es correcto con signo.** `sall` desborda exactamente igual que
-`imull`, truncando módulo 2^32, así que para la multiplicación son equivalentes. Se verificó
-con operandos negativos: `-5 * 2`, `-3 * 4`, `-2 * 8` dan lo mismo con y sin el flag.
-
-**Lo que queda deliberadamente afuera:**
-- **Multiplicadores negativos.** `x * -2` requeriría además negar el resultado; hoy cae en
-  `imull`, que es correcto.
-- **La división por potencias de dos.** Acá el desplazamiento **no** sirve: `sarl` redondea los
-  negativos hacia abajo y la división entera del lenguaje redondea hacia cero, así que
-  `-8 / 2` daría distinto. Se verificó que la división y el módulo no se tocan.
-
-**Verificado:** 25 programas compilados dos veces y ejecutados, 25 de 25 idénticos y correctos.
-Cubre las potencias de dos, el 0, el 1, un multiplicador que no es potencia, la constante de
-cada lado, los tres casos con operandos negativos, y la confirmación de que división, módulo y
-multiplicación real quedan intactos.
-
----
-
-## 4. Orden de aplicación e interacciones
-
-Las optimizaciones no son independientes: unas habilitan a otras. El orden recomendado es:
-
-1. **Plegado y propagación de constantes** (§3.1), alternadas hasta que no haya más cambios.
-2. **Condición constante** (§3.3), que necesita que el paso anterior haya reducido las
-   condiciones a constantes.
-3. **Código inalcanzable** (§3.2), que puede aparecer recién después de descartar una rama.
-4. **Asignaciones redundantes** (§3.4), que la propagación de copias puede haber creado.
-5. **Reducción de fuerza y mirilla** (§3.5 y §3.4), al final y sobre el assembly ya emitido.
-
-Con `-opt all` se corre la secuencia completa. Con un flag individual se corre solo esa
-transformación, lo que puede dar menos mejora que la cadena completa: es esperable y conviene
-documentarlo en el informe.
-
----
-
-## 5. Criterios para una optimización nueva
-
-Las reglas que debe cumplir, independientemente de qué haga:
-
-1. Elegir el nivel según §2 (en la duda, TAC).
-2. Tener un flag propio, registrado en la tabla de §1, que la active individualmente.
-3. Implementarse como una pasada propia, que reciba la representación y la devuelva
-   transformada, sin mezclarse con la generación.
-4. **Sin su flag, el resultado no cambia.** Es el invariante que hace que `-opt` sea opcional.
-5. Quedar documentada acá: qué hace, el ejemplo antes/después, las precondiciones y cómo se
-   verifica.
-
-Los pasos concretos de código —dónde va el bit, el nombre, la pasada y la llamada— están en
-§10.
-
----
-
-## 6. Estado de la implementación
-
-- **La infraestructura está completa.** `include/optimizer.h` define el enumerado de
-  optimizaciones, `src/core/cli.c` parsea el valor de `-opt`, y `src/optimizer/optimizer.c`
-  tiene el ciclo que aplica las pasadas hasta converger. El driver las invoca desde `buildIntermediateCode()`, entre la generación
-  del TAC y su emisión, de modo que las aprovechan tanto `-target codinter` como la generación
-  de assembly y el ejecutable.
-- **El mecanismo `hasExecute` se eliminó.** Ninguna optimización terminó trabajando sobre el
-  AST, así que el campo quedó sin usuarios y se quitó de `NodeAST`. El razonamiento está en §2.
-- **Las siete optimizaciones están implementadas.** Seis actúan sobre el TAC en
-  `src/optimizer/optimizer.c`; `strength-reduce` es la única que actúa sobre el **assembly**, en
-  `src/object_code/object_code.c`, porque depende de la instrucción emitida.
-
-| Flag | Dónde actúa | Función |
-| --- | --- | --- |
-| `const-prop` | TAC | `propagateConstants` |
-| `const-fold` | TAC | `foldConstants` |
-| `const-branch` | TAC | `simplifyConstantBranches` |
-| `dead-code` | TAC | `removeUnreachableCode` + `removeDeadStores` + `removeUnreferencedLabels` |
-| `self-assign` | TAC | `removeSelfAssignments` |
-| `peephole` | TAC y **assembly** | `removeRedundantJumps`; en `object_code.c`, `canFuseConditionAndJump` + `emitFusedComparisonAndJump` |
-| `strength-reduce` | **Assembly** | `emitStrengthReducedMultiplication` en `object_code.c` |
-
-- **La eliminación de asignaciones muertas quedó conectada.** Es la parte de `dead-code` que se
-  apoya en el [análisis de variables vivas](01-variables-vivas.md): `removeDeadStores`
-  construye el CFG, resuelve el punto fijo y elimina toda definición cuyo destino no esté en
-  `LIVE_OUT` ni se lea después dentro de su bloque. Las variables **globales se excluyen** de las
-  candidatas, porque una llamada podría observarlas y el análisis es intraprocedural.
-- **Las cinco optimizaciones de la lista original están implementadas**, repartidas en siete
-  flags individuales.
-- **Pendientes:** los tres patrones de mirilla que dependen del assembly emitido (§3.4). La
-  eliminación de las etiquetas que quedan sin uso ya está: `removeUnreferencedLabels` corre
-  dentro de `dead-code`, antes del barrido de alcanzabilidad, porque una etiqueta huérfana
-  reanimaría el flujo y haría parecer alcanzable un bloque que no lo es.
-
----
-
-## 7. Criterio de aceptación de la etapa
-
-Para dar la etapa por terminada, cada optimización implementada debe cumplir:
-
-- Se activa individualmente con su flag y también con `-opt all`.
-- Sin su flag, el código generado es **idéntico** al que producía el compilador antes.
-- Existe al menos un programa de prueba que la dispara, y su ejecutable devuelve el mismo
-  resultado con y sin la optimización.
-- Está documentada en este archivo con su ejemplo antes/después.
-
-El punto que más peso tiene en la corrección es el segundo: una optimización que cambia el
-resultado de un programa es peor que no tener la optimización.
-
-**Estado:** las siete optimizaciones implementadas cumplen los cuatro puntos. En total se
-verificaron 116 compilaciones dobles —cada programa compilado con y sin `-opt all`, ejecutando
-ambos binarios y comparando el código de salida entre sí y contra el esperado— sin una sola
-divergencia. Hoy las once suites de tests pasan y los 13 ejemplos del repositorio conservan su
-código de salida con y sin optimizaciones.
-
----
-
-## 8. La interfaz y el bucle de punto fijo
-
-### Lo que expone el módulo
+| :--- | :--- |
+| *(sin `-opt`)* | No se ejecuta ninguna pasada de optimización; el compilador genera exactamente el mismo código que sin esta etapa. |
+| `-opt all` | Activa las siete optimizaciones soportadas (`OPTIMIZATION_ALL`). |
+| `-opt <lista>` | Activa únicamente los flags indicados (separados por comas). |
+
+`src/core/cli.c` analiza el argumento de `-opt` y almacena la máscara de bits resultante en `Options.optimizations`. Cuando se solicita `-target codinter` junto con `-opt`, la salida se escribe con extensión `.opt` en lugar de `.ci`. Si se especifica un nombre desconocido, el compilador informa el error por `stderr` y aborta antes de iniciar el pipeline.
+
+### Flags de optimización soportados
+
+| Flag | Transformación | Nivel | Función principal |
+| :--- | :--- | :--- | :--- |
+| `const-prop` | Propagación de constantes (§3.1) | TAC | `propagateConstants` |
+| `const-fold` | Plegado de constantes (§3.1) | TAC | `foldConstants` |
+| `const-branch` | Simplificación de ramas constantes (§3.2) | TAC | `simplifyConstantBranches` |
+| `dead-code` | Eliminación de código inalcanzable y asignaciones muertas (§3.3) | TAC | `removeUnreachableCode`, `removeDeadStores`, `removeUnreferencedLabels` |
+| `self-assign` | Eliminación de autoasignaciones (§3.4) | TAC | `removeSelfAssignments` |
+| `peephole` | Eliminación de saltos redundantes y fusión de comparación y salto (§3.5) | TAC y Assembly | `removeRedundantJumps`, `canFuseConditionAndJump`, `emitFusedComparisonAndJump` |
+| `strength-reduce` | Reducción de fuerza en multiplicaciones (§3.6) | Assembly | `emitStrengthReducedMultiplication` |
+
+### Interfaz pública (`include/optimizer.h`)
 
 ```c
 int  optimizeIntermediateCode(TACList *tacList, OptimizationSet enabled);
@@ -620,21 +38,35 @@ void setOptimizerDebug(bool enabled);
 static inline bool isOptimizationEnabled(OptimizationSet enabled, Optimization optimization);
 ```
 
-`OptimizationSet` es un `unsigned int` usado como **máscara de bits**: cada
-optimización es una potencia de dos (`1 << 0` … `1 << 6`) y `OPTIMIZATION_ALL` es
-el `or` de las siete. Eso es lo que permite combinarlas libremente desde la línea
-de comandos: `-opt const-fold,dead-code` es simplemente un `or` de dos bits, y
-preguntar si una está activa es un `and`.
+- `OptimizationSet` es un `unsigned int` utilizado como máscara de bits donde cada enum `Optimization` ocupa una potencia de dos (`1 << 0` a `1 << 6`).
+- `optimizeIntermediateCode` modifica la lista `TACList` en el lugar y devuelve la cantidad total de transformaciones aplicadas.
+- `setOptimizerDebug` habilita la impresión de depuración de las instrucciones eliminadas cuando se invoca con `-debug`.
+- `isOptimizationEnabled` se define como `static inline` en el encabezado para que el generador de código objeto (`object_code.c`) pueda consultar si `strength-reduce` o `peephole` están activas sin depender de `optimizer.o` al enlazar pruebas aisladas.
 
-El parseo de los nombres vive en `src/core/cli.c`, no acá: el optimizador recibe el
-conjunto ya resuelto y no sabe nada de cadenas de texto.
+---
 
-`optimizeIntermediateCode` **modifica la lista en el lugar** y devuelve la
-cantidad total de instrucciones transformadas. Recibe un `TACList *` no `const`,
-y por eso `driver.c` tiene que descartar el `const` con el que
-`generateIntermediateCode` devolvió la lista.
+## 2. Nivel de representación y bucle de punto fijo
 
-### El bucle que repite las pasadas
+### Por qué se optimiza sobre el TAC
+
+El compilador dispone de tres representaciones posibles: el árbol sintáctico (`NodeAST`), el código intermedio (`TACList`) y el texto assembly emitido. El diseño concentra las transformaciones de flujo y datos sobre el TAC por tres razones:
+
+1. **Estructura lineal:** el TAC es una lista doblemente enlazada donde insertar, reemplazar o desenlazar una instrucción no requiere actualizar punteros jerárquicos de nodos padres.
+2. **Operandos tipados y desambiguados:** cada operando ya codifica su categoría (`OPERAND_TEMP`, `OPERAND_VARIABLE`, `OPERAND_CONSTANT`) y su identificador calificado con `@uid`, lo que evita colisiones entre variables homónimas de distintos ámbitos.
+3. **Composición entre pasadas:** sobre el TAC, una condición como `if (2 > 1)` se reduce a `if true` tras el plegado y la propagación de constantes, permitiendo que la simplificación de ramas opere sin duplicar un evaluador de expresiones sobre el AST.
+
+> **Nota sobre el descarte de `hasExecute`:** el diseño preliminar contemplaba un campo `bool hasExecute` en `NodeAST` para marcar subárboles que el generador de TAC debía ignorar. Al trasladar la eliminación de código inalcanzable, las ramas constantes y las autoasignaciones directamente al TAC, el campo quedó sin usuarios y fue eliminado de `NodeAST`.
+
+### Optimización local frente a global
+
+El módulo combina dos alcances de análisis sobre el TAC:
+
+- **Local al bloque básico:** la propagación de constantes (`propagateConstants`) mantiene una tabla de valores conocidos que se reinicia en cada frontera de control (etiquetas, saltos y límites de función), garantizando corrección en una pasada lineal sin construir un grafo.
+- **Global al procedimiento:** la eliminación de asignaciones muertas (`removeDeadStores`) construye el CFG de la función y consulta los conjuntos `LIVE_OUT` calculados por el [análisis de variables vivas](01-variables-vivas.md) sobre todos los caminos de ejecución.
+
+### Bucle de punto fijo (`MAX_OPTIMIZATION_ROUNDS`)
+
+Las pasadas sobre el TAC se habilitan mutuamente: plegar `1 + 2` genera una constante que `const-prop` propaga hacia una condición; `const-branch` convierte ese salto condicional en incondicional; `dead-code` elimina la rama que quedó inalcanzable y las asignaciones a temporales cuyo resultado dejó de leerse; finalmente, `peephole` limpia los saltos hacia la etiqueta inmediatamente siguiente. Por ello, `optimizeIntermediateCode` ejecuta las pasadas activas en un bucle hasta alcanzar un punto fijo:
 
 ```c
 for (int round = 0; round < MAX_OPTIMIZATION_ROUNDS; round++) {
@@ -647,34 +79,33 @@ for (int round = 0; round < MAX_OPTIMIZATION_ROUNDS; round++) {
     if (enabled & SELF_ASSIGN)  changes += removeSelfAssignments(tacList);
     if (enabled & PEEPHOLE)     changes += removeRedundantJumps(tacList);
 
-    if (changes == 0) break;      /* punto fijo */
+    if (changes == 0) break;
     totalChanges += changes;
 }
 ```
 
-**Por qué se repiten.** Cada pasada puede habilitar a otra: plegar `2 + 3` a `5`
-crea una constante que la propagación puede llevar más lejos, y eso puede volver
-constante una condición, lo que vuelve inalcanzable un bloque, lo que deja
-etiquetas huérfanas. Una sola vuelta se quedaría a mitad de camino.
+- **Terminación:** ninguna pasada agrega instrucciones nuevas; cada transformación elimina nodos o sustituye variables por constantes en una lista finita, por lo que `changes` converge a `0`.
+- **Cota de seguridad (`MAX_OPTIMIZATION_ROUNDS = 16`):** previene ciclos infinitos en caso de que una extensión futura introduzca dos transformaciones que se reviertan mutuamente.
+- **Pasadas en código objeto:** `strength-reduce` y la fusión de comparación y salto de `peephole` no participan en este bucle porque dependen de la selección de instrucciones x86-64; se aplican en `generateAssembly`, que recibe el mismo `OptimizationSet`.
 
-**Por qué termina.** Cada pasada solo elimina instrucciones o reemplaza operandos
-por constantes; ninguna agrega instrucciones. Como la lista es finita, la
-cantidad de transformaciones posibles está acotada, y en algún momento una vuelta
-no encuentra nada: `changes == 0` y se corta.
+---
 
-**Por qué igual hay un tope.** `MAX_OPTIMIZATION_ROUNDS = 16` es una red de
-seguridad: si alguna vez se agregara una transformación que deshace lo que otra
-hizo, el bucle oscilaría para siempre. Con el tope, el peor caso es terminar con
-una optimización incompleta en lugar de no terminar. Es la misma clase de
-decisión que el límite de 64 variables del análisis de vivacidad: degradar antes
-que fallar.
+## 3. Catálogo de optimizaciones
 
-Nótese que **`strength-reduce` no aparece en el bucle**: es la única que no actúa
-sobre el TAC. El conjunto completo se le pasa además a `generateAssembly`, que lo
-consulta al emitir una multiplicación (`strength-reduce`) y al decidir si fusiona
-una comparación con el salto siguiente (la parte de `peephole` que vive allá).
+### 3.1 Propagación y plegado de constantes (`const-prop`, `const-fold`)
 
-### La tabla de constantes conocidas
+Evalúan en tiempo de compilación las operaciones cuyos operandos son constantes conocidas y propagan el resultado hacia sus usos posteriores.
+
+```text
+// TAC sin optimizar          // Con const-prop + const-fold    // Con -opt all (incluye dead-code)
+t0 = 1 + 2                    t0 = 3                            ret 6
+t1 = t0 + 3                   t1 = 6
+ret t1                        ret 6
+```
+
+#### Propagación (`propagateConstants` y `KnownConstantTable`)
+
+Mientras recorre el TAC, `propagateConstants` mantiene el estado de las variables y temporales con valor constante conocido en la estructura `KnownConstantTable`:
 
 ```c
 typedef struct {
@@ -684,96 +115,20 @@ typedef struct {
 } KnownConstant;
 
 typedef struct {
-    KnownConstant entries[MAX_KNOWN_CONSTANTS];   /* 256 */
+    KnownConstant entries[MAX_KNOWN_CONSTANTS]; /* 256 */
     int count;
 } KnownConstantTable;
 ```
 
-Es el estado que lleva la propagación de constantes mientras recorre la lista:
-"en este punto, `x@3` vale 5". Tres cosas vale notar:
+- **Registro e invalidación:** ante `x = c` (con `c` constante), `rememberConstant` asocia el nombre de `x` con `c` y copia la marca `isGlobal` desde `x.symbol->isGlobal`. Si `x` recibe el resultado de una expresión no constante, `forgetConstant` elimina su entrada reemplazándola en $O(1)$ por el último elemento del arreglo.
+- **Fronteras de flujo de control:** al encontrar `TAC_LABEL`, `TAC_GOTO`, `TAC_IF_FALSE`, `TAC_IF_TRUE`, `TAC_BEGIN_FUNC` o `TAC_END_FUNC`, la tabla se vacía por completo (`table.count = 0`), ya que a una etiqueta puede llegarse desde múltiples caminos con valores distintos.
+- **Llamadas a funciones (`TAC_CALL`):** `forgetGlobalVariables` descarta únicamente las entradas con `isGlobal == true` y conserva las variables locales y temporales, dado que C-TDS pasa argumentos por valor y no posee punteros.
 
-- **`isGlobal` se copia del símbolo del destino al recordar la constante**, y es
-  necesario porque `value` es la constante, no el destino: sin ese campo no se
-  podría saber qué entradas olvidar en una llamada. Se lee de
-  `symbol->isGlobal`, la marca que dejó la tabla de símbolos, sin buscar nada.
-- **La tabla se vacía en cada frontera de control**: etiquetas, saltos,
-  `begin_func` y `end_func` hacen `table.count = 0`. Es lo que vuelve a la
-  propagación **local a cada bloque básico** y lo que la hace segura sin
-  construir un CFG: en un punto donde el control puede llegar desde otro lado, no
-  se sabe nada.
-- **En una llamada se olvidan solo las globales.** `forgetGlobalVariables`
-  conserva los locales y los temporales, porque C-TDS pasa **por valor** y no
-  tiene punteros: un método llamado no puede modificar un local del llamador.
-  Las globales sí, así que se descartan.
+#### Plegado (`foldConstants`)
 
----
+Cuando todos los operandos de una instrucción aritmética, lógica o relacional son `OPERAND_CONSTANT`, `evaluateBinary` o `evaluateUnary` calculan el resultado y convierten la instrucción en un `TAC_ASSIGN` (`destino = constante`) sin desenlazar el nodo de la lista.
 
-## 9. Inventario de funciones
-
-Veintisiete funciones: **dos públicas**, una `static inline` en el header y
-**veinticuatro privadas** en el `.c`. El archivo sigue la regla de descenso: el
-bucle arriba, las siete pasadas después, y al final los auxiliares que las
-pasadas comparten, cada uno después del último que lo usa. Las preguntas sobre
-el TAC que comparte con otros módulos —`holdsValue` (¿el operando es temporal o
-variable?) e `isConditionalJump`— vienen de `tac.h`.
-
-### Públicas
-
-| Función | Qué hace |
-| --- | --- |
-| `optimizeIntermediateCode(tacList, enabled)` | El bucle de punto fijo de §8. Devuelve el total de transformaciones |
-| `setOptimizerDebug(enabled)` | Prende la bandera estática que habilita el volcado del TAC con lo eliminado marcado |
-| `isOptimizationEnabled(enabled, opt)` | `static inline` **en el header**: un `and` de bits |
-
-Que `isOptimizationEnabled` viva en el header y no en el `.c` tiene una
-consecuencia concreta: `object_code.c` puede preguntar si `strength-reduce` o
-`peephole` están activas **sin enlazar `optimizer.o`**.
-
-### Las pasadas
-
-| Función | Qué hace |
-| --- | --- |
-| `propagateConstants` | Recorre llevando una tabla "esta variable vale esta constante" y reemplaza los usos. Vacía la tabla en cada frontera de control |
-| `foldConstants` | Si los operandos son constantes, evalúa y **convierte la instrucción en un `TAC_ASSIGN`** del resultado |
-| `simplifyConstantBranches` | Un salto condicional con condición constante se vuelve `goto` (si el salto se toma) o **se borra** (si no) |
-| `removeUnreachableCode` | El barrido de alcanzabilidad: tras un `return` o un `goto`, todo muere hasta la próxima etiqueta |
-| `removeUnreferencedLabels` | Borra las etiquetas que ningún salto nombra, preguntando por cada una a `isLabelReferenced` |
-| `removeDeadStores` | Construye el CFG, resuelve vivacidad y borra las definiciones cuyo destino no se lee nunca más |
-| `removeSelfAssignments` | Borra `x = x`: mismo tipo de operando y mismo nombre |
-| `removeRedundantJumps` | Borra un `goto L` seguido inmediatamente de la etiqueta `L` |
-
-**Ocho funciones para siete flags.** `removeUnreferencedLabels` no tiene flag
-propio: corre **dentro** de `removeUnreachableCode` y antes del barrido, porque
-una etiqueta huérfana reanimaría el flujo y haría parecer alcanzable un bloque
-que no lo es.
-
-### La tabla de constantes
-
-| Función | Qué hace |
-| --- | --- |
-| `lookupKnownConstant` | Busca un operando por nombre; solo temporales y variables (`holdsValue`) pueden tener valor conocido |
-| `rememberConstant` | Anota `destino = constante`, olvidando primero la entrada anterior del destino |
-| `forgetConstant` | Borra una entrada **pisándola con la última** de la tabla |
-| `forgetGlobalVariables` | Compacta la tabla dejando solo lo que no es global. Es lo que corre en cada `call` |
-| `replaceWithKnownConstant` | Si el operando tiene valor conocido, lo **sobrescribe con la constante** y devuelve `true` |
-
-El detalle de implementación que vale: `forgetConstant` no desplaza el resto del
-arreglo, pisa el hueco con el último elemento. Es correcto porque la tabla es un
-**conjunto y no una secuencia** —nadie depende del orden— y convierte un borrado
-O(n) en O(1).
-
-### La evaluación de constantes
-
-| Función | Qué hace |
-| --- | --- |
-| `isConstant` | ¿el operando es `OPERAND_CONSTANT`? |
-| `asInt` | Lee el campo de la unión, para no escribir `->value.intValue` en veinte lugares |
-| `evaluateBinary` | El `switch` que calcula en compilación las operaciones binarias plegables |
-| `evaluateUnary` | Lo mismo para `-x` y `!x` |
-
-**Las dos devuelven `bool`, y el `false` es la parte importante.** Significa "no
-se puede plegar", y es lo que impide que el compilador ejecute en su propio
-proceso lo que le corresponde al programa:
+Para preservar el comportamiento en tiempo de ejecución, `evaluateBinary` aborta el plegado (retorna `false`) en dos casos de división y módulo (`TAC_DIV`, `TAC_MOD`):
 
 ```c
 bool isZeroDivisor = (rightValue == 0);
@@ -783,215 +138,145 @@ if (isZeroDivisor || isSignedOverflow) {
 }
 ```
 
-Sin esas dos guardas, compilar `1 / 0` **mataría al compilador con SIGFPE** en
-lugar de generar el programa que divide por cero. `INT_MIN / -1` es el mismo
-problema disfrazado: el cociente no es representable en 32 bits, así que la
-división desborda igual que si fuera por cero.
-
-**Límite conocido:** `+`, `-` y `*` **no** tienen esa guarda. Plegar
-`2147483647 + 1` ejecuta un desborde con signo, que es comportamiento indefinido
-en C. En la práctica el resultado coincide con lo que haría el programa, pero es
-UB y está anotado como pendiente.
-
-### El desenlazado
-
-| Función | Qué hace |
-| --- | --- |
-| `unlinkInstruction` | Saca una instrucción, arregla `head`/`tail`/`count`, la libera y **devuelve la siguiente** |
-| `unlinkInstructionList` | Recibe un arreglo de instrucciones a borrar y las saca todas en un solo recorrido |
-
-Que `unlinkInstruction` devuelva la siguiente es lo que permite seguir iterando
-después de borrar el nodo actual, que es el error clásico de recorrer una lista
-enlazada mientras se la modifica.
-
-`unlinkInstructionList` tiene **dos contratos implícitos** que no están escritos
-en el código y conviene saber:
-
-1. **El arreglo tiene que estar en orden de lista.** Recorre la lista una sola
-   vez y avanza el índice del arreglo solo cuando encuentra la instrucción que
-   espera; un arreglo desordenado dejaría instrucciones sin borrar **sin ningún
-   aviso**. Las cinco pasadas que lo usan construyen el arreglo recorriendo la
-   lista hacia adelante, así que se cumple.
-2. **Libera el arreglo**, también en el camino de salida temprana con
-   `count == 0`. Quien lo llama no debe liberarlo: es una transferencia de
-   propiedad.
-
-### Clasificación de opcodes y consultas
-
-| Función | Qué hace |
-| --- | --- |
-| `endsControlFlow` | ¿después de esta instrucción el flujo se corta? `return` y `goto` |
-| `isStructural` | ¿es una etiqueta, un `begin`/`end_func` o una declaración? |
-| `isLabelReferenced` | ¿algún `goto` o salto condicional nombra esta etiqueta? Recorre toda la lista |
-| `isDeadStoreCandidate` | Los cuatro filtros que excluyen una instrucción de ser asignación muerta |
-
-`isStructural` es lo que evita el desastre: si el barrido de alcanzabilidad
-borrara una etiqueta o un `end_func` por estar detrás de un `return`, se perdería
-el destino de un salto o el final de una función. La regla es **"el código muerto
-se borra, el esqueleto no"**.
-
-`isDeadStoreCandidate` excluye cuatro cosas y cada exclusión tiene su razón: los
-resultados que no son variable ni temporal (no hay nada que borrar), `call`
-(tiene efectos laterales aunque el resultado no se use), las instrucciones
-estructurales, entre ellas las declaraciones (reservan la ranura del marco), y
-**las globales** (el análisis es intraprocedural, así que una llamada podría
-leerlas). Que una variable sea global se lee de `result.symbol->isGlobal`.
-
-`isLabelReferenced` recorre toda la lista por cada etiqueta, así que
-`removeUnreferencedLabels` es cuadrático en el tamaño del TAC. Para los
-programas del lenguaje es irrelevante, y a cambio no hay ninguna estructura
-auxiliar que mantener: la etiqueta está viva si algún `goto` la nombra en su
-`firstOperand` o algún salto condicional en su `secondOperand`.
-
-### La depuración
-
-| Función | Qué hace |
-| --- | --- |
-| `printTACWithDeletedInRed` | Imprime **toda** la lista marcando con `[ELIMINADA]` las que están por irse, con el motivo. Cada línea sale de `fprintTACInstruction` de [representación TAC](../05-codigo-intermedio/01-representacion-tac.md) |
-
-Imprimir la lista completa y no solo lo que se borra es lo que hace útil al
-`-debug`: se ve la instrucción eliminada **en su contexto**. Y se llama **antes**
-del desenlazado, porque después las instrucciones ya no existen.
-
-**Es el único lugar que decide si se imprime.** Las pasadas la llaman siempre, y
-ella vuelve enseguida si `-debug` no está activo o si no hay nada eliminado. Por
-eso imprime con `printf` directo y no con `debugPrintf`: el flag ya se consultó
-una vez al entrar.
-
-**El nombre miente un poco.** `printTACWithDeletedInRed` no emite ningún código
-ANSI: marca las líneas con el prefijo `[ELIMINADA]` y nada más. El color sí
-existe en los mensajes de error ([errores y debug](../02-infraestructura/03-errores-y-debug.md)), no acá. Verificado con `cat -v`
-sobre la salida.
+De este modo, una división por cero o el desborde de `INT_MIN / -1` no provocan `SIGFPE` durante la compilación, sino que se emiten en el ejecutable final.
 
 ---
 
-## 10. Cómo se extiende
+### 3.2 Simplificación de ramas con condición constante (`const-branch`)
 
-Los criterios de diseño están en §5. En código, agregar una optimización son
-cinco pasos, y los dos del medio son los que se olvidan:
+Cuando la condición de un salto condicional (`TAC_IF_FALSE` o `TAC_IF_TRUE`) es una constante literal, `simplifyConstantBranches` resuelve la decisión en tiempo de compilación:
 
-1. **El flag** en el enum `Optimization` de `optimizer.h`, con el bit siguiente
-   libre, y agregarlo a `OPTIMIZATION_ALL`.
-2. **El nombre** en la tabla de `src/core/cli.c`, que es lo que hace que
-   `-opt mi-nombre` funcione.
-3. **La pasada**: una función `static int miOptimizacion(TACList *tacList)` que
-   devuelva cuántas instrucciones transformó.
-4. **La llamada** en el bucle de `optimizeIntermediateCode`, en la posición
-   correcta según §4 (las que producen constantes van antes de las que las
-   consumen).
-5. **Un test** en `tests/test_optimizer.c`, con el TAC de entrada escrito a mano,
-   y un caso en `tests/test_integration.c` que verifique que el programa compilado
-   da el mismo resultado con y sin el flag.
+| Instrucción | Condición constante | Transformación en el TAC |
+| :--- | :--- | :--- |
+| `if cond false goto L` | `cond == false` (0) | El salto siempre se toma: se reemplaza por `goto L`. |
+| `if cond false goto L` | `cond == true` (1) | El salto nunca se toma: se elimina la instrucción. |
+| `if cond true goto L` | `cond == true` (1) | El salto siempre se toma: se reemplaza por `goto L`. |
+| `if cond true goto L` | `cond == false` (0) | El salto nunca se toma: se elimina la instrucción. |
 
-Si se omite el paso 2, el flag existe pero no se puede pedir por nombre y solo se
-activa con `-opt all`. Si se omite el 4, el flag se acepta y **no hace nada**, sin
-ningún aviso.
+```text
+// TAC sin optimizar          // Con const-prop + const-fold + const-branch
+x@2 = 0                       x@2 = 0
+t0 = 2 > 1                    t0 = true
+if t0 false goto L0           x@2 = 5
+x@2 = 5                       goto L1
+goto L1                       L0:
+L0:                           x@2 = 9
+x@2 = 9                       L1:
+L1:                           ret x@2
+ret x@2
+```
 
-### Las que faltan, en orden de rendimiento
-
-| Candidata | Qué haría | Qué necesita |
-| --- | --- | --- |
-| Los tres patrones de mirilla sobre assembly (§3.4) | Eliminar pares `movl` redundantes y acortar `movl $0` | Trabajar sobre el texto emitido, o introducir una representación de instrucciones de máquina antes de imprimir |
-| Subexpresiones comunes locales | Reusar `t0` en vez de recalcular `a + b` dos veces en el mismo bloque | Una tabla de expresiones ya calculadas por bloque, invalidada al reasignar cualquier operando |
-| Propagación de copias | Reemplazar los usos de `x` por `y` tras `x = y` | Casi lo mismo que la propagación de constantes, cambiando "constante" por "operando" |
-| Variables desvanecidas | Eliminar el acumulador de un ciclo cuyo resultado no se usa | Otro análisis de punto fijo, explicado en [análisis de variables vivas](01-variables-vivas.md) |
+En el ejemplo anterior, al eliminarse `if t0 false goto L0`, la etiqueta `L0:` queda sin referencias, lo que habilita a `dead-code` (§3.3) en la misma ronda a borrar `L0:` y la rama `x@2 = 9`.
 
 ---
 
-## 11. La teoría detrás
+### 3.3 Eliminación de código inalcanzable y asignaciones muertas (`dead-code`)
 
-- **Optimización** como término es engañoso: no se busca el óptimo, sino **mejorar
-  preservando la semántica**. La restricción es absoluta y asimétrica: una
-  optimización que acelera el 99% de los programas y rompe uno es inaceptable.
-- **Transformación preservadora de la semántica** (*semantics-preserving
-  transformation*): la propiedad que toda pasada debe cumplir. Es la razón de que
-  el criterio de verificación de la etapa sea comparar la **ejecución** del
-  programa con y sin el flag, y no que el TAC quede más corto.
-- **Optimización local contra global.** Una optimización **local** razona dentro
-  de un bloque básico; una **global** razona sobre el CFG completo. Acá la
-  propagación de constantes es local —por eso vacía su tabla en cada etiqueta— y
-  la eliminación de asignaciones muertas es global, porque consulta `LIVE_OUT`,
-  que sale de un análisis sobre todo el grafo. Es el contraste más claro del
-  módulo y vale tenerlo presente.
-- **Análisis contra transformación.** El [análisis de variables vivas](01-variables-vivas.md) es un **análisis**: calcula
-  información y no cambia nada. El optimizador aplica **transformaciones**: consumen esa
-  información para reescribir el código. Casi toda optimización no trivial se
-  parte así.
-- **Plegado de constantes** (*constant folding*) y **propagación de constantes**
-  (*constant propagation*): evaluar en compilación lo que no depende de la
-  entrada, y llevar el valor conocido a sus usos. Se potencian mutuamente, que es
-  el ejemplo canónico de por qué las pasadas se iteran.
-- **Eliminación de código muerto** (*dead code elimination*) tiene dos variantes
-  que conviene no confundir: el **código inalcanzable** (*unreachable code*), que
-  se detecta mirando el flujo de control y no requiere análisis de datos, y las
-  **asignaciones muertas** (*dead stores*), que sí lo requieren.
-- **Reducción de fuerza** (*strength reduction*): reemplazar una operación costosa
-  por otra equivalente más barata, como una multiplicación por potencia de dos
-  por un desplazamiento. Es el ejemplo clásico de optimización que **depende de la
-  máquina**, y por eso es la única de las siete que vive en el generador de código
-  objeto.
-- **Mirilla** (*peephole optimization*): mirar una ventana corta de instrucciones
-  contiguas y reemplazar patrones conocidos. Es la técnica más simple que existe y
-  la que se aplica más tarde, porque opera sobre el código ya emitido.
-- **Iteración hasta el punto fijo**: el mismo esquema que resuelve las ecuaciones
-  de vivacidad, aplicado a las transformaciones. La diferencia es la garantía de
-  terminación: allá es monotonía sobre un retículo acotado, acá es que ninguna
-  pasada agrega instrucciones.
-- **Monotonía del conjunto de optimizaciones**: activar más flags nunca debería
-  cambiar el resultado del programa, solo su tamaño. Ese invariante es exactamente
-  lo que verifica la batería de §7, y es más fuerte que probar cada optimización
-  por separado.
+El [análisis semántico](../04-semantico/03-analisis-semantico.md) no considera un error la presencia de sentencias posteriores a un `return`, ya que la especificación del lenguaje no lo prohíbe. El flag `dead-code` aborda tanto ese código inalcanzable por flujo de control como las asignaciones muertas por flujo de datos mediante tres funciones:
+
+1. **Eliminación de etiquetas huérfanas (`removeUnreferencedLabels`):** corre al inicio de `removeUnreachableCode`. Para cada `TAC_LABEL`, verifica con `isLabelReferenced` si algún `TAC_GOTO`, `TAC_IF_FALSE` o `TAC_IF_TRUE` de la lista la tiene como destino. Si nadie la referencia, se elimina antes del barrido de alcanzabilidad para que no reactive un flujo muerto.
+2. **Eliminación de código inalcanzable (`removeUnreachableCode`):** recorre la lista manteniendo un booleano de alcanzabilidad. Al encontrar una instrucción que corta el flujo (`endsControlFlow`: `TAC_RETURN` o `TAC_GOTO`), toda instrucción ejecutable siguiente se descarta hasta alcanzar una etiqueta (`TAC_LABEL`) o un marcador de función. Las instrucciones estructurales (`isStructural`: `TAC_LABEL`, `TAC_BEGIN_FUNC`, `TAC_END_FUNC`, `TAC_GLOBAL_DECL`, `TAC_LOCAL_DECL`, `TAC_PARAM_DECL`) nunca se eliminan, preservando las declaraciones de ranuras del marco de pila y los delimitadores de función.
+3. **Eliminación de asignaciones muertas (`removeDeadStores`):** invoca `createLiveVariableAnalysis` (ver [análisis de variables vivas](01-variables-vivas.md)) y recorre cada bloque básico consultando `isDeadDefinitionInBlock`. Antes de consultar la vivacidad, `isDeadStoreCandidate` excluye cuatro clases de instrucciones que no pueden borrarse aunque su destino no se lea:
+   - Instrucciones cuyo `result` no es variable ni temporal (`!holdsValue`).
+   - Llamadas a función (`TAC_CALL`), por sus posibles efectos laterales.
+   - Instrucciones estructurales (`isStructural`).
+   - Asignaciones a variables globales (`result.symbol->isGlobal`), dado que el análisis de vivacidad es intraprocedural y otra función podría leer la variable global.
+
+```text
+// TAC sin optimizar          // Con -opt dead-code
+t0 = cond@2 > 0               t0 = cond@2 > 0
+if t0 false goto L0           if t0 false goto L0
+ret true                      ret true
+x@3 = 1                       L0:
+goto L1                       ret false
+L0:                           L1:
+ret false                     end_func f
+y@4 = x@3
+L1:
+end_func f
+```
 
 ---
 
-## 12. Cómo se valida
+### 3.4 Eliminación de autoasignaciones (`self-assign`)
 
-- **Suite:** `tests/test_optimizer.c` (951 líneas) verifica, para cada
-  optimización, que transforme lo que debe y que no toque el resto. Cada caso
-  parte del TAC sin optimizar escrito en formato `.ci` (`buildTAC`), con el
-  programa C-TDS de origen como comentario.
-- **Equivalencia semántica:** `tests/test_integration.c` compila los mismos
-  programas con y sin las optimizaciones, los ejecuta y exige el mismo código de
-  salida. La reducción de fuerza, que se aplica al emitir assembly, se prueba en
-  `tests/test_object_code.c`.
-- **El chequeo que importa** es el de §7: compilar el mismo programa con y sin
-  `-opt all`, ejecutar los dos binarios y comparar sus códigos de salida. Que el
-  TAC quede más corto no prueba nada; que el programa siga haciendo lo mismo, sí.
+`removeSelfAssignments` elimina toda instrucción `TAC_ASSIGN` cuyo destino (`result`) y origen (`firstOperand`) tengan el mismo tipo de operando y el mismo nombre (`x@2 = x@2`). Como los operandos en el TAC llevan anexado su identificador único de ámbito (`@uid`), esta comparación distingue sin ambigüedad variables homónimas declaradas en bloques anidados.
+
+---
+
+### 3.5 Optimización de mirilla (`peephole`)
+
+Actúa sobre ventanas de dos instrucciones consecutivas tanto en el TAC como en el generador de código objeto:
+
+- **Saltos redundantes en el TAC (`removeRedundantJumps`):** cuando una instrucción `TAC_GOTO L` está seguida inmediatamente por la etiqueta `TAC_LABEL L`, el salto se elimina. Si a raíz de ello la etiqueta `L` queda sin otras referencias en el programa (`!isLabelReferenced`), también se elimina en el mismo paso.
+- **Fusión de comparación y salto en código objeto (`canFuseConditionAndJump` y `emitFusedComparisonAndJump`):** en `src/object_code/object_code.c`, cuando una comparación relacional (`TAC_LT`, `TAC_GT`, `TAC_EQ`) escribe en un temporal `t` y la instrucción inmediatamente siguiente es `TAC_IF_FALSE` o `TAC_IF_TRUE` leyendo `t`, el generador emite un único `cmpl` seguido del salto condicional correspondiente (`jl`, `jge`, `je`, `jne`, etc.), omitiendo las instrucciones `set<cc>` y `movzbl` de materialización del booleano. Las condiciones de seguridad y el detalle de esta transformación se documentan en el [ADR 003](../../decisiones/adr-003-fusion-comparacion-y-salto-condicional.md).
+
+---
+
+### 3.6 Reducción de fuerza en multiplicaciones (`strength-reduce`)
+
+Implementada en `emitStrengthReducedMultiplication` dentro de `src/object_code/object_code.c`. Cuando uno de los operandos de `TAC_MUL` es una constante entera (en cualquiera de las dos posiciones), sustituye la instrucción `imull` por secuencias más simples:
+
+| Multiplicación | Instrucción emitida |
+| :--- | :--- |
+| `x * 0` o `0 * x` | `xorl %eax, %eax` |
+| `x * 1` o `1 * x` | Carga directa del operando en `%eax` (sin instrucción de multiplicación). |
+| `x * 2^n` (`n > 0`, ej. `2, 4, 8, 16`) | `sall $n, %eax` (detectado con `(v & (v - 1)) == 0`). |
+| Resto de los casos (o multiplicadores negativos) | `imull %edx, %eax` estándar. |
+
+El desplazamiento aritmético a izquierda (`sall`) es equivalente a la multiplicación con signo en complemento a dos porque ambos truncan módulo $2^{32}$. Esta transformación no se aplica a la división entera (`TAC_DIV`) porque el desplazamiento a derecha con signo (`sarl`) redondea los números negativos hacia $-\infty$, mientras que la semántica de C-TDS trunca hacia cero.
+
+---
+
+## 4. Límites conocidos y detalles internos
+
+- **Desborde de enteros en plegado de `+`, `-` y `*`:** `evaluateBinary` verifica el desborde en `INT_MIN / -1`, pero realiza la suma, resta y multiplicación directamente sobre el tipo `int` de C. Evaluar constantes que desborden 32 bits con signo recae en comportamiento indefinido del compilador anfitrión.
+- **Contratos de `unlinkInstructionList`:** las pasadas que recolectan instrucciones a eliminar en un arreglo dinámico y delegan el borrado en `unlinkInstructionList` deben entregar el arreglo en el mismo orden en que las instrucciones aparecen en `tacList`, ya que el borrado se resuelve en una única pasada lineal. Además, `unlinkInstructionList` toma posesión del arreglo y ejecuta `free(instructions)` incluso cuando la cuenta es cero.
+- **Costo cuadrático en `removeUnreferencedLabels`:** `isLabelReferenced` recorre toda la lista TAC por cada etiqueta evaluada, lo que resulta en complejidad $O(\text{etiquetas} \times \text{instrucciones})$. Para el tamaño de los programas de C-TDS el costo es despreciable y evita mantener contadores de referencias auxiliares.
+- **Formato de depuración (`printTACWithDeletedInRed`):** cuando se ejecuta con `-debug`, cada pasada que elimina instrucciones invoca `printTACWithDeletedInRed` antes de desenlazarlas. A pesar del nombre de la función, no emite códigos de color ANSI (a diferencia del módulo de [errores y debug](../02-infraestructura/03-errores-y-debug.md)), sino que imprime la lista TAC completa prefijando con `[ELIMINADA]` y el motivo cada instrucción afectada.
+- **Patrones de mirilla sobre assembly no implementados:** no se realiza posprocesamiento sobre el texto `.ass` para eliminar recargas redundantes (`movl %eax, -4(%rbp)` seguido de `movl -4(%rbp), %eax`) ni reemplazos generales de `movl $0, %eax` fuera de la multiplicación por cero.
+
+---
+
+## 5. Cómo se extiende
+
+### Pasos para agregar una nueva optimización
+
+1. **Definir el flag:** agregar el identificador en el enum `Optimization` de `include/optimizer.h` con el siguiente bit libre e incluirlo en la máscara `OPTIMIZATION_ALL`.
+2. **Registrar el nombre en CLI:** agregar la entrada en la tabla de nombres de `src/core/cli.c` para habilitar `-opt <nombre>`.
+3. **Implementar la pasada:** escribir una función `static int nuevaOptimizacion(TACList *tacList)` en `src/optimizer/optimizer.c` que devuelva la cantidad de instrucciones transformadas.
+4. **Conectar en el bucle de punto fijo:** invocar la función dentro de `optimizeIntermediateCode` en el orden adecuado (las pasadas que exponen constantes antes de las que simplifican control o eliminan código muerto).
+5. **Agregar pruebas:** incorporar casos unitarios sobre TAC en `tests/test_optimizer.c` y pruebas de equivalencia de ejecución en `tests/test_integration.c`.
+
+### Optimizaciones candidatas futuras
+
+| Optimización | Descripción | Requisitos de implementación |
+| :--- | :--- | :--- |
+| Mirilla sobre assembly | Eliminar cargas inmediatas tras un guardado al mismo slot (`movl %eax, X` + `movl X, %eax`). | Representar las instrucciones x86-64 en una lista antes de emitir texto, o filtrar las últimas líneas en el generador. |
+| Propagación de copias | Sustituir lecturas de `x` por `y` después de una asignación `x = y`. | Adaptar `KnownConstantTable` para almacenar pares `(variable, operando)` e invalidar al modificar cualquiera de los dos. |
+| Subexpresiones comunes locales (CSE) | Reutilizar el temporal `t0` si `a + b` vuelve a evaluarse en el mismo bloque básico sin cambios en `a` ni `b`. | Tabla de expresiones disponibles por bloque básico, invalidada al redefinir sus operandos. |
+| Variables desvanecidas (*faint variables*) | Eliminar acumuladores de bucles cuyo resultado nunca se usa fuera del ciclo. | Extender el [análisis de variables vivas](01-variables-vivas.md) para que una variable solo genere vivacidad en los operandos que la calculan si ella misma está viva. |
+
+---
+
+## 6. Validación
+
+- **Suite unitaria del optimizador:** `tests/test_optimizer.c` (951 líneas) evalúa cada flag de forma aislada y combinada a partir de listas TAC construidas con `buildTAC`, verificando tanto las instrucciones transformadas como los casos que deben permanecer intactos (por ejemplo, división por cero o variables modificadas en bucles).
+- **Suite de código objeto e integración:** `tests/test_object_code.c` verifica el assembly emitido por `strength-reduce` y la fusión de `peephole`; `tests/test_integration.c` compila programas completos con y sin optimizaciones, ejecuta ambos binarios y comprueba que produzcan el mismo código de salida.
+- **Verificación manual por consola:**
 
 ```bash
+# Comparar TAC antes (.ci) y después de optimizar (.opt)
+./mi_compilador -target codinter examples/dead_code.ctds
+./mi_compilador -opt all -target codinter examples/dead_code.ctds
+
+# Inspeccionar qué instrucciones elimina cada pasada
+./mi_compilador -debug -opt all -target codinter examples/dead_code.ctds
+
+# Verificar equivalencia de ejecución entre binario sin optimizar y optimizado
 ./mi_compilador -o /tmp/sin_opt examples/dead_code.ctds && /tmp/sin_opt; echo "sin opt -> $?"
 ./mi_compilador -opt all -o /tmp/con_opt examples/dead_code.ctds && /tmp/con_opt; echo "con opt -> $?"
 ```
-
-- **Para ver qué eliminó cada pasada**, `-debug` imprime el TAC completo
-  marcando con `[ELIMINADA]` las instrucciones que se van, con el motivo:
-
-```bash
-./mi_compilador -debug -opt all -target codinter examples/dead_code.ctds
-```
-
-- **El archivo `.opt`** es el TAC después de optimizar, y compararlo con el `.ci`
-  del mismo programa sin `-opt` muestra el efecto acumulado:
-
-```bash
-./mi_compilador -target codinter examples/dead_code.ctds            # -> .ci
-./mi_compilador -opt all -target codinter examples/dead_code.ctds   # -> .opt
-```
-
----
-
-## Apéndice: correspondencia con la lista original
-
-Este documento formaliza la lista de ideas que se había anotado al abrir la etapa. La
-correspondencia es:
-
-| Idea original | Sección |
-| --- | --- |
-| 1. Propagación de valores constantes (`return 1 + 2 + 3`) | §3.1 |
-| 2. Código muerto (cortar lo que sigue a un `return` en cada rama) | §3.2 |
-| 3. Optimización de `if(true)` (ejecutar siempre, sin preguntar la condición) | §3.3 |
-| 4. Optimizar instrucciones en assembly, `x = x`, y aprovechar el flag `hasExecute` del nodo AST | §3.4 y §2 (el flag se descartó: ver §2) |
-| 5. Operaciones para constantes `* 2` (si aparece `* 2` generar una instrucción y si no otra) | §3.5 |
 
 ---
 

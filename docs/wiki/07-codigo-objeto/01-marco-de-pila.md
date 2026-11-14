@@ -2,37 +2,21 @@
 
 **Archivos:** `include/function_frame.h`, `src/object_code/function_frame.c` (247 líneas)
 
-Dónde vive cada variable, parámetro y temporal durante la ejecución de un
-método.
+El módulo de marco de pila (*function frame*) administra la disposición en memoria de los parámetros, variables locales, temporales y argumentos en tránsito durante la ejecución de un método, asociando cada operando simbólico con su desplazamiento respecto de `%rbp`.
 
 !!! note "El marco solo ubica enteros y booleanos"
-    El enunciado acota esta etapa a **tipos enteros y lógicos**, así que todas
-    las ranuras son de 4 bytes y hay una sola clase de registro de argumento.
-    Un programa con `float` se rechaza antes, al generar el código intermedio.
+    El enunciado acota esta etapa a tipos enteros y lógicos, por lo que todas
+    las ranuras son de 4 bytes y se utiliza únicamente la secuencia entera de
+    registros de argumentos. Los programas que utilizan `float` se rechazan al
+    generar el código intermedio.
 
 ---
 
-## 1. Qué problema resuelve
+## 1. Asignación en pila y diseño del registro de activación
 
-El [TAC](../05-codigo-intermedio/01-representacion-tac.md) tiene **temporales ilimitados** con nombres
-simbólicos (`t0`, `x@3`), y la máquina tiene dieciséis registros y memoria. Hay
-que decidir dónde queda cada uno.
+El [TAC](../05-codigo-intermedio/01-representacion-tac.md) opera con una cantidad ilimitada de temporales y nombres simbólicos (`t0`, `x@3`), mientras que la arquitectura x86-64 dispone de un conjunto fijo de registros y memoria principal. En lugar de implementar asignación de registros por coloreo de grafos, este compilador asigna una ranura dedicada de 4 bytes en la pila a cada parámetro, variable local y temporal, empleando los registros físicos únicamente como almacenamiento de paso al traducir cada instrucción.
 
-La decisión de este compilador es la más simple que es correcta: **cada variable,
-parámetro y temporal recibe su propia ranura de 4 bytes en la pila**, y los
-registros solo se usan de paso para operar. Este módulo lleva esa contabilidad:
-nombre → desplazamiento respecto de `%rbp`.
-
-La alternativa es la **asignación de registros**, que mantiene los valores más
-usados en registros y solo derrama a memoria lo que no entra. Es muchísimo más
-rápida y muchísimo más difícil; el enunciado pide correctitud, no eficiencia.
-
----
-
-## 2. Cómo queda la pila
-
-En x86-64 la pila **crece hacia direcciones más bajas**. El marco de una función
-queda así:
+En x86-64 la pila crece hacia direcciones de memoria más bajas. El registro de activación de una función se organiza de la siguiente manera:
 
 ```text
 Direcciones altas
@@ -49,33 +33,19 @@ Direcciones altas
   │   │ Variable local x@3                       │ -12(%rbp)
   │   │ Temporal t0                              │ -16(%rbp)
   │   │ ...                                      │ ...
-  │   │ Ranuras de argumentos pendientes (§5)    │
-  │   │ Relleno de alineación a 16 bytes         │
+  │   │ Ranuras de argumentos pendientes (§3.2)  │
+  │   │ Relleno de alineación a 16 bytes (§3.3)  │
   ▼   └──────────────────────────────────────────┘            ◄── %rsp
 Direcciones bajas
 ```
 
-**Los dos registros que sostienen el marco:**
-
-- **`%rbp`** (*base pointer*) queda **fijo** durante toda la ejecución del método.
-  Todo se referencia como desplazamiento negativo suyo: `-4(%rbp)`, `-8(%rbp)`.
-  Por eso el marco es estable aunque `%rsp` se mueva.
-- **`%rsp`** (*stack pointer*) apunta a la cima. El compilador calcula el espacio
-  total de antemano y lo resta **una sola vez** en el prólogo con
-  `subq $frameSize, %rsp`.
-
-Que los offsets sean negativos y relativos a `%rbp` y no a `%rsp` es lo que
-permite no recalcular nada: con `%rsp` como referencia, cada `push` cambiaría la
-dirección de todas las variables.
-
-**Lo que está arriba de `%rbp` no lo escribe esta función**: la dirección de
-retorno la pone la instrucción `call` del llamador, y el `%rbp` anterior lo
-guarda el prólogo. De ahí que los parámetros que no entraron en registros
-aparezcan en `+16(%rbp)` y siguientes: están en el marco **del llamador**.
+- **Puntero de marco (`%rbp`):** permanece fijo durante toda la ejecución del método. Todos los datos locales se direccionan con desplazamientos negativos constantes (`-4(%rbp)`, `-8(%rbp)`), evitando recalcular posiciones cuando `%rsp` varía durante el apilado de argumentos.
+- **Puntero de pila (`%rsp`):** apunta al extremo inferior del marco. El espacio total requerido se calcula antes de emitir la función y se reserva en una sola instrucción en el prólogo (`subq $frameSize, %rsp`).
+- **Datos en el marco del llamador (`+8(%rbp)` y `+16(%rbp)`):** la instrucción `call` apila la dirección de retorno en `+8(%rbp)` y el prólogo guarda el `%rbp` previo en `0(%rbp)`. En consecuencia, los argumentos pasados por pila (del séptimo en adelante según la ABI System V AMD64) quedan ubicados a partir de `+16(%rbp)`.
 
 ---
 
-## 3. Las estructuras
+## 2. Estructuras e interfaz pública
 
 ```mermaid
 classDiagram
@@ -103,7 +73,9 @@ classDiagram
     FunctionFrame "1" *-- "many" StackSlot : slots
 ```
 
-### `StackSlot`: nombre y desplazamiento
+### `StackSlot` y `FunctionFrame`
+
+Cada `StackSlot` asocia el nombre de un operando TAC con su desplazamiento negativo respecto de `%rbp`:
 
 ```c
 typedef struct StackSlot {
@@ -112,175 +84,89 @@ typedef struct StackSlot {
 } StackSlot;
 ```
 
-Nada más. Es una entrada de un mapa nombre → offset, y el nombre es el del
-operando TAC tal cual, con su sufijo `@uid`. **Ahí se cobra el renombrado único**
-de la [tabla de símbolos](../04-semantico/01-tabla-de-simbolos.md): como los nombres ya son irrepetibles en todo el programa, buscar
-por nombre no puede confundir dos variables homónimas de ámbitos distintos.
+Como los operandos de variables locales y parámetros llegan al TAC calificados con el sufijo `@uid` asignado por la [tabla de símbolos](../04-semantico/01-tabla-de-simbolos.md), el nombre es único dentro de la función y la búsqueda por cadena distingue variables homónimas declaradas en bloques anidados.
 
-### `FunctionFrame`: trece campos en cuatro grupos
+| Campo de `FunctionFrame` | Descripción |
+| :--- | :--- |
+| `functionName` | Nombre del método, utilizado en su etiqueta de entrada y en `.L_<fn>_epilogue`. |
+| `returnType` | Tipo de retorno del método; permite inicializar `%eax` en `0` en el epílogo cuando `main` es `void`. |
+| `slots`, `slotCount`, `slotCapacity` | Arreglo dinámico de ranuras con nombre. |
+| `nextOffset` | Total acumulado de bytes asignados a ranuras (`offset = -nextOffset`). |
+| `frameSize` | Tamaño total del marco en bytes, redondeado al siguiente múltiplo de 16 (§3.3). |
+| `pendingParamSlots` | Arreglo dinámico con los offsets de los argumentos apilados por instrucciones `TAC_PARAM` en curso (§3.2). |
+| `pendingParamCount`, `pendingParamCapacity`, `maxPendingParams` | Cantidad actual de argumentos pendientes, capacidad del arreglo y pico máximo simultáneo. |
+| `integerParamCount`, `stackParamCount` | Contadores de parámetros formales recibidos por registro (`%edi`..`%r9d`) y por pila (`+16(%rbp)`..). |
 
-| Campo | Para qué |
-| --- | --- |
-| `functionName` | El nombre, usado para la etiqueta y para `.L_<fn>_epilogue` |
-| `returnType` | El tipo de retorno. Hace falta en el **epílogo**, para poner `%eax` en cero cuando `main` es `void` |
-| `slots`, `slotCount`, `slotCapacity` | El arreglo dinámico de ranuras |
-| `nextOffset` | Bytes ocupados hasta ahora. **Se incrementa, el offset es su negativo** |
-| `frameSize` | El total alineado a 16 bytes |
-| `pendingParamSlots` | Las ranuras de los argumentos de la llamada en curso (§5) |
-| `pendingParamCount`, `pendingParamCapacity`, `maxPendingParams` | Cuántos hay apilados, cuánto cabe, y el **pico** calculado antes de emitir |
-| `integerParamCount`, `stackParamCount` | Cuántos parámetros formales ya se ubicaron en registros y cuántos vinieron por la pila |
+### Funciones públicas (`include/function_frame.h`)
 
-Los dos últimos existen porque la convención de llamada manda los primeros seis
-argumentos enteros a `%edi, %esi, %edx, %ecx, %r8d, %r9d` y **el resto por la
-pila**: hay que saber cuántos registros se consumieron para decidir de dónde se
-lee el siguiente parámetro. La ABI define además una secuencia aparte para los
-reales (`%xmm0`–`%xmm7`) que avanza independientemente, pero esta etapa no
-genera código para reales.
+| Función | Descripción |
+| :--- | :--- |
+| `createFrame(functionName)` | Reserva e inicializa el `FunctionFrame`, el arreglo `slots` (capacidad inicial 16) y `pendingParamSlots` (capacidad inicial 64). |
+| `freeFrame(frame)` | Libera los arreglos internos y la estructura. Acepta `NULL`. |
+| `addSlot(frame, operand)` | Asigna una ranura de 4 bytes al operando y devuelve su offset negativo. Es idempotente: si el nombre ya existe en `slots`, devuelve el offset previamente asignado. |
+| `addAnonymousSlot(frame)` | Incrementa `nextOffset` en 4 bytes y devuelve `-nextOffset` sin registrar entrada en `slots`. |
+| `getSlotOffset(frame, name, outOffset)` | Busca linealmente el nombre en `slots`; escribe el offset en `*outOffset` y devuelve `true`, o `false` si no existe. |
+| `ensurePendingParamCapacity(frame, needed)` | Duplica la capacidad de `pendingParamSlots` mediante `realloc` hasta cubrir `needed`. |
 
----
-
-## 4. Las seis funciones
-
-### `createFrame(functionName)` y `freeFrame(frame)`
-
-`createFrame` reserva la estructura y sus dos arreglos: las ranuras con capacidad
-16 y el de argumentos pendientes con capacidad `INITIAL_PENDING_PARAMS_CAPACITY`
-(64). Si alguna reserva falla, llama a `freeFrame` y devuelve `NULL`.
-`freeFrame` libera los dos arreglos y la estructura; como `free(NULL)` no hace
-nada, ese camino de error es seguro sin chequeos adicionales.
-
-### `addSlot(frame, operand)` — idempotente
-
-```c
-int existingOffset = 0;
-if (getSlotOffset(frame, operand->name, &existingOffset)) {
-    return existingOffset;                  /* ya tenia ranura */
-}
-
-frame->nextOffset += 4;
-...
-slot->offset = -frame->nextOffset;
-```
-
-**Primero busca**, con la misma `getSlotOffset` que usa el generador. Si el
-operando ya tiene ranura, devuelve la que tenía sin reservar otra. Esa idempotencia es lo que permite que la pasada de
-dimensionamiento recorra todas las instrucciones llamando a `addSlot` sobre cada
-operando sin preocuparse por los repetidos: `t0` aparece en dos instrucciones y
-recibe una sola ranura.
-
-**Cada ranura ocupa 4 bytes, sin importar el tipo.** `int` y `boolean`
-miden lo mismo en C-TDS (32 bits, 32 bits y 1/0 guardado como entero), así que no
-hay caso especial. Soportar `double` rompería esa uniformidad y exigiría mirar el
-tipo al reservar.
-
-La búsqueda es un recorrido lineal con `strcmp`, igual que en la tabla de
-símbolos: O(ranuras) por consulta. Para funciones de decenas de slots es
-irrelevante.
-
-### `addAnonymousSlot(frame)` — reserva sin registrar
-
-```c
-frame->nextOffset += 4;
-return -frame->nextOffset;
-```
-
-Mueve el acumulador y devuelve el offset, **sin agregar nada a `slots`**. Por eso
-`getSlotOffset` no puede encontrar estas ranuras: no tienen nombre.
-
-Es deliberado y lo usan los argumentos pendientes (§5), que no son variables ni
-temporales del TAC sino lugares de estacionamiento, y se identifican **por
-posición** en la pila de argumentos, no por nombre.
-
-### `getSlotOffset(frame, name, outOffset)`
-
-La consulta que usa el generador al traducir cada instrucción: dado el nombre de
-un operando, dónde está. Devuelve `false` si no lo encuentra, y ese `false` es lo
-que el generador convierte en un error interno, porque significa que la pasada de
-dimensionamiento se salteó un operando.
-
-### `ensurePendingParamCapacity(frame, needed)`
-
-Crecimiento por duplicación del arreglo de argumentos pendientes: duplica la
-capacidad hasta cubrir `needed` y hace un único `realloc`. Si falla, devuelve
-`false` sin tocar el arreglo, que sigue siendo válido con su capacidad anterior.
+El módulo no incluye `string_builder.h` ni emite instrucciones assembly: actúa exclusivamente como tabla de ubicaciones para el generador de código objeto.
 
 ---
 
-## 5. El mecanismo de argumentos pendientes
+## 3. Dimensionamiento en dos pasadas y argumentos pendientes
 
-Es la parte menos obvia del módulo, y resuelve un problema concreto: **una
-llamada anidada destruiría los argumentos que ya están en los registros**.
+Para emitir `subq $frameSize, %rsp` en el prólogo de una función es necesario conocer de antemano el espacio total ocupado por sus locales, temporales y argumentos en tránsito. Por ello, el generador de código objeto recorre cada función en dos pasadas:
 
-```c
-f(g(1), h(2))
-```
+1. **Pasada 1 (`buildFrameLayout`):** recorre las instrucciones entre `TAC_BEGIN_FUNC` y `TAC_END_FUNC` para asignar todas las ranuras y calcular `frameSize`.
+2. **Pasada 2 (`emitFunction`):** emite el prólogo, traduce cada instrucción consultando `getSlotOffset` y cierra con el epílogo (ver [generación de código objeto](02-generacion-codigo-objeto.md)).
 
-Si `f` recibiera sus argumentos directamente en `%edi` y `%esi`, al evaluar
-`h(2)` la llamada a `h` sobrescribiría `%edi` con su propio argumento.
+### 3.1 Ranuras con nombre (`allocateLocalSlots`)
 
-La solución es que **cada `param` del TAC copia su valor a una ranura propia del
-marco**, y el `call` consume las últimas N justo antes de cargarlas a los
-registros. Las ranuras son del marco de la función actual, así que ninguna
-llamada anidada las toca.
+Recorre el cuerpo de la función invocando `addSlot` sobre:
+- El operando de cada `TAC_PARAM_DECL` y `TAC_LOCAL_DECL`.
+- El operando `result` de cualquier instrucción cuando es un temporal (`OPERAND_TEMP`).
 
-### Cómo se dimensiona: la simulación del pico
+Gracias a la idempotencia de `addSlot`, si un temporal se asigna o menciona más de una vez recibe una única ranura. Las variables globales (`TAC_GLOBAL_DECL`) no reciben ranura en el marco porque se alojan en la sección `.data` y se acceden mediante direccionamiento relativo al contador de programa (`nombre(%rip)`).
 
-`allocatePendingParamSlots` recorre el TAC de la función **simulando la pila** de
-argumentos, sin emitir nada:
+### 3.2 Argumentos pendientes para llamadas anidadas (`allocatePendingParamSlots`)
+
+En una llamada anidada como `f(g(1), h(2))`, si el primer argumento de `f` (el resultado de `g(1)`) se colocara directamente en `%edi`, la evaluación posterior de `h(2)` sobrescribiría `%edi` con `2` antes de invocar a `f`.
+
+Para evitar esa colisión sin necesidad de preservar registros en mitad de una expresión, cada instrucción `TAC_PARAM` copia su operando a una ranura anónima propia dentro del marco de la función llamadora, y `TAC_CALL` consume las últimas `arity` ranuras justo antes de cargar los registros de la ABI.
+
+`allocatePendingParamSlots` determina cuántas ranuras anónimas se necesitan simulando la pila de parámetros pendientes a lo largo de la función:
 
 ```c
 if (scan->operation == TAC_PARAM) {
     pendingCount++;
-    if (pendingCount > frame->maxPendingParams) frame->maxPendingParams = pendingCount;
+    if (pendingCount > frame->maxPendingParams) {
+        frame->maxPendingParams = pendingCount;
+    }
 } else if (scan->operation == TAC_CALL) {
-    pendingCount -= arity;          /* la aridad viene en el segundo operando */
+    pendingCount -= arity;
     if (pendingCount < 0) pendingCount = 0;
 }
 ```
 
-Después reserva exactamente `maxPendingParams` ranuras anónimas. **No hace falta
-una por argumento del programa, sino una por cada argumento que puede estar
-pendiente al mismo tiempo**, que es el pico de esa simulación.
+Al finalizar el recorrido, reserva exactamente `maxPendingParams` ranuras mediante `addAnonymousSlot(frame)`. De este modo, la cantidad de ranuras reservadas equivale al máximo de argumentos simultáneamente en vuelo, y no al total de instrucciones `param` de la función.
 
-### Verificación con una llamada anidada
+Por ejemplo, para `return f(g(1), h(2));` en `main`:
 
-```c
-int g(int x){ return x * 10; }
-int h(int x){ return x + 100; }
-int f(int a, int b){ return a + b; }
-int main(){ return f(g(1), h(2)); }
-```
-
-El TAC de `main`:
-
-```
-param 1
-t3 = call g, 1      <- pendientes: 1 -> 0,  pico 1
-param t3            <- pendientes: 1
-param 2             <- pendientes: 2,       pico 2
-t4 = call h, 1      <- pendientes: 1
-param t4            <- pendientes: 2
-t5 = call f, 2      <- pendientes: 0
+```text
+param 1             # pendientes: 1 (pico = 1)
+t3 = call g, 1      # pendientes: 1 - 1 = 0
+param t3            # pendientes: 1
+param 2             # pendientes: 2 (pico = 2)
+t4 = call h, 1      # pendientes: 2 - 1 = 1
+param t4            # pendientes: 2
+t5 = call f, 2      # pendientes: 2 - 2 = 0
 ret t5
 ```
 
-Pico = 2. Entonces el marco de `main` lleva: 3 temporales (`t3`, `t4`, `t5`) más
-2 ranuras anónimas = **5 ranuras × 4 bytes = 20 bytes**, que alineado da **32**.
-Y es exactamente lo que emite:
+El marco reserva 3 ranuras con nombre (`t3`, `t4`, `t5`) y 2 ranuras anónimas (pico = 2), totalizando $5 \times 4 = 20$ bytes, que alineados a 16 bytes resultan en `frameSize = 32`.
 
-```asm
-main:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $32, %rsp
-```
+### 3.3 Alineación a 16 bytes (System V AMD64 ABI)
 
-Los offsets que usa son `-4` a `-20`, los cinco. El programa devuelve 112, que es
-`1*10 + 2+100`. Verificado.
-
----
-
-## 6. La alineación a 16 bytes
+La especificación System V AMD64 ABI exige que `%rsp` esté alineado a 16 bytes inmediatamente antes de toda instrucción `call`. Cuando el llamador ejecuta `call`, el procesador apila los 8 bytes de la dirección de retorno, y cuando el prólogo de la función llamada ejecuta `pushq %rbp`, apila otros 8 bytes, dejando `%rsp` nuevamente en un múltiplo de 16. Para conservar esa alineación, el tamaño restado a `%rsp` en el prólogo (`frameSize`) debe ser siempre múltiplo de 16:
 
 ```c
 #define ALIGN_UP(value, alignment) (((value) + (alignment) - 1) & ~((alignment) - 1))
@@ -288,80 +174,30 @@ Los offsets que usa son `-4` a `-20`, los cinco. El programa devuelve 112, que e
 frame->frameSize = ALIGN_UP(frame->nextOffset, 16);
 ```
 
-**Por qué hace falta.** La convención System V AMD64 exige que `%rsp` esté
-alineado a 16 bytes **inmediatamente antes de cada `call`**. No es una
-recomendación: varias instrucciones SSE fallan con operandos desalineados, y una
-función de libc puede usarlas. Un marco desalineado produce un fallo de
-segmentación en un lugar que no tiene nada que ver con la causa.
-
-**Cómo funciona la macro.** `(value + alignment - 1)` sube al siguiente múltiplo
-o más, y `& ~(alignment - 1)` apaga los bits bajos, que es dividir y multiplicar
-por la potencia de dos de una sola vez. Para 16, `~15` es `...11110000`: apaga los
-cuatro bits bajos. **Solo funciona si `alignment` es potencia de dos**, que es una
-precondición no verificada de la macro.
-
-| `nextOffset` | `frameSize` | Relleno |
+| `nextOffset` (bytes usados) | `frameSize` (alineado) | Relleno (bytes) |
 | :---: | :---: | :---: |
+| 0 (sin locales ni temporales) | 0 | 0 |
 | 4 (1 ranura) | 16 | 12 |
 | 12 (3 ranuras) | 16 | 4 |
 | 16 (4 ranuras) | 16 | 0 |
 | 20 (5 ranuras) | 32 | 12 |
 
-Verificado en los dos extremos: un `main` con 3 ranuras reserva `subq $16`, y el
-de la llamada anidada con 5 reserva `subq $32`.
-
 ---
 
-## 7. Las dos pasadas
+## 4. Prólogo y epílogo
 
-El generador recorre cada función **dos veces**, y la razón es el prólogo: para
-emitir `subq $frameSize, %rsp` hay que conocer `frameSize`, y para conocerlo hay
-que haber visto todas las instrucciones.
-
-### Pasada 1: `buildFrameLayout`
-
-```c
-allocateLocalSlots(frame, functionStart);        /* ranuras con nombre */
-allocatePendingParamSlots(frame, functionStart); /* ranuras anonimas, por el pico */
-frame->frameSize = ALIGN_UP(frame->nextOffset, 16);
-```
-
-`allocateLocalSlots` llama a `addSlot` sobre:
-
-| Instrucción | Qué reserva |
-| --- | --- |
-| `TAC_PARAM_DECL` | El parámetro formal |
-| `TAC_LOCAL_DECL` | La variable local |
-| Cualquier operación cuyo `result` sea `OPERAND_TEMP` | El temporal |
-
-Nótese que **las globales no reciben ranura**: viven en `.data` y se acceden con
-`nombre(%rip)`. La distinción la hereda del opcode del TAC, que ya separaba
-`GLOBAL_DECL` de `LOCAL_DECL`.
-
-### Pasada 2: `emitFunction`
-
-Prólogo, traducir instrucción por instrucción consultando `getSlotOffset`,
-epílogo. Es la parte documentada en [generación de código objeto](02-generacion-codigo-objeto.md).
-
----
-
-## 8. Prólogo y epílogo
-
-### Prólogo
+### Prólogo (`emitPrologue`)
 
 ```asm
 .globl sumar
 .type sumar, @function
 sumar:
-    pushq %rbp              # guarda el frame pointer del llamador
-    movq %rsp, %rbp         # fija el nuevo frame pointer
-    subq $16, %rsp          # reserva el espacio calculado
+    pushq %rbp              # preserva el frame pointer del llamador
+    movq %rsp, %rbp         # establece el nuevo frame pointer
+    subq $16, %rsp          # reserva frameSize bytes (se omite si frameSize == 0)
 ```
 
-El `subq` **solo se emite si `frameSize > 0`**: una función sin locales ni
-temporales no reserva nada.
-
-### Epílogo
+### Epílogo (`emitEpilogue`)
 
 ```asm
 .L_sumar_epilogue:
@@ -369,153 +205,41 @@ temporales no reserva nada.
     ret
 ```
 
-**La etiqueta de epílogo es un punto de convergencia.** Todos los `return` de la
-función saltan ahí con un `jmp` en lugar de duplicar el desarmado del marco. Por
-eso `functionName` tiene que estar en el frame: la etiqueta se llama
-`.L_<nombre>_epilogue` y hay que poder construirla tanto al emitir el salto como
-al emitir el destino.
-
-El prefijo `.L` no es decorativo: marca la etiqueta como **local al archivo**, así
-que no entra en la tabla de símbolos del objeto y no puede chocar con un nombre de
-otra unidad.
-
-`leave` es una sola instrucción que hace `movq %rbp, %rsp` seguido de
-`popq %rbp`: devuelve `%rsp` a donde estaba y restaura el marco del llamador. Y
-`ret` saca la dirección de retorno que `call` había dejado en la pila.
+Todas las instrucciones `return` de una función saltan a la etiqueta única `.L_<functionName>_epilogue` mediante `jmp`, centralizando el desarmado del marco en un solo punto. El prefijo `.L` indica al ensamblador que la etiqueta es local al archivo objeto y no debe exportarse en la tabla de símbolos.
 
 ---
 
-## 9. Conexión con las fases vecinas
+## 5. Límites conocidos
 
-| Viene de | Qué cruza la frontera |
-| --- | --- |
-| `tac.h` | Los `TACOperand`, de los que se usa el `name` como clave |
-
-| Va hacia | Qué entrega |
-| --- | --- |
-| `object_code.c` | `frameSize` para el prólogo, y un offset por cada operando, que se escribe como `offset(%rbp)` |
-
-El módulo **no emite assembly**: no incluye `string_builder.h`. Es pura
-contabilidad, y eso lo hace testeable sin generar una línea de código.
+- **Valor de retorno de `addSlot` ante error:** si falla la reserva de memoria o recibe argumentos nulos, `addSlot` devuelve `0`. Aunque en ejecución normal ninguna ranura recibe el offset `0` (porque `nextOffset` se incrementa antes de negar el valor, comenzando en `-4`), el tipo de retorno no distingue un fallo de un desplazamiento nulo.
+- **Precondición de `ALIGN_UP`:** la máscara bit a bit `& ~(alignment - 1)` requiere que `alignment` sea potencia de dos.
+- **Tamaño uniforme de 4 bytes:** todas las ranuras reservan 4 bytes (`int` y `boolean` de 32 bits). No contempla tipos de 8 bytes ni alineaciones internas diferenciadas.
+- **Búsqueda lineal sin reutilización de ranuras:** `getSlotOffset` realiza una búsqueda lineal $O(n)$ sobre `slots`, y cada temporal conserva su ranura durante toda la función aunque su tiempo de vida abarque solo dos instrucciones.
 
 ---
 
-## 10. Cómo se extiende
+## 6. Cómo se extiende
 
-### Un tipo de otro tamaño (`double`, `char`)
-
-Es el cambio que más toca este módulo. Hoy `addSlot` suma 4 fijo; habría que
-mirar `operand->type` y sumar lo que corresponda, **más respetar la alineación
-natural**: un `double` de 8 bytes tiene que quedar en un offset múltiplo de 8, lo
-que puede exigir relleno entre ranuras. El patrón habitual es ordenar las
-ranuras de mayor a menor tamaño para minimizar el desperdicio.
-
-### Arrays
-
-Una ranura de `n × tamaño` en vez de una de 4, y el acceso pasa a ser
-`base + índice × tamaño`, o sea direccionamiento indexado en lugar de un offset
-fijo. `StackSlot` necesitaría un campo de tamaño.
-
-### Asignación de registros
-
-La mejora grande. En vez de darle ranura a cada temporal, mantener los más usados
-en registros. Se construye el **grafo de interferencia** a partir del
-[análisis de variables vivas](../06-optimizador/01-variables-vivas.md) —dos valores vivos al mismo
-tiempo interfieren y no pueden compartir registro— y se lo colorea con tantos
-colores como registros haya; lo que no se puede colorear se derrama a la pila.
-Este módulo seguiría existiendo para los derrames.
-
-### Reducir el tamaño del marco
-
-Hoy cada temporal tiene ranura propia aunque su vida sea de dos instrucciones.
-Con el análisis de vivacidad ya implementado, dos temporales cuyas vidas no se
-solapan podrían **compartir** ranura. Es la versión en memoria del mismo problema
-de coloreo, y es bastante más simple que hacerlo con registros.
+- **Tipos de distinto tamaño (`double`, `char`):** `addSlot` debería consultar `operand->type` para determinar el tamaño en bytes (por ejemplo, 8 bytes para `double`) y alinear `nextOffset` al múltiplo natural de cada tipo antes de asignar el desplazamiento.
+- **Arreglos locales:** requeriría añadir un campo de tamaño en `StackSlot` para reservar $N \times \text{sizeof(tipo)}$ bytes contiguos y calcular accesos mediante direccionamiento indexado a partir del offset base.
+- **Compactación del marco y asignación de registros:** a partir de los conjuntos calculados por el [análisis de variables vivas](../06-optimizador/01-variables-vivas.md), es posible construir el grafo de interferencia entre variables y temporales. Dos temporales cuyas vidas no se solapan pueden compartir la misma ranura de pila o asignarse a registros físicos (*callee-saved* / *caller-saved*), reservando ranuras en el `FunctionFrame` únicamente para los valores derramados (*spilled*).
 
 ---
 
-## 11. Trampas y límites conocidos
+## 7. Validación
 
-- **`addAnonymousSlot` no registra la ranura**, así que `getSlotOffset` nunca la
-  encuentra. No es un bug: esas ranuras se referencian por posición (§5).
-- **`addSlot` devuelve 0 ante un error**, y 0 es también un offset sintácticamente
-  válido (`0(%rbp)`, que es el `%rbp` guardado). El llamador no puede distinguir
-  "falló" de "offset 0" por el valor de retorno. En la práctica nunca se asigna el
-  offset 0 porque `nextOffset` se incrementa **antes** de calcularlo, así que el
-  primer slot es `-4`; pero el contrato es ambiguo.
-- **`ALIGN_UP` exige que la alineación sea potencia de dos** y no lo verifica.
-  Con 16 funciona; con 12 daría un resultado sin sentido.
-- **Todas las ranuras son de 4 bytes** (§4). Es correcto para los tres tipos del
-  lenguaje y no para ninguno más.
-- **La búsqueda es lineal.** O(ranuras) por consulta, y el generador consulta una
-  o dos veces por instrucción, así que el dimensionamiento es cuadrático en el
-  tamaño de la función. Irrelevante en estas escalas.
-- **El marco no reutiliza ranuras** (§10). Una función con cien temporales de vida
-  corta reserva cuatrocientos bytes.
-
----
-
-## 12. La teoría detrás
-
-- **Registro de activación** (*activation record* o *stack frame*): el bloque de
-  memoria que una invocación de función necesita para sus datos locales. Se crea
-  al llamar y se destruye al retornar, y la disciplina de pila es lo que hace que
-  la recursión funcione sin esfuerzo: cada invocación tiene su propio marco.
-- **Puntero de marco contra puntero de pila**: usar `%rbp` fijo como referencia
-  cuesta un registro y una instrucción de prólogo, y a cambio da offsets
-  constantes. Los compiladores optimizadores suelen **omitir el frame pointer**
-  (`-fomit-frame-pointer`) y referenciar todo desde `%rsp`, lo que libera un
-  registro a costa de recalcular offsets cada vez que `%rsp` se mueve. Acá se
-  eligió `%rbp` por claridad.
-- **Convención de llamada** (*calling convention* / ABI): el acuerdo sobre quién
-  pone los argumentos dónde, quién preserva qué registros y por dónde vuelve el
-  resultado. System V AMD64 es la de Linux; Windows usa otra. Respetarla es lo que
-  permite que el código generado llame a libc y que `gcc` enlace el resultado.
-- **Clases de registros**: la ABI reparte los argumentos según su clase —entera o
-  de punto flotante— en **dos secuencias independientes**. Como esta etapa solo
-  genera enteros y booleanos, el frame lleva una sola cuenta de registros
-  (`integerParamCount`) más la de los que llegaron por la pila (§3).
-- **Alineación de la pila**: el requisito de 16 bytes viene de que las
-  instrucciones SSE operan sobre 16 bytes y algunas exigen alineación. Es un
-  contrato de la ABI, y violarlo da fallos lejanos a la causa.
-- **Asignación de almacenamiento** (*storage allocation*): decidir dónde vive cada
-  valor. El espectro va desde "todo en memoria" —lo de acá, simple y lento— hasta
-  la asignación de registros por coloreo de grafos. La información que habilita lo
-  segundo es exactamente el [análisis de variables vivas](../06-optimizador/01-variables-vivas.md), lo cual
-  explica por qué ese análisis es la pieza central de un back-end optimizador.
-- **Derrame** (*spilling*): cuando no hay registros suficientes, mover un valor a
-  memoria. En este compilador **todo está derramado desde el principio**, que es el
-  caso degenerado.
-
----
-
-## 13. Cómo se valida
-
-- **Suite:** `tests/test_object_code.c` incluye los casos de
-  dimensionamiento del marco y de offsets asignados.
-- **A mano:** el prólogo del `.ass` muestra el tamaño calculado, y los offsets
-  usados se leen en el cuerpo:
+- **Suite unitaria:** `tests/test_object_code.c` verifica el cálculo de `frameSize`, la alineación a múltiplos de 16, los desplazamientos negativos consecutivos asignados por `addSlot` y el dimensionamiento ante llamadas anidadas.
+- **Inspección manual del assembly:**
 
 ```bash
 ./mi_compilador -target assembly examples/factorial.ctds
-grep -A3 '^factorial:' examples/factorial.ass          # el subq del prologo
+grep -A3 '^factorial:' examples/factorial.ass
 ```
 
-- **Chequeos que el marco siempre debe cumplir:**
-
-| Propiedad | Por qué |
-| --- | --- |
-| `frameSize` es múltiplo de 16 | Lo exige la ABI antes de cada `call` |
-| Ningún offset usado excede `frameSize` en valor absoluto | Si no, se escribe fuera del marco reservado |
-| Todo offset es negativo | Lo positivo es del llamador |
-
-- **La prueba de fondo** es que el programa corra. Un marco mal dimensionado se
-  manifiesta como corrupción de variables o fallo de segmentación, no como un
-  error de ensamblado, así que lo que detecta el problema es ejecutar:
-
-```bash
-./mi_compilador -o /tmp/f examples/factorial.ctds && /tmp/f; echo $?
-```
+- **Invariantes verificados en cada marco:**
+  1. `frameSize` es siempre múltiplo de 16.
+  2. Todo offset asignado a locales, parámetros en registro o temporales pertenece al rango `[-frameSize, -4]`.
+  3. Los parámetros recibidos por pila a partir del séptimo se leen de desplazamientos positivos `16 + 8 * k(%rbp)`.
 
 ---
 

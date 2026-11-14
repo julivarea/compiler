@@ -2,63 +2,48 @@
 
 **Archivo:** `src/parser/bison.y` (162 líneas)
 
-Toma la secuencia de tokens que produce el [análisis léxico](01-analisis-lexico.md)
-y verifica que forme un programa válido según la gramática de C-TDS, construyendo
-el AST en el camino.
+Consume la secuencia de tokens producida por el [análisis léxico](01-analisis-lexico.md), verifica que conforme un programa válido según la gramática libre de contexto de C-TDS y construye el árbol de sintaxis abstracta (AST).
 
 ---
 
 ## 1. Qué problema resuelve
 
-Decidir si la secuencia de tokens pertenece al lenguaje, y mientras lo hace,
-armar el árbol que representa su estructura. Es la fase que entiende de
-**jerarquía**: que en `2 + 3 * 4` la multiplicación va adentro de la suma, que un
-`while` tiene una condición y un cuerpo, que un método tiene parámetros.
-
-El léxico sabe qué es cada pieza; el sintáctico sabe cómo se arman.
+Determinar si la secuencia de tokens respeta la gramática del lenguaje y materializar su estructura jerárquica (precedencia de operadores, anidamiento de bloques, firma y cuerpo de métodos) en un AST cuya raíz queda en `astRoot`.
 
 ---
 
 ## 2. Interfaz pública
 
-Bison genera `build/bison.tab.c` y `build/bison.tab.h` a partir de este archivo.
+Bison genera `build/bison.tab.c` y `build/bison.tab.h` a partir de `src/parser/bison.y`:
 
 | Símbolo | Qué es | Quién lo usa |
 | --- | --- | --- |
-| `yyparse()` | Parsea la entrada completa. Devuelve `0` si la aceptó, `1` si hubo error | `runParse` en `driver.c` |
-| `yyerror(const char *)` | Callback que Bison invoca al detectar un error | Lo llama Bison, lo define este archivo |
-| `astRoot` | Puntero global a la raíz del AST construido | Lo escribe la acción de `Program`; lo leen todas las fases siguientes |
-| `yylex()` | Declarado `extern`: lo provee el léxico | Lo llama Bison internamente |
-| `bison.tab.h` | Los `#define` de cada token y la declaración de `yylval` | `lexer.l` lo incluye para poder devolver tokens |
+| `yyparse()` | Ejecuta el análisis sintáctico. Devuelve `0` si acepta la entrada o `1` ante error | `runParse` en `driver.c` |
+| `yyerror(const char *)` | Callback invocado por Bison al detectar un error sintáctico | Definido en `bison.y`, llamado internamente por `yyparse()` |
+| `astRoot` | Puntero global a la raíz del AST construido | Escrito por la producción `Program`; leído por las fases posteriores |
+| `yylex()` | Declarado `extern`, provisto por Flex | Llamado internamente por `yyparse()` |
+| `bison.tab.h` | Definiciones numéricas de tokens y declaración de `yylval` | Incluido por `lexer.l` |
 
-La dependencia es circular a propósito: el parser necesita `yylex()` del léxico,
-y el léxico necesita los números de token del parser. Se corta generando primero
-el header con `bison -d` y después compilando el léxico contra él. Por eso
-`build.sh` corre `bison` **antes** que `flex`.
+La dependencia mutua entre `lexer.l` y `bison.y` se resuelve ejecutando `bison -d` antes de `flex` en `build.sh`, de modo que `bison.tab.h` exista al compilar el escáner.
 
 ---
 
-## 3. El prólogo
+## 3. Prólogo y configuración
 
-### El bloque `%{ ... %}`
+### Bloque `%{ ... %}`
 
-Se copia tal cual al principio del `.c` generado. Contiene los `#include`, las
-declaraciones `extern` y `yyerror`.
+Se copia al inicio de `bison.tab.c` con los `#include`, declaraciones `extern` y `yyerror`:
 
 ```c
 static void yyerror(const char *s) {
-    (void)s; /* el mensaje de Bison esta en ingles y no aporta nada mas que la linea */
+    (void)s;
     syntaxError(yylineno, "error de sintaxis");
 }
 ```
 
-**Por qué se descarta el mensaje de Bison.** Bison pasa un texto en inglés del
-estilo `syntax error, unexpected '='`. El proyecto reporta todos los errores en
-español y con el mismo formato, así que se ignora el parámetro y se arma el
-mensaje propio con `syntaxError`, que es el de `error_handler`. El `(void)s`
-existe solo para que GCC no avise por parámetro sin usar.
+El texto en inglés que genera Bison (`s`) se descarta para mantener todos los diagnósticos del compilador en español y bajo el formato unificado de `error_handler`.
 
-### El `#ifdef UNITY_TESTING`
+### Definición condicional de `astRoot` (`#ifdef UNITY_TESTING`)
 
 ```c
 #ifdef UNITY_TESTING
@@ -68,12 +53,9 @@ extern NodeAST *astRoot;
 #endif
 ```
 
-En la build normal `astRoot` se define en `main.c` y acá solo se declara. Pero
-las suites de tests no linkean `main.c` (tienen su propio `main`), así que sin
-este `#ifdef` el enlazado fallaría por símbolo indefinido. Es una concesión al
-testing, y está comentada como tal en el código.
+En el binario del compilador, `astRoot` se define en `main.c`. Como los ejecutables de tests unitarios definen su propio `main` y no enlazan `main.c`, `UNITY_TESTING` provee la definición del símbolo directamente en `bison.tab.c`.
 
-### El bloque `%code requires`
+### Bloque `%code requires`
 
 ```
 %code requires {
@@ -82,34 +64,24 @@ testing, y está comentada como tal en el código.
 }
 ```
 
-A diferencia de `%{ %}`, esto se copia al **header generado**, no al `.c`. Hace
-falta porque la `%union` menciona `struct NodeAST`, `struct NodeArray` y
-`DataType`: sin esos tipos a la vista, `bison.tab.h` no compilaría cuando
-`lexer.l` lo incluye.
+A diferencia de `%{ ... %}`, su contenido se inserta en `bison.tab.h`. Es necesario porque la `%union` referencia `struct NodeAST`, `struct NodeArray` y `DataType`, tipos que deben estar visibles cuando `lexer.l` incluye el encabezado.
 
 ---
 
-## 4. Declaraciones
+## 4. Declaraciones de símbolos y tipos
 
-### La unión de valores semánticos
+### Unión de valores semánticos (`%union`)
 
-Cada símbolo de la gramática puede llevar un valor. Como los tipos son distintos
-según el símbolo, Bison usa una unión:
-
-| Campo | Lo llevan | Quién lo pone |
+| Campo | Símbolos asociados | Origen |
 | --- | --- | --- |
-| `int intval` | `NUMBER`, `BOOL_CONST` | El léxico |
-| `float floatval` | `FLOAT_CONST` | El léxico |
-| `char *strval` | `ID` | El léxico (`strdup`) |
-| `struct NodeAST *node` | Los no terminales que producen **un** nodo | Las acciones |
-| `struct NodeArray *array` | Los no terminales que producen una **lista** de nodos | Las acciones |
-| `DataType dataType` | `Type` | Las acciones |
+| `int intval` | `NUMBER`, `BOOL_CONST` | Analizador léxico |
+| `float floatval` | `FLOAT_CONST` | Analizador léxico |
+| `char *strval` | `ID` | Analizador léxico (`strdup`) |
+| `struct NodeAST *node` | No terminales que producen un único nodo del AST | Acciones sintácticas |
+| `struct NodeArray *array` | No terminales que acumulan una lista de nodos | Acciones sintácticas ([acciones del parser](03-acciones-del-parser.md)) |
+| `DataType dataType` | `Type` | Acciones sintácticas |
 
-La distinción `node` / `array` es la decisión de diseño central de las acciones:
-un `Block` es un nodo, pero `Statements` es una lista que después se cuelga de un
-nodo. El detalle está en [acciones del parser](03-acciones-del-parser.md).
-
-### Tokens
+### Tokens y no terminales
 
 ```
 %token VOID INT FLOAT BOOLEAN IF ELSE WHILE RETURN
@@ -117,18 +89,7 @@ nodo. El detalle está en [acciones del parser](03-acciones-del-parser.md).
 %token <strval> ID
 %token <intval> NUMBER BOOL_CONST
 %token <floatval> FLOAT_CONST
-```
 
-Los dos primeros grupos no llevan valor: la palabra misma es toda la información.
-Los tres últimos lo declaran con `<campo>`, y es lo que permite escribir `$1` en
-una acción y que Bison sepa de qué campo de la unión leer.
-
-Los operadores de un solo carácter (`+`, `<`, `;`, `(`…) **no se declaran**: se
-usan directamente como `'+'`, y su número de token es su código ASCII.
-
-### Tipos de los no terminales
-
-```
 %type <node>     Program Statement Expression MethodCall Block MethodDeclaration
                  ParameterList Assignment
 %type <dataType> Type
@@ -136,254 +97,119 @@ usan directamente como `'+'`, y su número de token es su código ASCII.
                  Statements Parameters Declarations Declaration
 ```
 
-Vale la pena mirar quién está en cada grupo, porque explica la forma del AST:
-`Block` y `ParameterList` son nodos (van a ser un `BLOCK_NODE` y un
-`PARAMETERS_NODE`), mientras que `Statements` y `Parameters` son listas que se
-resuelven dentro de esos nodos.
+Los operadores y delimitadores de un carácter (`+`, `<`, `;`, `(`, etc.) se referencian directamente por su literal de carácter en las reglas sin declaración `%token`. Los no terminales se dividen entre aquellos que construyen un `NodeAST` (`Block`, `ParameterList`) y aquellos que acumulan listas intermedias en un `NodeArray` (`Statements`, `Parameters`, `Declarations`).
 
 ---
 
 ## 5. Precedencia y asociatividad
 
+En lugar de estratificar la gramática de expresiones en múltiples no terminales (`Term`, `Factor`, etc.), `Expression` se define con reglas planas (`Expression OP Expression`) y la ambigüedad se resuelve mediante declaraciones explícitas de precedencia. Esto reduce la cantidad de producciones y evita reducciones intermedias de un solo hijo.
+
+En Bison, el orden de las directivas va de **menor a mayor precedencia** (inverso al orden de mayor a menor en que suele presentarse en la especificación del lenguaje):
+
 ```
-%left OR                /* || */
+%left OR                /* || (menor precedencia) */
 %left AND               /* && */
 %left EQ                /* == */
 %left '<' '>'
 %left '+' '-'
 %left '*' '/' '%'
-%precedence NOT UMINUS  /* ! y menos unario */
+%precedence NOT UMINUS  /* ! y menos unario (mayor precedencia) */
 ```
 
-**El orden de las declaraciones es el de menor a mayor precedencia.** La primera
-línea es la que liga más flojo. La especificación del lenguaje lista la
-precedencia de mayor a menor (`-` unario, `!`, `* / %`, `+ -`, `< >`, `==`, `&&`,
-`||`), así que este bloque es exactamente esa lista al revés, y conviene tenerlo
-claro porque invertirlo es un error que compila sin quejas y cambia la semántica.
-
-`%left` además fija asociatividad **izquierda**: `10 - 3 - 2` se agrupa
-`(10 - 3) - 2`.
-
-Verificado ejecutando los programas y mirando el código de salida:
-
-| Expresión | Resultado | Confirma |
-| --- | --- | --- |
-| `2 + 3 * 4` | 14 | `*` liga más fuerte que `+` |
-| `(2 + 3) * 4` | 20 | Los paréntesis la fuerzan |
-| `10 - 3 - 2` | 5 | Asociatividad izquierda (si fuera derecha daría 9) |
-| `100 / 10 / 2` | 5 | Ídem con división |
-| `17 % 5 * 2` | 4 | `%` y `*` tienen la misma precedencia, izquierda |
-| `0 - 3 * 4 + 20` | 8 | `*` antes que `-` y `+` |
-| `a < b == c < d` | igual que `(a<b) == (c<d)` | Relacionales ligan más que `==` |
-| `!false && false` | `(!false) && false` | `!` liga más que `&&` |
-| `true \|\| false && false` | `true \|\| (false && false)` | `&&` liga más que `\|\|` |
-
-### El pseudo-token `UMINUS`
-
-```
-| '-' Expression %prec UMINUS   { $$ = newOperatorNode(OP_UMINUS, $2, NULL); }
-```
-
-El problema: `-` aparece en dos reglas, como resta binaria y como negación
-unaria, y necesitan precedencias distintas. `-3 * 4` tiene que ser `(-3) * 4`,
-pero la precedencia del token `'-'` es más baja que la de `'*'`.
-
-La solución estándar es declarar un token que **el léxico nunca devuelve**,
-`UMINUS`, cuyo único propósito es tener precedencia alta, y marcar la regla con
-`%prec UMINUS` para que use esa en lugar de la del `'-'` que contiene.
-
-### Por qué `%precedence` y no `%left` para los unarios
-
-`%precedence` (Bison 3.0+) declara precedencia **sin** asociatividad. Para un
-operador prefijo la asociatividad no significa nada: no hay dos operandos entre
-los cuales decidir. Usar `%left` funcionaría pero declararía algo falso.
-
-No impide anidarlos, porque eso lo resuelve la forma de la regla
-(`NOT Expression`, con la expresión a la derecha). Verificado: `- -a` con `a = 7`
-devuelve 7, y `!!true` es verdadero.
+- **Asociatividad izquierda (`%left`):** expresiones como `10 - 3 - 2` o `100 / 10 / 2` se agrupan como `(10 - 3) - 2` y `(100 / 10) / 2`.
+- **Pseudo-token `UMINUS`:** el token `'-'` participa tanto en la resta binaria como en la negación unaria, pero `-3 * 4` debe agruparse como `(-3) * 4`. Se declara el token ficticio `UMINUS` (que el léxico nunca emite) en el nivel más alto y se anota la regla unaria con `%prec UMINUS`:
+  ```
+  | '-' Expression %prec UMINUS   { $$ = newOperatorNode(OP_UMINUS, $2, NULL); }
+  ```
+- **`%precedence` para operadores unarios:** asigna precedencia sin definir asociatividad, ya que los operadores prefijos no tienen dos operandos adyacentes que desambiguar, pero siguen admitiendo anidamiento (`- -a`, `!!true`) por la recursión derecha de sus producciones (`NOT Expression`).
 
 ---
 
-## 6. Inventario de producciones
+## 6. Producciones de la gramática
 
-Los 17 no terminales, en el orden del archivo. La columna *Acción* resume qué construye;
-el detalle de cada función auxiliar está en [acciones del parser](03-acciones-del-parser.md).
+El detalle de los acumuladores de listas se documenta en [acciones del parser](03-acciones-del-parser.md) y el de los constructores de nodos en [ast.c](04-ast.md).
 
-### Estructura del programa
+### Estructura del programa y declaraciones globales
 
 | No terminal | Producciones | Acción |
 | --- | --- | --- |
-| `Program` | `Declarations` | Crea el `BLOCK_NODE` raíz, le cuelga las declaraciones y lo asigna a `astRoot` |
-| `Declarations` | `%empty` \| `Declarations Declaration` | Acumula en una lista; vacío es `NULL` |
-| `Declaration` | `VariableDeclaration` \| `MethodDeclaration` | Unifica los dos casos en una lista |
+| `Program` | `Declarations` | Crea el `BLOCK_NODE` raíz con `newBlockNode($1)` y lo asigna a `astRoot` |
+| `Declarations` | `%empty` \| `Declarations Declaration` | Devuelve `NULL` o concatena con `mergeNodeArrays($1, $2)` |
+| `Declaration` | `VariableDeclaration` \| `MethodDeclaration` | Pasa la lista de variables o envuelve el método con `appendNode(NULL, $1)` |
 
-La recursión **izquierda** (`Declarations Declaration`) no es casual: es la forma
-natural para un parser ascendente, porque permite reducir cada elemento a medida
-que llega sin acumular la pila. Con recursión derecha el parser tendría que
-apilar todo el programa antes de empezar a reducir.
+Las listas usan **recursión izquierda** (`Declarations Declaration`), que en un parser ascendente permite reducir cada elemento a medida que se consume sin apilar la totalidad de la entrada en la pila del autómata.
 
 ### Declaraciones de variables
 
 | No terminal | Producciones | Acción |
 | --- | --- | --- |
-| `VariableDeclaration` | `Type IdentifierList ';'` | `resolveVariableDefinition`: reparte el tipo entre todos los identificadores |
-| `Type` | `INT` \| `BOOLEAN` \| `FLOAT` | Devuelve el `DataType` |
-| `IdentifierList` | `ID` \| `IdentifierList ',' ID` | Un `ID_NODE` por identificador (`newIdentifierNode`) |
+| `VariableDeclaration` | `Type IdentifierList ';'` | `resolveVariableDefinition($1, $2)`: asigna el tipo a todos los identificadores de la lista |
+| `Type` | `INT` \| `BOOLEAN` \| `FLOAT` | Devuelve el `DataType` correspondiente |
+| `IdentifierList` | `ID` \| `IdentifierList ',' ID` | Crea un `ID_NODE` provisorio (`TYPE_VOID`) por cada identificador |
 
-**`VOID` no está en `Type`.** Es deliberado: `void` solo es válido como tipo de
-retorno, no como tipo de variable. Al dejarlo afuera de `Type`, `void x;` es un
-error **sintáctico** y no hace falta ninguna regla semántica que lo prohíba.
-Verificado: da `error de sintaxis`.
+- **`VOID` no pertenece a `Type`:** `void` solo es válido en el encabezado de `MethodDeclaration`. Una declaración como `void x;` se rechaza directamente como error sintáctico.
+- **Declaraciones múltiples (`int a, b, c;`):** cuando se reduce `IdentifierList`, el parser aún no redujo `VariableDeclaration` y la acción de `IdentifierList` no tiene acceso al `Type`. Por eso cada identificador se instancia inicialmente como `ID_NODE` con `TYPE_VOID`, y `resolveVariableDefinition` los transforma en nodos `VARIABLE_DECLARATION_NODE` tipados al reducir la declaración completa.
 
-**`int a, b, c;` declara tres variables del mismo tipo.** El tipo se parsea una
-vez y `resolveVariableDefinition` lo propaga, porque en el momento de reducir
-`IdentifierList` el tipo todavía no se conoce: por eso los `ID_NODE` se crean con
-`TYPE_VOID` provisorio.
-
-### Métodos
+### Declaraciones de métodos
 
 | No terminal | Producciones | Acción |
 | --- | --- | --- |
 | `MethodDeclaration` | `Type ID '(' ParameterList ')' Block` \| `VOID ID '(' ParameterList ')' Block` | `newMethodDeclaration` |
-| `ParameterList` | `%empty` \| `Parameters` | `newParametersNode`: siempre produce un `PARAMETERS_NODE`, vacío o con hijos |
-| `Parameters` | `Type ID` \| `Parameters ',' Type ID` | `newParameterDeclaration` por parámetro |
+| `ParameterList` | `%empty` \| `Parameters` | `newParametersNode(NULL)` o `newParametersNode($1)` |
+| `Parameters` | `Type ID` \| `Parameters ',' Type ID` | `newParameterDeclaration` por cada parámetro |
 
-**`ParameterList` existe para que el nodo siempre esté.** Un método sin
-parámetros igual tiene su `PARAMETERS_NODE` vacío, en lugar de un `NULL`. Eso
-permite que todas las fases siguientes accedan a `children[0]` sin chequear, y es
-la razón de que el layout de `METHOD_DECLARATION_NODE` sea siempre
-`[parameters, body]`.
-
-**Cada parámetro repite su tipo.** `int f(int a, int b)` y no `int f(int a, b)`:
-la producción es `Parameters ',' Type ID`, con `Type` obligatorio.
+`ParameterList` construye siempre un `PARAMETERS_NODE` (incluso con 0 hijos cuando no hay parámetros), garantizando que `METHOD_DECLARATION_NODE` tenga invariablemente dos hijos `[parameters, body]`.
 
 ### Bloques y sentencias
 
 | No terminal | Producciones | Acción |
 | --- | --- | --- |
-| `Block` | `'{' VariableDeclarations Statements '}'` | `newBlockNode`: un `BLOCK_NODE` con las declaraciones seguidas de las sentencias |
-| `VariableDeclarations` | `%empty` \| `VariableDeclarations VariableDeclaration` | Lista |
-| `Statements` | `%empty` \| `Statements Statement` | Lista |
+| `Block` | `'{' VariableDeclarations Statements '}'` | `newBlockNode(mergeNodeArrays($2, $3))` |
+| `VariableDeclarations` | `%empty` \| `VariableDeclarations VariableDeclaration` | Acumula declaraciones con `mergeNodeArrays` |
+| `Statements` | `%empty` \| `Statements Statement` | Acumula sentencias con `appendNode` |
+| `Assignment` | `ID '=' Expression` | `newAssignmentNode($1, $3)` |
 
-**La regla de `Block` es la que impone que las variables se declaren al
-principio.** No es una regla semántica: está en la gramática. `VariableDeclarations`
-viene antes de `Statements` y no se pueden intercalar, así que
-`{ int a; a=1; int b; }` es un error **sintáctico**. Verificado.
+La producción `Block : '{' VariableDeclarations Statements '}'` impone por gramática que todas las declaraciones locales precedan a las sentencias del bloque; intercalar una declaración luego de una sentencia (`{ int a; a = 1; int b; }`) es un error sintáctico.
 
-Es una decisión defendible: lo que se puede atrapar en la gramática no necesita
-código de chequeo después.
-
-| `Statement` | Produce |
+| Producción de `Statement` | Resultado |
 | --- | --- |
-| `Assignment ';'` | El nodo que armó `Assignment`, ver abajo |
-| `MethodCall ';'` | El propio nodo de llamada, como sentencia |
-| `RETURN Expression ';'` | `newReturnNode($2)`: `RETURN_NODE` con la expresión |
-| `RETURN ';'` | `newReturnNode(NULL)`: `RETURN_NODE` sin hijos |
-| `Block` | Un bloque anidado es una sentencia válida |
-| `WHILE '(' Expression ')' Block` | `newWhileNode($3, $5)`: `WHILE_NODE` |
-| `IF '(' Expression ')' Block` | `newIfElseNode($3, $5, NULL)`: `IF_ELSE_NODE` sin rama else |
-| `IF '(' Expression ')' Block ELSE Block` | `newIfElseNode($3, $5, $7)`: `IF_ELSE_NODE` con las dos ramas |
-| `';'` | `NULL`: la sentencia vacía no genera nodo |
+| `Assignment ';'` | Nodo `ASSIGNMENT_NODE` construido por `Assignment` |
+| `MethodCall ';'` | Nodo `METHOD_CALL_NODE` usado como sentencia |
+| `RETURN Expression ';'` | `newReturnNode($2)` (`RETURN_NODE` con 1 hijo) |
+| `RETURN ';'` | `newReturnNode(NULL)` (`RETURN_NODE` con 0 hijos) |
+| `Block` | `BLOCK_NODE` anidado |
+| `WHILE '(' Expression ')' Block` | `newWhileNode($3, $5)` |
+| `IF '(' Expression ')' Block` | `newIfElseNode($3, $5, NULL)` (2 hijos) |
+| `IF '(' Expression ')' Block ELSE Block` | `newIfElseNode($3, $5, $7)` (3 hijos) |
+| `';'` | `NULL` (descartado por `appendNode` sin generar nodo en el AST) |
 
-Cada acción llama a un **constructor con nombre** de [`ast.c`](04-ast.md) en lugar
-de armar el nodo con `newNode` y sus tres hijos posicionales: la acción dice qué
-construcción es, y el orden de los hijos queda en un solo lugar.
-
-| No terminal | Producción | Acción |
-| --- | --- | --- |
-| `Assignment` | `ID '=' Expression` | `newAssignmentNode($1, $3)`: `ASSIGNMENT_NODE` con el símbolo provisorio del destino |
-
-**Por qué la asignación es un no terminal aparte.** La producción podría estar
-escrita directamente dentro de `Statement` como `ID '=' Expression ';'`, y así
-estaba antes. Separarla no cambia el lenguaje aceptado ni el árbol que se
-construye: `Statement : Assignment ';'` reconoce exactamente lo mismo.
-
-Lo que gana es **extensibilidad**. Una asignación sin el punto y coma es la
-pieza que hace falta para un `for`:
-
-```
-FOR '(' Assignment ';' Expression ';' Assignment ')' Block
-```
-
-Con la producción embebida en `Statement` eso no se puede escribir, porque
-`Statement` ya incluye el `';'`. Teniendo `Assignment` como no terminal propio,
-la cabecera del `for` lo reusa tal cual, y la acción puede desazucararlo a un
-`while` con los nodos que ya existen (ver §10). Es una preparación para esa
-extensión, hecha al costo de una producción trivial.
-
-**La sentencia vacía devuelve `NULL` y desaparece.** No hace falta un caso
-especial en ninguna fase posterior porque `appendNode` ignora los nodos `NULL`:
-
-```c
-NodeArray *appendNode(NodeArray *array, NodeAST *node) {
-    if (node == NULL) return array;
-    ...
-```
-
-Esa misma función crea el arreglo si recibe `NULL`, que es lo que hace funcionar
-a los `%empty` que devuelven `NULL`. Las dos guardas juntas son las que permiten
-que las acciones de la gramática no tengan ni un `if`.
+Separar `Assignment` (sin el `';'` final) como no terminal propio no altera el lenguaje aceptado por `Statement : Assignment ';'`, pero permite reutilizar la asignación en construcciones como el encabezado de un ciclo `for` (ver §9).
 
 ### Llamadas y expresiones
 
 | No terminal | Producciones | Acción |
 | --- | --- | --- |
-| `MethodCall` | `ID '(' ')'` \| `ID '(' ArgumentList ')'` | `newMethodCallNode($1, NULL)` o `newMethodCallNode($1, $3)`: `METHOD_CALL_NODE` con los argumentos como hijos |
-| `ArgumentList` | `Expression` \| `ArgumentList ',' Expression` | Lista de expresiones |
+| `MethodCall` | `ID '(' ')'` \| `ID '(' ArgumentList ')'` | `newMethodCallNode($1, NULL)` o `newMethodCallNode($1, $3)` |
+| `ArgumentList` | `Expression` \| `ArgumentList ',' Expression` | Acumula las expresiones de los argumentos |
+| `Expression` | `ID` | `newIdentifierNode($1)` |
+| | `MethodCall` | Permite usar el valor de retorno de un método dentro de una expresión |
+| | `FLOAT_CONST` / `BOOL_CONST` / `NUMBER` | `newFloatLiteralNode` / `newBoolLiteralNode` / `newIntLiteralNode` |
+| | `'-' Expression %prec UMINUS` / `NOT Expression` | `newOperatorNode(OP_UMINUS, $2, NULL)` / `newOperatorNode(OP_NOT, $2, NULL)` |
+| | `'(' Expression ')'` | `$$ = $2` (los paréntesis agrupan pero no generan nodo en el AST) |
+| | `Expression OP Expression` (10 operadores binarios) | `newOperatorNode(OP_X, $1, $3)` para `+`, `-`, `*`, `/`, `%`, `<`, `>`, `==`, `&&`, `\|\|` |
 
-| `Expression` | Produce |
-| --- | --- |
-| `ID` | `ID_NODE` (`newIdentifierNode`) |
-| `MethodCall` | Una llamada también es una expresión: por eso se puede usar su resultado |
-| `FLOAT_CONST` / `BOOL_CONST` / `NUMBER` | `CONSTANT_NODE` del tipo correspondiente |
-| `'-' Expression %prec UMINUS` | `OP_UMINUS` |
-| `NOT Expression` | `OP_NOT` |
-| `'(' Expression ')'` | **El mismo nodo de adentro**: los paréntesis no dejan rastro en el AST |
-| `Expression OP Expression` × 10 | Un nodo de operación binaria por cada operador |
-
-Los diez binarios son `+ - * / % < > == && ||`, todos con la misma forma
-`newOperatorNode(OP_X, $1, $3)`.
-
-**Los paréntesis desaparecen.** `(2 + 3) * 4` y `2 + 3 * 4` producen árboles
-distintos, pero en ninguno de los dos hay un nodo "paréntesis": su efecto ya
-quedó capturado en la forma del árbol. Es la diferencia entre un árbol de
-parseo y un **árbol de sintaxis abstracta**.
-
-**Que `MethodCall` sea a la vez `Statement` y `Expression`** es lo que permite
-invocar un método con resultado e ignorarlo (`f(10);`), que es un requisito
-explícito del lenguaje. No hace falta ninguna regla extra: se desprende de que
-el mismo no terminal aparezca en los dos lugares.
+La producción `'(' Expression ')' { $$ = $2; }` refleja la diferencia entre árbol de parseo y AST: los paréntesis determinan qué reducción se ejecuta primero, pero no se representan como nodos porque la jerarquía resultante ya codifica el agrupamiento.
 
 ---
 
-## 7. Cómo parsea Bison
+## 7. Construcción ascendente del AST
 
-Bison genera un parser **LALR(1)**: ascendente, con un token de anticipación.
+Bison genera un analizador **LALR(1)**: ascendente (*bottom-up*, mediante transiciones *shift* y *reduce*) con un único token de anticipación (*lookahead*).
 
-- **Ascendente** (*bottom-up*): no arranca del símbolo inicial tratando de
-  derivar la entrada, sino de la entrada tratando de reducirla al símbolo
-  inicial. Va apilando tokens y, cuando el tope de la pila coincide con el lado
-  derecho de una producción, lo reemplaza por el izquierdo.
-- **Dos operaciones**: *shift* (apilar el token siguiente) y *reduce* (aplicar
-  una producción). El autómata, precalculado en una tabla, decide cuál según el
-  estado y el token de anticipación.
-- **`(1)`**: un solo token de anticipación. Toda la gramática tiene que ser
-  decidible mirando un token hacia adelante, y es la restricción que explica casi
-  todas las decisiones de forma de este archivo.
+Las acciones semánticas se ejecutan en el instante de cada **reducción**, calculando atributos sintetizados (`$$`) a partir de los valores de los símbolos del lado derecho (`$1`, `$2`, …). Cuando se reduce una producción como `Expression '+' Expression`, ambas subexpresiones ya fueron reducidas previamente y sus punteros `NodeAST *` están construidos. El AST se ensambla desde las hojas hacia la raíz, asignando `astRoot` en la reducción final de `Program`.
 
-**La acción de una producción se ejecuta en el momento de reducir.** De ahí sale
-la propiedad que hace que todo esto funcione: cuando se reduce
-`Expression '+' Expression`, las dos subexpresiones **ya fueron reducidas**, así
-que `$1` y `$3` ya son punteros a sus nodos terminados. El AST se construye de
-las hojas hacia la raíz, y `astRoot` se asigna en la última reducción de todas.
-
-Esto es también lo que vuelve imposible decidir algo que dependa de código que
-todavía no se leyó, y es la razón de que un método solo pueda llamar a los
-declarados antes que él.
-
-### Ejemplo: `a = 2 + 3 * 4`
-
-La salida real de `-target parse` muestra el árbol construido:
+Para `a = 2 + 3 * 4`, la salida de `-target parse` muestra cómo la mayor precedencia de `*` reduce primero `3 * 4` y lo ubica como hijo derecho de `+`:
 
 ```
 Bloque
@@ -399,215 +225,100 @@ Bloque
   |   |   |   |   |   | Constante INT: 4
 ```
 
-La multiplicación quedó **adentro** del hijo derecho de la suma: eso es la
-precedencia materializada en la forma del árbol. El `#0` es el `uid` todavía sin
-asignar y `Tipo VOID` el tipo todavía sin inferir: los pone el análisis semántico,
-y por eso el `.sint` es el árbol *sin anotar* y el `.sem` el mismo árbol anotado.
+En el archivo `.sint`, los símbolos todavía tienen `#0` (`uid` sin asignar) y las expresiones `Tipo VOID`; ambos campos son completados luego por el análisis semántico en `.sem`.
 
 ---
 
 ## 8. Decisiones de diseño
 
-### La gramática no tiene conflictos
+### Gramática libre de conflictos
 
-Verificado con `bison -Wall`: **0 conflictos, 0 warnings**. Eso no es gratis en
-una gramática LALR(1), y hay dos lugares donde podría haberlos y no los hay.
+`bison -Wall` compila `src/parser/bison.y` con **0 conflictos *shift/reduce* y 0 conflictos *reduce/reduce***.
 
-### El conflicto histórico: variable contra método
+### Resolución del prefijo común entre variables y métodos (`Type ID`)
 
-Las dos declaraciones empiezan igual, con `Type ID`. Un parser con un token de
-anticipación, al terminar de leer el identificador, tiene que decidir si reducir
-`ID` a `IdentifierList` (camino de variable) o dejarlo como está (camino de
-método), y en la formulación original de la gramática eso producía un conflicto
-*shift/reduce*.
+Tanto `VariableDeclaration` como `MethodDeclaration` comienzan con `Type ID`. En un parser con 1 token de anticipación, obligar a reducir `Type` o `ID` a un no terminal específico antes de ver el token siguiente provocaba un conflicto *shift/reduce*. La gramática actual evita reducciones prematuras antes de consumir `ID`, de modo que el token de anticipación posterior a `Type ID` desambigua el camino en LALR(1):
 
-Se resolvió **unificando las dos ramas bajo `Declaration`** y eliminando reglas
-intermedias, de modo que el token de anticipación alcance para decidir:
-
-| Anticipación después de `Type ID` | Decisión |
+| Token de anticipación tras `Type ID` | Acción del autómata |
 | --- | --- |
-| `;` o `,` | Reducir: es una declaración de variable |
-| `(` | Shift: es una declaración de método |
+| `;` o `,` | Reduce `ID` a `IdentifierList` (declaración de variable) |
+| `(` | Hace *shift* de `'('` (declaración de método) |
 
-Un solo token basta, así que entra en LALR(1). El efecto visible es que se
-pueden intercalar globales y métodos en cualquier orden. Verificado con un
-programa que alterna `int g1; int f(...){...} int g2; boolean g3, g4; void main(){...}`.
-El paso a paso de por qué ocurría el conflicto original y cómo se reformuló está desarrollado en [Explicación del conflicto en Bison](../../decisiones/explicacion_conflicto_bison.md).
+Esto permite además intercalar declaraciones de variables globales y métodos en cualquier orden. El análisis detallado del conflicto original y su resolución se encuentra en [Explicación del conflicto en Bison](../../decisiones/explicacion_conflicto_bison.md).
 
-### No hay problema del `else` colgante
+### Ausencia de ambigüedad *dangling else*
 
-El *dangling else* es el conflicto clásico de estas gramáticas: en
-`if (a) if (b) S1 else S2`, el `else` podría pertenecer a cualquiera de los dos
-`if`, y la gramática es ambigua.
-
-Acá **no aparece**, y la razón es la forma de las reglas: el cuerpo de un `if` es
-un `Block`, no un `Statement`, y `Block` obliga a llaves. Entonces el anidamiento
-que genera la ambigüedad es **inexpresable**:
+En gramáticas donde las ramas de `if` son `Statement` arbitrarios, `if (a) if (b) S1 else S2` es ambiguo porque el `else` puede asociarse a cualquiera de los dos `if`. En C-TDS las ramas de `IF` y `WHILE` son obligatoriamente `Block` (delimitados por llaves `{ ... }` según la gramática):
 
 ```c
-if (a > 0) if (a > 5) { a=2; } else { a=3; }   // error de sintaxis
-if (a > 0) { if (a > 5) { a=2; } else { a=3; } } // valido y sin ambiguedad
+if (a > 0) if (a > 5) { a = 2; } else { a = 3; }       // error de sintaxis
+if (a > 0) { if (a > 5) { a = 2; } else { a = 3; } }   // válido y sin ambigüedad
 ```
 
-Verificado: el primero da `error de sintaxis`, el segundo parsea. Las llaves
-delimitan sin lugar a dudas a quién pertenece el `else`, así que Bison no tiene
-nada que desambiguar. **Obligar las llaves le sale gratis a la gramática y le
-ahorra el conflicto más famoso del análisis sintáctico.**
+Al exigir llaves en la gramática, la asociación del `else` queda determinada por los delimitadores de bloque sin necesidad de directivas de desambiguación.
 
-### El análisis sintáctico corta en el primer error
+### Corte en el primer error y programa vacío
 
-`yyparse()` llama a `yyerror` y aborta; no hay reglas de recuperación (`error`
-en las producciones). Un archivo con dos errores de sintaxis reporta uno solo.
-Verificado.
-
-Es distinto del léxico y del semántico, que acumulan y siguen. La razón es
-práctica: después de un error de sintaxis el parser no sabe en qué estado está, y
-seguir produce cascadas de errores inventados que confunden más de lo que ayudan.
-
-### Un programa vacío es sintácticamente válido
-
-`Declarations : %empty` lo permite. El archivo vacío pasa `-target parse` con
-código 0 y falla en `-target sem` con `El programa no contiene la definicion del
-metodo 'main'`. Verificado. Es el reparto correcto: la gramática describe la
-forma, el semántico los requisitos.
+- **Sin recuperación de errores:** no se definen reglas con el token especial `error`; ante el primer error sintáctico, `yyparse()` invoca `yyerror` y termina devolviendo `1`, evitando cascadas de diagnósticos espurios.
+- **Programa vacío sintácticamente válido:** `Declarations : %empty` acepta un archivo sin declaraciones en `-target parse`; la exigencia del método `main` se verifica en el análisis semántico (`-target sem`).
 
 ---
 
 ## 9. Cómo se extiende
 
-### Un operador binario nuevo (`!=`)
+### Agregar un operador binario (`!=`)
 
-1. `lexer.l`: la regla que devuelve el token.
-2. **Acá:** `%token NEQ`, agregarlo a la línea de precedencia de `EQ`
-   (`%left EQ NEQ`), y una producción
-   `| Expression NEQ Expression { $$ = newOperatorNode(OP_NEQ, $1, $3); }`.
-3. `types.h`: `OP_NEQ` en el enum.
-4. Semántico, TAC y código objeto.
+1. `lexer.l`: devolver el token `NEQ`.
+2. `bison.y`: declarar `%token NEQ`, agregarlo en el nivel de precedencia correspondiente (`%left EQ NEQ`) y añadir la producción `| Expression NEQ Expression { $$ = newOperatorNode(OP_NEQ, $1, $3); }`.
+3. `types.h`, `ast.c`, semántico, TAC y código objeto: incorporar `OP_NEQ`.
 
-Si se lo mete en una línea de precedencia equivocada compila igual y da
-resultados mal agrupados, que es el bug más difícil de ver de este archivo.
+### Agregar un ciclo `for`
 
-### Un `for`
+Puede implementarse de dos formas:
 
-La pregunta central es si hace falta un nodo nuevo o alcanza con **azúcar
-sintáctica** sobre lo que ya existe.
+- **Desazucarado sintáctico (*syntactic sugar*) en `bison.y`:** reutilizando el no terminal `Assignment` de §6 (que no consume `';'`), se define la producción:
+  ```
+  | FOR '(' Assignment ';' Expression ';' Assignment ')' Block
+  ```
+  La acción construye un `BLOCK_NODE` con `[init, WHILE_NODE(cond, [body..., incr])]` usando los constructores existentes. No requiere nuevos tipos de nodo ni cambios en el análisis semántico, TAC o generación de código objeto.
+- **Nodo dedicado (`FOR_NODE`):** preserva la construcción original para diagnósticos u optimizaciones específicas de bucle, pero requiere extender `NodeType`, el analizador semántico, el generador de TAC y el backend.
 
-Un `for (i = 0; i < n; i = i + 1) Block` es equivalente a una asignación seguida
-de un `while` cuyo cuerpo termina con el incremento. Entonces se puede escribir
-la producción y, en la acción, armar ese árbol con los nodos existentes.
+### Agregar `break` y `continue`
 
-**Y la producción ya tiene la pieza que necesita:** el no terminal `Assignment`
-de §6 es una asignación **sin** el punto y coma, que es exactamente la forma que
-la cabecera de un `for` requiere en sus posiciones primera y tercera.
+No pueden desazucararse localmente en el AST porque representan saltos hacia etiquetas del ciclo envolvente. Requieren nuevos valores en `NodeType`, validación en el analizador semántico de que aparezcan dentro de un ciclo y una pila de etiquetas de inicio/salida de bucle durante la generación de TAC.
 
-```
-| FOR '(' Assignment ';' Expression ';' Assignment ')' Block
-```
+### Permitir declaraciones intercaladas con sentencias dentro de un bloque
 
-y construir un `BLOCK_NODE` que contenga `[init, WHILE_NODE(cond, [body..., incr])]`.
-**Ninguna fase posterior se entera**: no hay nodo nuevo, no hay opcode nuevo, no
-hay nada que tocar en el semántico, el TAC ni el generador de código. Es la
-respuesta más fuerte que se puede dar a "¿cómo agregarías un `for`?", y el costo
-está todo concentrado en esta ficha.
-
-El camino alternativo es un `FOR_NODE` propio, que da mejores mensajes de error y
-permite optimizaciones específicas de ciclos, a cambio de tocar las cinco fases.
-
-### `break` y `continue`
-
-Acá es al revés: no se pueden desazucarar, porque son saltos no locales. Hacen
-falta nodos nuevos, una pila de etiquetas de ciclo en la generación de TAC, y un
-chequeo semántico de que aparezcan dentro de un ciclo.
-
-### Permitir declaraciones en cualquier parte del bloque
-
-Cambiar la regla de `Block` por una lista única que mezcle declaraciones y
-sentencias:
+Reemplazar la regla de `Block` por una lista unificada:
 
 ```
 Block : '{' BlockItems '}'
 BlockItems : %empty | BlockItems VariableDeclaration | BlockItems Statement
 ```
 
-Es un cambio chico acá, pero mueve el problema al semántico: habría que verificar
-que una variable no se use antes de su declaración dentro del mismo bloque, que
-hoy es imposible por construcción.
+Esto traslada al análisis semántico la responsabilidad de verificar el orden declaración-antes-de-uso dentro del bloque.
 
 ---
 
-## 10. Trampas y límites conocidos
+## 10. Consideraciones y límites
 
-- **El orden de las líneas de precedencia es de menor a mayor**, al revés de como
-  lo lista la especificación del lenguaje. Invertirlo compila sin un solo aviso y
-  rompe la semántica de todas las expresiones.
-- **`UMINUS` no existe para el léxico.** Buscarlo en `lexer.l` no da nada, y es
-  correcto: solo está declarado para colgarle una precedencia a la regla del menos
-  unario.
-- **Las acciones se ejecutan al reducir, no al leer.** Cualquier cosa que una
-  acción quiera saber tiene que estar ya reducida. Es la razón de fondo de que no
-  haya declaración adelantada de métodos en el lenguaje.
-- **Los `ID_NODE` nacen con `TYPE_VOID` y `uid` 0.** No es un bug: en el momento
-  de reducir todavía no hay tipo ni ámbito resuelto. Los completa el análisis
-  semántico, y comparar el `.sint` con el `.sem` del mismo programa es la forma
-  de verlo.
-- **El mensaje de error sintáctico es siempre el mismo.** `error de sintaxis` con
-  el número de línea, porque se descarta el texto de Bison. Es consistente con el
-  resto del compilador pero menos informativo que el original; activar
-  `%define parse.error verbose` lo mejoraría a costa de mezclar idiomas.
-- **La gramática no tiene recuperación de errores.** No hay producciones con el
-  token especial `error`, así que no existe la posibilidad de reportar dos
-  errores de sintaxis en una corrida.
+- **Orden de precedencia ascendente:** las directivas `%left` y `%precedence` van de menor a mayor precedencia; ubicar un operador nuevo en la fila incorrecta compila sin advertencias pero altera el árbol generado.
+- **Reducción de izquierda a derecha:** las acciones sintácticas solo disponen de subárboles ya reducidos, en línea con la regla semántica de C-TDS que exige declarar un método antes de invocarlo.
+- **Nodos `ID_NODE` sin anotar tras el parseo:** en la etapa sintáctica aún no existe resolución de ámbitos ni inferencia de tipos, por lo que las referencias nacen con `TYPE_VOID` y `uid = 0`.
+- **Mensaje único de error sintáctico:** `yyerror` emite siempre `"error de sintaxis"` con el número de línea actual.
 
 ---
 
-## 11. La teoría detrás
+## 11. Cómo se valida
 
-- **Gramática libre de contexto**: el formalismo que describe la estructura de un
-  lenguaje de programación. Cada producción es una regla de reescritura. El
-  léxico usa expresiones regulares porque los tokens no necesitan recursión; la
-  sintaxis necesita una gramática porque sí (expresiones anidadas, bloques
-  anidados).
-- **Análisis ascendente** (*bottom-up*) frente a descendente (*top-down*): Bison
-  genera el primero, que reduce de la entrada hacia el símbolo inicial. Las
-  familias habituales son LR(0), SLR(1), **LALR(1)** y LR(1), en orden creciente
-  de poder y de tamaño de tabla. LALR(1) es el punto de equilibrio clásico y es
-  lo que generan `yacc` y Bison por defecto.
-- **Shift/reduce y reduce/reduce**: los dos tipos de conflicto. Un *shift/reduce*
-  significa que el autómata puede apilar o reducir y la tabla no alcanza para
-  decidir; se resuelve con precedencias, o reformulando la gramática como se hizo
-  acá con `Declaration`.
-- **Precedencia y asociatividad como desambiguación**: la gramática de
-  expresiones `E : E '+' E | E '*' E | ...` es **ambigua**. Se podría
-  desambiguar estratificándola en varios no terminales (`Expression`, `Term`,
-  `Factor`), que es la forma de un libro de texto. Acá se eligió dejarla plana y
-  resolverla con declaraciones de precedencia: menos reglas, menos reducciones
-  en tiempo de parseo, y la precedencia escrita en un solo lugar legible.
-- **Árbol de parseo contra árbol de sintaxis abstracta**: el primero tiene un
-  nodo por cada símbolo de cada producción, incluidos paréntesis y palabras
-  clave; el segundo conserva solo lo que las fases siguientes necesitan. Las
-  acciones de este archivo construyen directamente el segundo.
-- **Gramática de atributos**: `$$` es el atributo sintetizado del lado izquierdo
-  y `$1`, `$2`… los de los símbolos del lado derecho. Acá todos los atributos son
-  **sintetizados** (se calculan de los hijos hacia el padre), que es lo que
-  encaja naturalmente con un parser ascendente.
-
----
-
-## 12. Cómo se valida
-
-- **Suite:** `tests/test_parser.c` (356 líneas). Programas que la gramática debe
-  aceptar y programas que debe rechazar, incluidos los casos de este documento.
-- **Conflictos:** la ausencia de conflictos es parte de lo que hay que mantener.
-  Se chequea con:
+- **Tests unitarios:** `tests/test_parser.c` prueba programas válidos e inválidos (precedencia, bloques sin llaves, `void` en variables, declaraciones intercaladas, estructuras de control).
+- **Verificación de conflictos en la gramática:**
 
 ```bash
 bison -Wall -d src/parser/bison.y -o /tmp/check.tab.c
 ```
 
-  Si no imprime nada, la gramática sigue sin conflictos ni advertencias.
-
-- **A mano:** `-target parse` escribe el AST sin anotar en un `.sint`, que es la
-  forma de verificar agrupamiento y precedencia:
+- **Inspección manual del árbol sin anotar (`.sint`):**
 
 ```bash
 ./mi_compilador -target parse examples/programa.ctds

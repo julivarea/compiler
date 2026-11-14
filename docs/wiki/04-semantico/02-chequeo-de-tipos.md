@@ -2,180 +2,125 @@
 
 **Archivos:** `include/type_checker.h`, `src/semantic/type_checker.c` (256 líneas)
 
-Deduce el tipo de cada expresión del [AST](../03-lexico-sintactico-y-ast/04-ast.md) y verifica que las
-operaciones sean legales, resolviendo los nombres contra la
-[tabla de símbolos](01-tabla-de-simbolos.md).
+Sintetiza el tipo de cada expresión del [AST](../03-lexico-sintactico-y-ast/04-ast.md) y verifica la compatibilidad de tipos en las operaciones, resolviendo los identificadores contra la [tabla de símbolos](01-tabla-de-simbolos.md).
 
-!!! note "Lo de `float` en el chequeo de tipos sí era obligatorio; lo de abajo no"
-    Las reglas de tipos para `float` **sí** entran en el alcance de esta etapa:
-    la regla 14 de la especificación del lenguaje, que permite las conversiones
-    entre `int` y `float`, es una de las catorce que el análisis semántico debe
-    verificar.
-
-    Lo que **no** era necesario es **generar código** para `float`: el enunciado
-    acotaba las etapas de código intermedio y de código objeto a tipos enteros y
-    lógicos. O sea que las reglas que este documento describe habrían podido quedar
-    sin efecto más abajo. Se implementó su soporte de tipos en el front-end igual;
-    el argumento está en [Alcance y Extensiones](../../decisiones/alcance-y-extensiones.md#1-alcance-de-float).
+!!! note "Alcance del soporte de `float`"
+    Las reglas de tipos para `float` (incluida la regla 14 de la especificación sobre conversiones entre `int` y `float`) están implementadas en el análisis semántico. En cambio, las etapas posteriores de código intermedio y código objeto están acotadas por el enunciado a tipos enteros y lógicos. El detalle de esta decisión se documenta en [Alcance y Extensiones](../../decisiones/alcance-y-extensiones.md#1-alcance-de-float).
 
 ---
 
 ## 1. Qué problema resuelve
 
-Contestar dos preguntas sobre cada expresión: **¿de qué tipo es?** y **¿está
-permitida?**. `a + b` es válida si ambos son numéricos y vale `float` si alguno
-lo es; `a % b` solo si los dos son enteros; `a && b` solo si los dos son
-booleanos.
+El módulo implementa un sistema de tipos estático, nominal y monomórfico sobre las expresiones del lenguaje. Para cada nodo de expresión determina si la operación aplicada a sus operandos es válida y calcula su tipo resultante (`node->type`) como un atributo sintetizado de abajo hacia arriba (postorden).
 
-El resultado se **anota en el propio árbol** (`node->type`), de modo que las
-fases posteriores no vuelven a razonar sobre tipos: leen el que quedó escrito.
+El tipo inferido y el puntero al símbolo resuelto quedan anotados en el propio nodo del AST, de modo que las fases posteriores consultan directamente `node->type` y `node->symbol` sin recalcular reglas de tipos.
 
 ---
 
 ## 2. Interfaz pública
 
-Tres funciones. Todo lo demás del archivo es `static`.
-
-| Función | Para qué | Quién la llama |
+| Función | Propósito | Llamador |
 | --- | --- | --- |
-| `analyzeExpression(node, scope)` | Infiere y devuelve el tipo de una expresión | `semantic_analyzer.c` en cada lugar donde aparece una expresión |
-| `analyzeMethodCall(node, scope, isExpression)` | Valida una llamada contra la firma declarada | `analyzeExpression` y `semantic_analyzer.c` |
-| `isAssignable(expected, actual)` | ¿Se puede poner un `actual` donde se espera un `expected`? | `semantic_analyzer.c` en asignaciones y `return`, y esta misma unidad en los argumentos |
+| `analyzeExpression(node, scope)` | Infiere, anota y devuelve el tipo de una expresión | `semantic_analyzer.c` y llamadas recursivas internas |
+| `analyzeMethodCall(node, scope, isExpression)` | Valida una llamada a método contra su declaración | `analyzeExpression` (`isExpression = true`) y `semantic_analyzer.c` (`false`) |
+| `isAssignable(expected, actual)` | Indica si un valor de tipo `actual` puede asignarse a un destino de tipo `expected` | `semantic_analyzer.c` (asignaciones y `return`) y validación de argumentos |
 
-El parámetro `isExpression` de `analyzeMethodCall` es el que distingue
-`x = f();` de `f();`, y es lo que permite rechazar un método `void` usado como
-expresión. Una llamada no sabe en qué contexto está: se lo dice el que la
-analiza.
+El parámetro `isExpression` de `analyzeMethodCall` distingue una llamada utilizada dentro de una expresión (`x = f();`) de una invocada como sentencia (`f();`), permitiendo rechazar métodos `void` cuando se exige un valor de retorno.
 
-**Efecto lateral deliberado:** las dos primeras funciones no solo devuelven el
-tipo, también **escriben `node->type` y reapuntan `node->symbol`** al símbolo de
-la tabla. Devolver el tipo es para el llamador inmediato; anotar el nodo es para
-el generador de código.
+Además de devolver el `DataType`, `analyzeExpression` y `analyzeMethodCall` escriben `node->type` y reemplazan el símbolo provisorio del parser por el símbolo de la tabla mediante `resolveNodeSymbol` (definida en [AST](../03-lexico-sintactico-y-ast/04-ast.md); ver también [acciones del parser](../03-lexico-sintactico-y-ast/03-acciones-del-parser.md)).
 
 ---
 
-## 3. Inventario de funciones
+## 3. Resolución de expresiones y supresión de cascadas
 
-### `analyzeExpression(node, scope)`
+### Despacho por tipo de nodo
 
-El despachador. Un `switch` sobre `nodeType` con cuatro casos, que son
-exactamente las cuatro formas que puede tener una expresión en C-TDS:
+`analyzeExpression` evalúa las cuatro formas posibles de una expresión en C-TDS:
 
-| Caso | Qué hace |
+| Nodo | Comportamiento |
 | --- | --- |
-| `ID_NODE` | Delega en `analyzeIdentifier` |
-| `CONSTANT_NODE` | `node->type = node->symbol->type`. El tipo ya lo sabía el literal desde el léxico |
-| `METHOD_CALL_NODE` | Delega en `analyzeMethodCall` con `isExpression = true` |
-| `OPERATOR_NODE` | Delega en `analyzeOperator` |
-| `default` | `TYPE_ERROR` |
+| `ID_NODE` | Busca el identificador con `lookupSymbol`, verifica que sea `VARIABLE_SYMBOL`, vincula `node->symbol` y copia `symbol->type` |
+| `CONSTANT_NODE` | Asigna `node->type = node->symbol->type` (definido durante el análisis léxico) |
+| `METHOD_CALL_NODE` | Delega en `analyzeMethodCall(node, scope, true)` |
+| `OPERATOR_NODE` | Evalúa recursivamente los operandos e invoca las reglas de operadores |
+| `default` | Devuelve `TYPE_ERROR` |
 
-El `default` es la red de seguridad si alguien pasa un nodo de sentencia donde
-se esperaba una expresión. No reporta error, solo devuelve `TYPE_ERROR`: el
-mensaje lo da quien corresponda más arriba.
+### Validación de variables y llamadas a métodos
 
-### `analyzeIdentifier(node, scope)` (privada)
+- **Identificadores (`ID_NODE`):** se reporta error si `lookupSymbol` devuelve `NULL` (`Variable no declarada: x`) o si el símbolo encontrado corresponde a un método usado sin invocar (`El identificador 'f' no es una variable.`).
+- **Llamadas (`METHOD_CALL_NODE`):** `analyzeMethodCall` verifica en orden:
+  1. Que el identificador exista en algún ámbito visible.
+  2. Que su categoría sea `METHOD_SYMBOL`.
+  3. Que no retorne `TYPE_VOID` cuando `isExpression` es verdadero.
+  4. Que la cantidad de argumentos coincida con la de parámetros formales.
+  5. Que cada argumento satisfaga `isAssignable` respecto del tipo de `method->parameters->children[i]->type`.
 
-Resuelve un nombre contra la tabla de símbolos. Dos errores posibles:
+El chequeo de retorno `void` se ejecuta después de confirmar que el símbolo es un método, garantizando que `method->type` sea válido antes de consultarlo. Finalmente, `resolveNodeSymbol(node, method)` vincula el nodo con la declaración para que el generador de TAC pueda leer su firma.
 
-| Situación | Mensaje |
-| --- | --- |
-| `lookupSymbol` devuelve `NULL` | `Variable no declarada: x` |
-| El símbolo existe pero no es `VARIABLE_SYMBOL` | `El identificador 'f' no es una variable.` |
+### Propagación de `TYPE_ERROR`
 
-El segundo caso es el de usar el nombre de un método como si fuera una variable
-(`x = f;`). Verificado.
-
-Si resuelve bien, hace las dos anotaciones:
-
-```c
-resolveNodeSymbol(node, symbol);   /* reapunta al simbolo de la tabla */
-node->type = symbol->type;
-```
-
-`resolveNodeSymbol` (definida en [AST](../03-lexico-sintactico-y-ast/04-ast.md)) libera el símbolo provisorio que había creado el
-parser solo para llevar el nombre, y deja el nodo apuntando al declarado. Antes
-era un `node->symbol = symbol` directo, que perdía el provisorio (ver la
-[acciones del parser](../03-lexico-sintactico-y-ast/03-acciones-del-parser.md)).
-
-### `analyzeMethodCall(node, scope, isExpression)`
-
-La función más larga, porque valida cuatro cosas en orden:
-
-1. **Que el método exista.** `Método no declarado: f`.
-2. **Que el nombre sea de un método y no de una variable.** `El simbolo
-   encontrado pertenece a una variable no a una llamada de un metodo`.
-3. **Que no sea `void` si se usa como expresión.** `El metodo 'g' es void y no
-   puede usarse como expresion.`
-4. **Que la aridad coincida.** `Se esperaban 2 pero se pasaron 1`.
-5. **Que cada argumento sea asignable al parámetro.** `Parámetro incompatible en
-   la posición 1`.
-
-El tipo esperado de cada parámetro se lee de
-`method->parameters->children[i]->type`, o sea del `VARIABLE_DECLARATION_NODE`
-que armó `newParameterDeclaration`. Esa es la razón de que `Symbol` tenga el
-campo `parameters` apuntando al AST: sin esa referencia hacia atrás, la firma no
-estaría disponible en el momento de validar la llamada.
-
-Al final, las dos anotaciones:
-
-```c
-resolveNodeSymbol(node, method);   /* para que el generador de codigo lea la firma */
-node->type = method->type;
-```
-
-Reapuntar el nodo al método declarado es necesario para el backend: el `TAC_CALL`
-toma de ese símbolo el nombre del método y su tipo de retorno.
-
-**El chequeo de `void` va después del de categoría.** Así `method->type` solo se
-lee cuando ya se confirmó que el símbolo es un método, y el orden no depende de
-ningún invariante de otra fase.
-
-### `analyzeOperator(node, scope)` (privada)
-
-Analiza los operandos y consulta la tabla de reglas:
-
-```c
-DataType leftType = analyzeExpression(GET_LEFT(node), scope);
-DataType rightType = TYPE_VOID;
-if (GET_RIGHT(node) != NULL) {
-    rightType = analyzeExpression(GET_RIGHT(node), scope);
-}
-```
-
-Un operador unario tiene un solo hijo, así que `GET_RIGHT` devuelve `NULL` y
-`rightType` queda en `TYPE_VOID`. Las reglas de los unarios solo miran `left`,
-así que ese valor nunca se usa.
-
-Después viene la **supresión de errores en cascada**:
+Al evaluar un `OPERATOR_NODE`, el chequeo calcula primero los tipos de los operandos izquierdo y derecho (en operadores unarios, `GET_RIGHT(node)` es `NULL` y `rightType` queda en `TYPE_VOID`). Si cualquiera de los operandos produjo `TYPE_ERROR`, la función propaga `TYPE_ERROR` hacia la raíz sin emitir un nuevo mensaje:
 
 ```c
 if (leftType == TYPE_ERROR || rightType == TYPE_ERROR) {
     node->type = TYPE_ERROR;
-    return TYPE_ERROR;   /* sin reportar nada */
+    return TYPE_ERROR;
 }
 ```
 
-Si un operando ya falló, el error ya se reportó abajo y volver a reportarlo acá
-solo agregaría ruido. El `TYPE_ERROR` se **propaga hacia arriba** sin generar
-mensajes nuevos, así que un error primario produce exactamente un mensaje.
+Tratar `TYPE_ERROR` como un elemento absorbente del sistema de tipos evita errores en cascada: una expresión como `a = noexiste + 1 + 2 + 3;` reporta únicamente el error primario de variable no declarada.
 
-Verificado: `a = noexiste + 1 + 2 + 3;` reporta **un solo** error
-(`Variable no declarada: noexiste`), no cuatro.
+---
 
-### `resolveOperation(operator, left, right)` (privada)
+## 4. Reglas de tipos y conversiones
 
-La tabla de reglas de tipos. Es el corazón del módulo y está en §4.
+### Tabla de operadores
 
-### `resolveNumericOperation(left, right)` (privada)
+| Operador | Tipos exigidos en operandos | Tipo resultante | Admite promoción `int` / `float` |
+| --- | --- | --- | --- |
+| `+` `-` `*` `/` | Ambos numéricos (`int` o `float`) | `float` si alguno es `float`, si no `int` | Sí |
+| `%` | Ambos `int` | `int` | No |
+| `<` `>` | Ambos numéricos (`int` o `float`) | `bool` | Sí |
+| `==` | Ambos del mismo tipo básico (`int`, `float` o `bool`) | `bool` | No |
+| `&&` `\|\|` | Ambos `bool` | `bool` | No |
+| `-` (unario) | `int` o `float` | Mismo tipo del operando | No |
+| `!` | `bool` | `bool` | No |
 
-La regla de promoción: si alguno de los dos es `float`, el resultado es `float`;
-si los dos son `int`, es `int`; cualquier otra cosa es error.
+Resumen de combinaciones válidas e inválidas:
 
-```c
-bool coalesceToFloat = (left == TYPE_FLOAT || right == TYPE_FLOAT);
+```text
+int + int       -> OK (int)      int % int       -> OK (int)
+int + float     -> OK (float)    float % int     -> ERROR
+float + float   -> OK (float)    int % float     -> ERROR
+bool + int      -> ERROR
+
+int < float     -> OK (bool)     int == int      -> OK (bool)
+float > int     -> OK (bool)     float == float  -> OK (bool)
+bool < bool     -> ERROR         bool == bool    -> OK (bool)
+                                 int == float    -> ERROR
+bool && bool    -> OK (bool)     int == bool     -> ERROR
+int && int      -> ERROR
+
+-1              -> OK (int)      !true           -> OK (bool)
+-true           -> ERROR         !1              -> ERROR
 ```
 
-### `isAssignable(expected, actual)`
+### Asimetría entre `<` / `>` y `==`
+
+Los operadores relacionales `<` y `>` admiten mezclar `int` y `float`, mientras que `==` exige que ambos operandos tengan exactamente el mismo tipo básico:
+
+```c
+case OP_LT:
+case OP_GT:
+    if (isNumeric(left) && isNumeric(right)) return TYPE_BOOL;
+
+case OP_EQ:
+    if (left == right && isBasicType(left)) return TYPE_BOOL;
+```
+
+Esto responde a la especificación del lenguaje, cuya regla para `==` exige igualdad de tipos. Además, dado que `==` utiliza el predicado `isBasicType` (`INT`, `FLOAT`, `BOOL`) en lugar de `isNumeric` (`INT`, `FLOAT`), permite comparar expresiones booleanas (`true == false`), operación prohibida en `<` y `>`.
+
+### Política de asignación y pasaje de parámetros (`isAssignable`)
 
 ```c
 if (expected == actual) return true;
@@ -183,162 +128,44 @@ if (expected == TYPE_FLOAT && actual == TYPE_INT) return true;
 return false;
 ```
 
-Tres líneas que codifican toda la política de conversiones del lenguaje: tipos
-iguales, o **ensanchar** de `int` a `float`. Nunca al revés.
+La compatibilidad en asignaciones, sentencias `return` y argumentos de llamadas permite únicamente tipos idénticos o la conversión por ensanchamiento (*widening*) de `int` a `float`, rechazando el truncamiento (*narrowing*) de `float` a `int`:
 
-### `isNumeric(type)` y `isBasicType(type)` (privadas)
-
-| Predicado | Incluye | Para qué |
-| --- | --- | --- |
-| `isNumeric` | `INT`, `FLOAT` | Los operandos de la aritmética y los relacionales |
-| `isBasicType` | `INT`, `FLOAT`, `BOOL` | Los operandos de `==`, que admite booleanos pero no `VOID` ni `ERROR` |
-
-La diferencia entre los dos es exactamente la diferencia entre qué acepta `<` y
-qué acepta `==`.
-
----
-
-## 4. La tabla de reglas de tipos
-
-Toda la verificación empírica se resume acá. Cada fila fue ejecutada con
-`-target sem`.
-
-| Operador | Exige | Devuelve | Coerciona |
-| --- | --- | --- | --- |
-| `+` `-` `*` `/` | Ambos numéricos | `float` si alguno lo es, si no `int` | **Sí** |
-| `%` | **Ambos `int`** | `int` | No |
-| `<` `>` | Ambos numéricos | `bool` | **Sí** |
-| `==` | **Ambos del mismo tipo básico** | `bool` | **No** |
-| `&&` `\|\|` | Ambos `bool` | `bool` | No |
-| `-` unario | `int` o `float` | El mismo tipo | No |
-| `!` | `bool` | `bool` | No |
-
-### Verificación
-
-```
-int + int                  OK        int % int         OK
-int + float                OK        float % int       ERROR
-float + float              OK        int % float       ERROR
-bool + int                 ERROR
-
-int < float                OK        int == int        OK
-float > int                OK        float == float    OK
-bool < bool                ERROR     bool == bool      OK
-                                     int == float      ERROR
-bool && bool               OK        int == bool       ERROR
-int && int                 ERROR
-
--1                         OK        !true             OK
--true                      ERROR     !1                ERROR
+```text
+float f; f = 1;    -> OK     (int a float)
+int n;   n = 1.0;  -> ERROR  (float a int)
+int n;   n = true; -> ERROR
 ```
 
-### La asimetría entre `<` y `==`
+Aunque la regla 14 de la especificación menciona conversiones y truncamientos, la implementación adopta una política conservadora que solo acepta el ensanchamiento implícito sin pérdida de magnitud (ver [Alcance y Extensiones](../../decisiones/alcance-y-extensiones.md#1-alcance-de-float)).
 
-Es la regla menos intuitiva del lenguaje y la que más se presta a una pregunta:
+### Representación en el volcado `.sem`
 
-```c
-boolean b;
-b = 1 < 2.0;    // OK
-b = 1 == 2.0;   // ERROR: Tipos incompatibles en la operacion binaria.
-```
+El formateador del AST (`describeNode`) imprime el operador de un `OPERATOR_NODE` sin mostrar su campo `node->type`. Por ello, el tipo resultante de las expresiones intermedias reside en la estructura en memoria aunque no se liste explícitamente en la línea de `Operacion:` del archivo `.sem`:
 
-**`<` y `>` coercionan, `==` no.** La razón está en la especificación del
-lenguaje: su regla sobre igualdad dice que `==` compara expresiones **del mismo
-tipo**, mientras que los relacionales no tienen esa restricción. En el código la
-diferencia es literal:
-
-```c
-case OP_LT:
-case OP_GT:
-    if (isNumeric(left) && isNumeric(right)) return TYPE_BOOL;   /* mezcla permitida */
-
-case OP_EQ:
-    if (left == right && isBasicType(left)) return TYPE_BOOL;    /* igualdad exacta */
-```
-
-Hay además un argumento técnico a favor: comparar un `int` con un `float` por
-igualdad es una operación mal definida en la práctica, porque la conversión
-introduce un error de representación y el resultado puede sorprender. Prohibirlo
-obliga a escribir la intención.
-
-`==` sí acepta booleanos (`true == false` es válido) porque usa `isBasicType` y
-no `isNumeric`. Los relacionales no (`true < false` es error).
-
-### La asignación solo ensancha
-
-```
-float f; f = 1;      OK      <- int a float: ensancha
-int n;   n = 1.0;    ERROR   <- float a int: angostaria, prohibido
-int n;   n = true;   ERROR
-boolean b; b = 1;    ERROR
-```
-
-La misma regla gobierna el pasaje de argumentos, porque los dos usan
-`isAssignable`:
-
-```
-float f(float a){...}   f(1)     OK      <- int a parametro float
-int   f(int a){...}     f(1.0)   ERROR
-```
-
-Vale notar que la especificación del lenguaje permite las conversiones en las
-dos direcciones —su regla 14 habla de coerciones **y truncamientos**— pero la
-implementación solo admite el ensanchamiento. Es una decisión **más restrictiva
-que la letra**: rechaza programas que la especificación permitiría, pero nunca
-acepta uno inválido, que es el lado correcto para equivocarse en un chequeo de
-corrección. Queda registrada como aclaración de alcance en
-[Alcance y Extensiones](../../decisiones/alcance-y-extensiones.md#1-alcance-de-float).
-
-### Dónde se ve la coerción
-
-El impresor del AST **no muestra el tipo de un `OPERATOR_NODE`** (`describeNode`
-solo imprime el operador), así que en el `.sem` la coerción no se ve:
-
-```
+```text
   | Asignacion a: f #2 (Tipo FLOAT)
-  |   | Operacion: +              <- el tipo inferido no se imprime
+  |   | Operacion: +
   |   |   | ID: n #3 (Tipo INT)
   |   |   | Constante FLOAT: 1.500000
 ```
-
-Donde sí se ve es en el código intermedio, donde la conversión se materializa en
-una instrucción:
-
-```
-n@3 = 2
-t1 = int_to_float n@3      <- aca esta la coercion
-t0 = t1 + 1.500000
-f@2 = t0
-```
-
-O sea: el chequeo de tipos **decide** la coerción anotando `TYPE_FLOAT` en el
-nodo de la operación, y el generador de TAC la **ejecuta** emitiendo la
-conversión. Para verificar que una coerción ocurrió, el archivo a mirar es el
-`.ci`, no el `.sem`.
 
 ---
 
 ## 5. Conexión con las fases vecinas
 
-| Viene de | Qué cruza la frontera |
+| Módulo origen / destino | Interacción |
 | --- | --- |
-| `ast.c` | El árbol con `type` en `TYPE_VOID` y símbolos provisorios |
-| `symbol_table.c` | `lookupSymbol` para resolver nombres, y `symbol->parameters` para leer firmas |
-| `semantic_analyzer.c` | Los llamados: el recorrido decide *dónde* hay una expresión, esta unidad decide *de qué tipo es* |
+| `ast.c` (entrada) | Entrega el árbol con `type = TYPE_VOID` y símbolos provisorios |
+| `symbol_table.c` (entrada) | Provee `lookupSymbol` y las listas de parámetros en `symbol->parameters` |
+| `semantic_analyzer.c` (entrada/salida) | Invoca a este módulo en cada expresión y utiliza el `DataType` devuelto para validar sentencias |
+| `intermediate_code.c` (salida) | Consume `node->type` y `node->symbol` ya resueltos en cada nodo de expresión |
 
-| Va hacia | Qué entrega |
-| --- | --- |
-| `semantic_analyzer.c` | El tipo de cada expresión, para validar condiciones, asignaciones y `return` |
-| `intermediate_code.c` | `node->type` en cada nodo de expresión y `node->symbol` apuntando a la tabla. **El generador confía en esos tipos y no revalida nada** |
+Reparto de responsabilidades dentro del análisis semántico:
 
-**El reparto con [análisis semántico](03-analisis-semantico.md)** es la distinción que conviene tener clara, porque los dos
-archivos se llaman "análisis semántico" en el habla común:
-
-| | `type_checker.c` | `semantic_analyzer.c` |
+| Aspecto | `type_checker.c` | [Análisis Semántico](03-analisis-semantico.md) (`semantic_analyzer.c`) |
 | --- | --- | --- |
-| Recorre | Expresiones | Sentencias y declaraciones |
-| Pregunta | "¿De qué tipo es esto?" | "¿Está permitido esto acá?" |
-| Ejemplos | `a + b`, `f(x)`, `!c` | Condición de un `if`, tipo de un `return`, duplicados, existencia de `main` |
+| Alcance | Expresiones (`ID`, literales, llamadas, operadores) | Declaraciones, bloques y sentencias de control |
+| Propósito | Inferir `DataType` y vincular usos con declaraciones | Gestionar ámbitos, verificar condiciones booleanas, retornos y `main` |
 
 ---
 
@@ -346,8 +173,7 @@ archivos se llaman "análisis semántico" en el habla común:
 
 ### Un operador nuevo
 
-Un caso más en `resolveOperation`, y nada más en este archivo. Por ejemplo
-`!=` tendría exactamente la regla de `OP_EQ`:
+Agregar el caso correspondiente en `resolveOperation`. Por ejemplo, para `!=`:
 
 ```c
 case OP_NEQ:
@@ -355,109 +181,45 @@ case OP_NEQ:
     return TYPE_ERROR;
 ```
 
-Si el operador se olvida, cae en el `default` y **toda** expresión que lo use da
-`Tipos incompatibles`, que es un síntoma bastante desorientador para la causa
-real.
+Si se omite el caso en `resolveOperation`, el operador cae en `default` y cualquier expresión que lo utilice reporta error de tipos incompatibles.
 
-### Permitir el truncamiento `float` a `int`
+### Permitir el truncamiento de `float` a `int`
 
-Una línea en `isAssignable`:
+En el chequeo de tipos basta con agregar la condición inversa en `isAssignable`:
 
 ```c
 if (expected == TYPE_INT && actual == TYPE_FLOAT) return true;
 ```
 
-Pero arrastra trabajo abajo: el generador de TAC necesitaría una operación
-`float_to_int` simétrica a la `int_to_float` que ya existe, y el generador de
-código objeto la instrucción SSE correspondiente (`cvttss2si`). Alinearía la
-implementación con lo que permite la especificación.
+Para soportarlo en todo el compilador haría falta además emitir la conversión en el código intermedio y la instrucción de truncamiento escalar (`cvttss2si`) en el generador x86-64.
 
-### Un tipo nuevo (`char`, `double`)
+### Un tipo básico nuevo (`char`, `double`)
 
-Tres lugares acá: `isNumeric` y/o `isBasicType` según dónde deba poder usarse,
-y `resolveNumericOperation` para definir cómo se promueve frente a los
-existentes. La jerarquía de promoción es hoy implícita (`float` gana a `int`);
-con un tercer tipo numérico conviene hacerla explícita, por ejemplo con una
-función que devuelva el "mayor" de dos tipos.
+Requiere actualizar los predicados `isNumeric` y/o `isBasicType` y definir la jerarquía de promoción en `resolveNumericOperation` (que actualmente asume únicamente dos tipos numéricos donde `TYPE_FLOAT` prevalece sobre `TYPE_INT`).
 
 ### Conversiones explícitas (*casts*)
 
-Pediría un `NodeType` nuevo en el AST y un caso en `analyzeExpression` que
-devuelva el tipo pedido sin consultar el del operando, más la validación de que
-la conversión esté permitida. Es la extensión que más limpiamente encaja en la
-estructura actual.
+Requeriría un nuevo `NodeType` en el AST y una rama en `analyzeExpression` que valide que el tipo del operando sea convertible al tipo objetivo y anote este último en `node->type`.
 
 ---
 
 ## 7. Trampas y límites conocidos
 
-- **El mensaje distingue la aridad por la forma del nodo.** `analyzeOperator`
-  dice `operacion unaria` si el nodo no tiene segundo hijo y `operacion binaria`
-  si lo tiene: `!1` y `-true` reportan `Tipos incompatibles en la operacion
-  unaria.`
-- **El comentario de `OP_MOD` dice "division".** En el código se lee
-  `// division solo aplica a enteros` justo arriba del caso del módulo. El
-  comportamiento es correcto (el módulo exige dos enteros), el comentario está
-  mal ubicado: la división sí acepta reales.
-- **`rightType` vale `TYPE_VOID` en los unarios.** No es un tipo real del
-  operando: es un relleno. Cualquier regla nueva que mire `right` sin chequear
-  la aridad va a leer ese valor.
-- **Un `TYPE_ERROR` se propaga en silencio.** Es lo que evita las cascadas, pero
-  significa que una expresión puede quedar con `type == TYPE_ERROR` sin que esta
-  unidad haya reportado nada: el mensaje lo dio una llamada más profunda. Al
-  depurar, el primer error de la lista es el único que importa.
-- **La implementación es más restrictiva que la especificación** en las
-  conversiones: solo ensancha (§4).
+- **Distinción entre operación unaria y binaria en diagnósticos:** `analyzeOperator` decide el texto del mensaje (`operacion unaria` vs. `operacion binaria`) verificando si `GET_RIGHT(node)` es `NULL`.
+- **Comentario desactualizado en `OP_MOD`:** en `type_checker.c` el comentario previo a `case OP_MOD` menciona a la división, aunque el código aplica la restricción de operandos enteros exclusivamente al operador módulo (`%`).
+- **Valor centinela `rightType = TYPE_VOID` en unarios:** en operadores de aridad 1, `rightType` se inicializa en `TYPE_VOID`. Cualquier regla nueva en `resolveOperation` para un operador unario debe inspeccionar únicamente `left`.
+- **Propagación silenciosa de `TYPE_ERROR` (§3):** cuando una subexpresión falla, los operadores superiores devuelven `TYPE_ERROR` sin emitir mensajes adicionales; el primer error reportado es la causa raíz.
+- **Política restrictiva de conversión (§4):** `isAssignable` admite `int` hacia `float` pero rechaza `float` hacia `int`.
 
 ---
 
-## 8. La teoría detrás
+## 8. Cómo se valida
 
-- **Chequeo de tipos** (*type checking*): la parte del análisis semántico que
-  verifica que las operaciones se apliquen a operandos de tipos admisibles. Es
-  **análisis estático**: ocurre en compilación, sin ejecutar el programa.
-- **Inferencia de tipos** en el sentido débil del término: acá no hay inferencia
-  à la Hindley-Milner (no se deducen los tipos de las *declaraciones*), sino
-  **síntesis ascendente** del tipo de una expresión a partir de los tipos de sus
-  subexpresiones. Las declaraciones son explícitas y el tipo de una expresión se
-  calcula de las hojas hacia la raíz.
-- **Atributo sintetizado**: `node->type` es el ejemplo de libro. El valor de un
-  nodo se calcula solo con los valores de sus hijos, que es lo que permite
-  resolverlo en un único recorrido en postorden.
-- **Coerción implícita** y **promoción de tipos**: convertir automáticamente un
-  operando para que la operación sea posible. La política de este lenguaje es
-  solo **ensanchar** (*widening*), nunca **angostar** (*narrowing*), que es la
-  elección conservadora: ensanchar `int` a `float` nunca pierde el valor —aunque
-  sí precisión para enteros grandes—, mientras que angostar siempre puede
-  perderlo.
-- **Sistema de tipos monomórfico y nominal**: cada expresión tiene exactamente un
-  tipo, no hay genéricos ni subtipado, y dos tipos son compatibles si son el
-  mismo nombre. Es lo más simple que se puede chequear, y la razón de que
-  `resolveOperation` sea un `switch` y no un algoritmo.
-- **`TYPE_ERROR` como tipo**: tratar el error como un tipo más del sistema, que
-  se propaga sin generar mensajes nuevos, es la técnica estándar para **evitar
-  cascadas de errores**. La alternativa —abortar en el primer error de tipos—
-  daría un mensaje por compilación en lugar de todos los independientes.
-
----
-
-## 9. Cómo se valida
-
-- **Suite:** `tests/test_semantic.c` cubre las reglas con un caso
-  válido y uno inválido por regla, partiendo de un AST sin anotar armado a mano
-  (sin lexer ni parser).
-- **A mano:** el chequeo de tipos no tiene salida propia; se observa de dos
-  formas. Los errores, ejecutando la etapa:
+- **Suite unitaria:** `tests/test_semantic.c` verifica cada regla de tipos con casos válidos e inválidos construyendo el AST directamente en memoria (sin lexer ni parser).
+- **Ejecución manual:** los diagnósticos de tipos se verifican ejecutando el compilador hasta la etapa semántica:
 
 ```bash
 ./mi_compilador -target sem examples/if_not_equals_type.ctds
-```
-
-  Y las coerciones que decidió, mirando el código intermedio, que es donde
-  aparecen como instrucciones `int_to_float`:
-
-```bash
-./mi_compilador -target codinter examples/programa.ctds
 ```
 
 ---

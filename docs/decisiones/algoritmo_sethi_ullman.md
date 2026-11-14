@@ -1,162 +1,53 @@
-# Algoritmo de Sethi-Ullman (Generación Óptima de Código para Expresiones)
+# Comparación con el Algoritmo de Sethi-Ullman
 
-## 1. Introducción y Contexto Histórico
-
-El **Algoritmo de Sethi-Ullman** fue publicado en 1970 por **Ravi Sethi** y **Jeffrey D. Ullman** en su artículo fundamental:
-> *"The Generation of Optimal Code for Arithmetic Expressions"* (Journal of the ACM, 1970).
-
-De forma paralela e independiente, el matemático soviético **Andrei Ershov** describió un concepto equivalente en 1958, por lo que a las etiquetas calculadas en este algoritmo a menudo se las conoce en la literatura como **Números de Ershov**.
-
-### El Problema que Resuelve
-En un compilador, una expresión aritmética como:
-$$x = (a + b) \times (c - (d \times e))$$
-se representa internamente como un árbol de sintaxis abstracta (**AST**).
-
-Para calcular el resultado en una CPU con un número finito de registros (o de posiciones de almacenamiento temporal), surgen dos preguntas críticas:
-1. **¿En qué orden conviene evaluar los subárboles (hijo izquierdo vs. hijo derecho)?**
-2. **¿Cuál es la cantidad mínima estricta de registros necesarios para calcular la expresión sin tener que guardar datos intermedios en la memoria RAM (*spilling*)?**
-
-Si se evalúa el árbol en un orden ingenuo (por ejemplo, siempre de izquierda a derecha), se pueden mantener ocupados registros innecesariamente, agotándolos y forzando accesos lentos a memoria. Sethi-Ullman encuentra el orden **matemáticamente óptimo**.
+Documento de análisis sobre la estrategia de evaluación de expresiones y asignación de almacenamiento adoptada en el compilador frente al algoritmo clásico de Sethi-Ullman (números de Ershov).
 
 ---
 
-## 2. Las Dos Fases del Algoritmo
+## 1. Problema de diseño
 
-El algoritmo opera sobre un árbol binario de expresión en dos pasadas:
+Al traducir una expresión aritmética representada en el [AST](../wiki/03-lexico-sintactico-y-ast/04-ast.md), como `x = (a + b) * (c - (d * e))`, el generador de código debe definir:
 
-```
-          [AST]
-            │
-            ▼ (Pasada 1: Post-orden Bottom-Up)
-  [Árbol con Etiquetas L(n)]
-            │
-            ▼ (Pasada 2: Top-Down)
- [Código Assembly / TAC Óptimo]
-```
-
-### Fase 1: Etiquetado de Nodos (Bottom-Up)
-A cada nodo $N$ del árbol se le calcula un entero $L(N)$, llamado **número de Sethi-Ullman** o **etiqueta de registro**, que indica *cuántos registros se necesitan como mínimo para evaluar ese subárbol*.
-
-Las reglas de etiquetado (para una arquitectura estándar registro-registro) son:
-
-1. **Hojas (Operandos base):**
-   - Si una hoja es el hijo izquierdo: $L(N) = 1$ (se carga en un registro).
-   - Si una hoja es el hijo derecho: $L(N) = 0$ (en muchas arquitecturas puede usarse directamente como operando de memoria en la instrucción, ej. `addl b, %eax`).
-   *(Nota: En máquinas puras donde ambos operandos deben estar sí o sí en registros, todas las hojas se etiquetan con 1).*
-
-2. **Nodos Interiores (Operadores binarios con hijos $T_1$ y $T_2$):**
-   Sean $L_1 = L(T_1)$ y $L_2 = L(T_2)$:
-   - **Caso 1: $L_1 \neq L_2$**
-     $$L(N) = \max(L_1, L_2)$$
-     *Explicación:* Evaluamos primero el subárbol que requiere más registros. Cuando termina, su resultado queda en **1 solo registro**. Luego evaluamos el otro subárbol con los registros restantes sin sobrepasar el máximo.
-   
-   - **Caso 2: $L_1 = L_2$**
-     $$L(N) = L_1 + 1$$
-     *Explicación:* Como ambos subárboles son igual de complejos, evaluemos el que evaluemos primero, consumirá $L_1$ registros y dejará su resultado retenido en 1 registro. Para evaluar el segundo subárbol necesitaremos otros $L_1$ registros libres a la vez. Total necesario: $L_1 + 1$.
+1. El orden de evaluación de los subárboles (izquierdo vs. derecho).
+2. La asignación de ubicaciones para los resultados intermedios (registros de CPU vs. ranuras en el marco de pila).
 
 ---
 
-### Fase 2: Generación de Código (Top-Down)
+## 2. Estrategia adoptada en el compilador
 
-Una vez etiquetado el árbol, se recorre desde la raíz hacia las hojas siguiendo una regla fundamental:
+En C-TDS la traducción se divide en dos etapas desacopladas ([Generación de TAC](../wiki/05-codigo-intermedio/02-generacion-tac.md) y [Generación de Código Objeto](../wiki/07-codigo-objeto/02-generacion-codigo-objeto.md)):
 
-> **Regla de Oro:** Para cualquier operador binario, **se evalúa primero el hijo que tenga la etiqueta $L$ más alta**.
-
-- Si $L(hijo\_izq) > L(hijo\_der)$: Evaluar primero el hijo izquierdo, guardar su resultado en un registro $R$, y luego evaluar el hijo derecho.
-- Si $L(hijo\_der) > L(hijo\_izq)$: Evaluar primero el hijo derecho, guardar su resultado en un registro $R$, y luego evaluar el hijo izquierdo.
-- Si $L(hijo\_izq) == L(hijo\_der)$: Da igual cuál primero, pero el resultado ocupará un registro adicional durante la evaluación del segundo.
-
----
-
-## 3. Ejemplo Práctico Paso a Paso
-
-Consideremos la siguiente expresión:
-$$((a + b) \times c) + ((d - e) \times (f + g))$$
-
-### Representación en Árbol:
-
-```text
-                  (+)  [Nodo Raíz]
-                /     \
-             (*)       (*)
-            /   \     /   \
-          (+)    c  (-)   (+)
-          / \       / \   / \
-         a   b     d   e f   g
-```
-
-### Paso 1: Etiquetar las hojas y subárboles inferiores
-- Hoja `a` (izq) = 1, Hoja `b` (der) = 0 $\implies$ Nodo `(+)` de `(a + b)`:
-  $L_1 = 1, L_2 = 0 \implies \max(1, 0) = 1$.
-- Multiplicación `((a+b) * c)`:
-  Hijo izq tiene $L=1$, hoja `c` (der) tiene $L=0 \implies \max(1, 0) = 1$.
-
-Ahora el subárbol derecho:
-- `(d - e)`: $L(d)=1, L(e)=0 \implies L = 1$.
-- `(f + g)`: $L(f)=1, L(g)=0 \implies L = 1$.
-- Multiplicación `((d-e) * (f+g))`:
-  Ambos hijos tienen $L = 1$.
-  Como son iguales: $L = 1 + 1 = \mathbf{2}$.
-
-### Paso 2: Etiquetar la raíz
-- Hijo izquierdo `((a+b) * c)` tiene $L = 1$.
-- Hijo derecho `((d-e) * (f+g))` tiene $L = 2$.
-- Raíz `(+)`: $\max(1, 2) = \mathbf{2}$.
-
-**Conclusión del etiquetado:** Esta expresión puede calcularse con un mínimo estricto de **2 registros**, ¡sin tocar la memoria!
-
-### Comparación de Orden de Evaluación:
-
-#### Orden Naïve (Izquierda a Derecha):
-1. Calcula `a + b` $\to$ usa 1 registro (`R1`).
-2. Multiplica por `c` $\to$ resultado en `R1`.
-3. Ahora debe calcular el lado derecho, pero `R1` ya está ocupado:
-4. Calcula `d - e` $\to$ necesita otro registro (`R2`).
-5. Ahora necesita calcular `f + g`, pero `R1` y `R2` están ocupados.
-   **¡Se queda sin registros si solo tenía 2!** Está obligado a hacer *spill* de `R1` o `R2` a memoria stack.
-
-#### Orden Sethi-Ullman (Evaluar primero el lado más pesado):
-Como el lado derecho tiene $L=2$ y el izquierdo $L=1$, **evalúa primero el lado derecho**:
-1. Evalúa `(d - e)` $\to$ resultado en `R1`.
-2. Evalúa `(f + g)` $\to$ usa `R2`.
-3. Multiplica `R1 = R1 * R2` $\to$ el lado derecho completo queda comprimido en **`R1`** (se libera `R2`).
-4. Ahora evalúa el lado izquierdo:
-   - Carga `a` en `R2`, suma `b`.
-   - Multiplica `R2` por `c`.
-5. Suma final: `R1 = R2 + R1`.
-**Resultado:** Se evaluó la expresión completa utilizando únicamente 2 registros, sin ningún *spill* al stack.
-
----
-
-## 4. ¿Qué pasa cuando la CPU tiene menos registros que $L(N)$? (Spilling)
-
-Si una expresión compleja requiere $L(N) = 4$ registros pero nuestra máquina solo nos permite usar $K = 2$ registros (por ejemplo, `%eax` y `%edx` en un compilador didáctico):
-
-El algoritmo de Sethi-Ullman se extiende de forma elegante:
-1. Si ambos subárboles requieren más registros de los disponibles ($L_1 \ge K$ y $L_2 \ge K$):
-   - Evalúa el subárbol más pesado.
-   - Emite una instrucción explícita de guardado en stack: `pushq` (o `movl %reg, -offset(%rbp)`).
-   - Evalúa el segundo subárbol reutilizando los mismos $K$ registros.
-   - Recupera el valor guardado: `popq` (o `movl -offset(%rbp), %reg`).
-   - Aplica la operación binaria.
-
-Esto garantiza que la cantidad de lecturas y escrituras al stack sea la **mínima matemática posible**.
-
----
-
-## 5. Relación con Nuestro Compilador (C-TDS)
-
-| Característica | Sethi-Ullman | Nuestro Compilador Actual (`intermediate_code.c` + `object_code.c`) |
+| Aspecto | Implementación actual (`intermediate_code.c` + `object_code.c`) | Alternativa con Sethi-Ullman |
 | :--- | :--- | :--- |
-| **Generación de TAC** | Reordena la evaluación según el peso del subárbol. | Recorrido canónico post-orden fijo (siempre izquierdo $\to$ derecho). |
-| **Temporales** | Reutiliza un número mínimo de nombres/registros. | Emite un temporal único `t0, t1, t2...` por cada operación. |
-| **Manejo en Stack** | *Spill* mínimo solo cuando se agotan los registros disponibles. | *Naive Spilling*: cada temporal tiene su propio slot reservado en el frame. |
-| **Complejidad** | Requiere dos pasadas sobre el AST y gestión de registros libres. | Muy simple, determinista y fácil de auditar. Cumple la premisa: *"Corrección sobre optimización"*. |
+| **Orden de evaluación** | Recorrido postorden fijo (siempre hijo izquierdo antes que hijo derecho). | Reordena la evaluación empezando por el subárbol que demanda más registros ($L$ mayor). |
+| **Temporales en TAC** | Un temporal nuevo (`t0, t1, ...`) por cada operación evaluada. | Reutilización acotada de nombres/registros virtuales. |
+| **Almacenamiento en x86-64** | Asignación directa en pila: cada temporal recibe un slot de 4 bytes en `FunctionFrame` y cada cuádrupla opera usando `%eax`/`%edx` como registros de paso. | *Spilling* a memoria únicamente cuando la etiqueta $L(N)$ supera el número $K$ de registros físicos disponibles. |
+| **Complejidad de implementación** | Una sola pasada de emisión; cada cuádrupla se traduce de forma independiente. | Dos pasadas (etiquetado *bottom-up* y emisión *top-down* con seguimiento de registros libres). |
+
+### Por qué se eligió asignación en pila con recorrido fijo
+
+- **Desacoplamiento entre etapas:** El TAC mantiene temporales ilimitados sin asumir cuántos registros físicos tiene la arquitectura destino (ver [ADR 001](adr-001-desacoplamiento-tac-offsets-stack.md)).
+- **Simplicidad y corrección en el backend:** Al volcar cada temporal a su offset `-k(%rbp)` al terminar cada instrucción TAC, los registros `%eax` y `%edx` quedan libres antes de la instrucción siguiente. Esto evita conflictos con instrucciones x86-64 que usan registros fijos (`idivl` sobre `%edx:%eax`, desplazamientos con `%cl` y llamadas que pisan registros *caller-saved*).
+- **Reducción previa en el optimizador:** Con `-opt all`, las pasadas de plegado y propagación de constantes junto con la eliminación de asignaciones muertas (`dead-code`) reducen las expresiones constantes antes de dimensionar el marco de pila.
 
 ---
 
-## 6. Referencias para Profundizar
+## 3. Resumen del algoritmo de Sethi-Ullman (para una futura extensión a registros)
 
-- **Aho, Lam, Sethi, Ullman.** *Compilers: Principles, Techniques, and Tools* (Dragon Book), 2da Edición, Sección 8.10: *"Code Generation from DAGs / Tree-Evaluation with Registers"*.
-- **Sethi, R., & Ullman, J. D. (1970).** *The Generation of Optimal Code for Arithmetic Expressions.* Journal of the ACM (JACM), 17(4), 715-728.
-- **Ershov, A. P. (1958).** *On programming of arithmetic operations.* Communications of the ACM, 1(8), 3-6.
+Si se quisiera reemplazar el volcado sistemático a la pila por una asignación de registros en expresiones sin llamadas con efectos laterales, el algoritmo opera en dos pasadas:
+
+### Pasada 1: Etiquetado *bottom-up* ($L(N)$)
+
+A cada nodo $N$ se le asocia la cantidad mínima de registros necesarios para evaluarlo sin accesos intermedios a pila:
+
+- **Hojas:** $L(N) = 1$ si es hijo izquierdo (debe cargarse en registro) y $L(N) = 0$ si es hijo derecho (en x86-64 puede operarse directamente desde memoria, por ejemplo `addl -8(%rbp), %eax`).
+- **Nodo binario con hijos $T_1, T_2$ de etiquetas $L_1, L_2$:**
+  $$L(N) = \begin{cases} \max(L_1, L_2) & \text{si } L_1 \neq L_2 \\ L_1 + 1 & \text{si } L_1 = L_2 \end{cases}$$
+
+Cuando $L_1 \neq L_2$, evaluar primero el subárbol más pesado consume $\max(L_1, L_2)$ registros, deja su resultado en un único registro y permite evaluar el otro subárbol con los registros restantes. Cuando $L_1 = L_2$, el primer subárbol retiene un registro para su resultado mientras el segundo demanda otros $L_1$ registros adicionales ($L_1 + 1$).
+
+### Pasada 2: Emisión *top-down*
+
+En cada operador binario:
+1. Se evalúa primero el hijo con mayor etiqueta $L$.
+2. Si ambos hijos requieren al menos los $K$ registros disponibles ($L_1 \ge K$ y $L_2 \ge K$), se evalúa el más pesado, se guarda su resultado en un slot temporal de la pila, se evalúa el segundo reutilizando los $K$ registros y luego se recupera el valor de la pila para aplicar el operador.

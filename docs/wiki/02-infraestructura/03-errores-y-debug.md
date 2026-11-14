@@ -1,32 +1,23 @@
 # Errores y Salida de Debug
 
-**Archivos:** `include/error_handler.h`, `src/core/error_handler.c`,
-`include/debug.h` (126 líneas)
+**Archivos:** `include/error_handler.h`, `src/core/error_handler.c`, `include/debug.h`
 
-Los dos canales de salida del compilador: los errores por `stderr` y la
-información de depuración por `stdout`, esta última solo con `-debug`.
+Gestionan los dos canales de salida por consola del compilador: el reporte de errores de compilación por `stderr` y la traza diagnóstica de desarrollo por `stdout` (habilitada exclusivamente mediante `-debug`).
 
 ---
 
-## 1. Qué problema resuelve
+## 1. Propósito y separación de canales
 
-Un compilador tiene que decir dos clases de cosas y no confundirlas:
+El compilador separa estrictamente los diagnósticos dirigidos al usuario de la información interna de depuración:
 
-- **Errores**: el programa del usuario está mal. Van a `stderr`, se cuentan, y
-  determinan si la compilación sigue.
-- **Debug**: información para quien desarrolla el compilador. Va a `stdout` y
-  **solo si se pidió**, porque el enunciado exige que una compilación exitosa no
-  imprima nada.
-
-Son dos módulos chicos con una responsabilidad clara cada uno, y la razón de
-documentarlos juntos es que definen **las dos convenciones de salida** que todo
-el resto del proyecto respeta.
+- **Errores (`error_handler`):** se emiten siempre por `stderr`, actualizan los contadores de errores de la fase correspondiente y determinan si el pipeline continúa o se interrumpe.
+- **Depuración (`debug.h`):** se emite por `stdout` únicamente cuando el usuario especifica `-debug`. Si no se pasa `-debug`, una compilación exitosa no escribe ningún carácter en `stdout` ni en `stderr`.
 
 ---
 
-## 2. `error_handler`: tres niveles y dos contadores
+## 2. Manejador de errores (`error_handler`)
 
-### La interfaz
+### Interfaz pública
 
 ```c
 void lexicalError (int line, const char *format, ...);
@@ -39,35 +30,26 @@ extern int lexical_errors;
 extern int semantic_errors;
 ```
 
-Los tres reportes son **variádicos al estilo `printf`**, así que el llamador
-escribe el mensaje con sus datos en una línea:
+Las funciones de reporte son variádicas con formato estilo `printf`:
 
 ```c
 lexicalError(yylineno, "simbolo no permitido '%s'", yytext);
 semanticError(node->line, "La variable '%s' ya fue declarada previamente en este ambito.", id);
 ```
 
-### Dos contadores para tres niveles
+Para errores globales no asociados a una línea específica (como la ausencia del método `main`), se utiliza la línea `0` como valor centinela (`semanticError(0, ...)`).
 
-| Reporte | ¿Incrementa contador? | Quién lo llama |
-| --- | --- | --- |
-| `lexicalError` | `lexical_errors` | `lexer.l` |
-| `syntaxError` | **ninguno** | `bison.y` |
-| `semanticError` | `semantic_errors` | `semantic_analyzer.c`, `type_checker.c` |
+### Políticas de recuperación y contadores por fase
 
-**La asimetría no es un olvido: es la política de recuperación de cada fase.**
+| Función | Contador incrementado | Llamador | Política de la fase |
+| --- | --- | --- | --- |
+| `lexicalError` | `lexical_errors` | `lexer.l` | Acumula errores y continúa escaneando hasta `EOF`. |
+| `syntaxError` | Ninguno | `bison.y` (`yyerror`) | Aborta en el primer error sintáctico (`yyparse` retorna no cero). |
+| `semanticError` | `semantic_errors` | `semantic_analyzer.c`, `type_checker.c` | Acumula todos los errores semánticos antes de abortar. |
 
-- El **léxico acumula**: un símbolo inválido se reporta y el escaneo sigue, así
-  que hace falta un contador para saber al final cuántos hubo.
-- El **sintáctico aborta en el primero**: `yyparse` devuelve distinto de cero y el
-  driver corta. No hace falta contar porque siempre es exactamente uno. La razón
-  de fondo es que después de un error de sintaxis el parser no sabe en qué estado
-  quedó, y seguir produciría errores inventados.
-- El **semántico acumula**: cada sentencia se puede validar independientemente de
-  las demás, así que reportar todas de una pasada es más útil.
+La ausencia de un contador `syntax_errors` responde a que la gramática no emplea producciones de recuperación con el token `error` de Bison: ante el primer error sintáctico el análisis se detiene. En cambio, las fases léxica y semántica continúan analizando el resto del archivo para reportar todos los errores independientes en una sola ejecución (apoyadas en `TYPE_ERROR` para evitar cascadas de errores de tipos; ver [chequeo de tipos](../04-semantico/02-chequeo-de-tipos.md)).
 
-La implementación es una sola función privada con el contador como parámetro
-opcional:
+Internamente, las tres funciones delegan en `reportError`, que recibe un puntero opcional al contador (`NULL` en el caso de `syntaxError`) y formatea directamente sobre `stderr` con `vfprintf`, sin utilizar buffers intermedios de longitud fija:
 
 ```c
 static void reportError(const char *stage, int *counter, int line,
@@ -79,13 +61,9 @@ static void reportError(const char *stage, int *counter, int line,
 }
 ```
 
-El mensaje se escribe directo a `stderr` con `vfprintf`: no se guarda en ningún
-buffer, así que no hay límite de largo ni estado del último error.
+### Resumen de cierre (`compileAborted`) y formato ANSI
 
-`syntaxError` le pasa `NULL` y por eso no cuenta. Las tres variantes comparten el
-formato, así que los mensajes de las tres fases se ven iguales.
-
-### `compileAborted`: el resumen
+Cuando una etapa con acumulación finaliza con contador mayor a cero, `driver.c` invoca a `compileAborted` para emitir el resumen final por `stderr`:
 
 ```c
 void compileAborted(const char *stage, int errorCount) {
@@ -94,62 +72,19 @@ void compileAborted(const char *stage, int errorCount) {
 }
 ```
 
-No cuenta nada: solo imprime el resumen. **Lo llama únicamente `driver.c`**,
-después de consultar el contador de la fase que terminó:
+Los códigos de escape ANSI `\033[1;31m` (rojo en negrita) y `\033[0m` se emiten siempre en `stderr` (incluso si el descriptor está redirigido a un archivo). Es el único módulo del proyecto que utiliza secuencias de color.
 
-```
-Error semantico en la linea 3: El tipo de la expresion no coincide con la variable 'a'.
-Error semantico en la linea 4: La condicion del if debe ser de tipo BOOL, pero es INT.
+### Reinicio de estado en pruebas (`resetErrorHandler`)
 
-Compilacion abortada: se encontraron 2 errores semanticos.
-```
-
-El parámetro `stage` es texto en plural (`"lexicos"`, `"semanticos"`) y se
-concatena al mensaje. El driver lo usa también para los errores internos del
-generador de código: `"internos en la generacion de codigo objeto"`.
-
-### El canal y el color
-
-**Todo va a `stderr`**, no a `stdout`. Eso es lo que permite redirigir la salida
-útil de una etapa y seguir viendo los errores:
-
-```bash
-./mi_compilador -debug -target codinter programa.ctds > salida.txt   # los errores igual se ven
-```
-
-Los códigos `\033[1;31m` y `\033[0m` son ANSI para rojo y negrita. Son el
-**único** lugar del proyecto con color: la convención de `debug.h` prohíbe
-explícitamente los colores en la salida de depuración, justamente para que el
-color signifique "error".
-
-### `resetErrorHandler`: el estado global y los tests
-
-Los contadores son **globales**, así que un proceso que compile dos programas
-arrastraría la cuenta del primero. El compilador no tiene el problema —procesa un
-archivo y termina— pero **las suites de tests sí**, porque corren decenas de
-casos en el mismo proceso.
-
-Por eso `resetErrorHandler` existe y la llaman las suites que cuentan errores:
-`test_semantic`, `test_ast` y `test_integration`. Las que parten de TAC no la
-necesitan, porque no ejecutan ninguna etapa que reporte errores. Es el mismo
-patrón que `resetSymbolUids` en la tabla de símbolos.
+Dado que `lexical_errors` y `semantic_errors` son variables globales estáticas al proceso, las suites unitarias que ejecutan múltiples casos de prueba en un mismo binario (`test_semantic`, `test_ast`, `test_integration`) llaman a `resetErrorHandler()` en su `setUp` para poner ambos contadores en cero antes de cada test.
 
 ---
 
-## 3. `debug.h`: la convención, en un header
+## 3. Salida de depuración (`debug.h`)
 
-El módulo entero es **una función de 27 líneas en un header**, y lo que importa
-no es el código sino la convención que fija, escrita como comentario:
+El encabezado `include/debug.h` define la función `debugPrintf` y establece la convención de trazas del compilador:
 
 ```c
-/*
- * Convencion de salida de debug del compilador (unica forma en todo el codigo):
- *  - La salida de debug va a stdout, y solo si el usuario paso -debug.
- *    Los errores van a stderr aparte (error_handler.h), nunca por aqui.
- *  - Toda impresion de debug pasa por debugPrintf con el bool de la opcion.
- *  - Cada mensaje lleva prefijo de etapa: [SCAN], [TAC], [OPT], [ASM]...
- *  - Texto plano, sin colores ni separadores ANSI.
- */
 static void debugPrintf(bool debugEnabled, const char *format, ...) {
     if (!debugEnabled) return;
     va_list arguments;
@@ -159,209 +94,73 @@ static void debugPrintf(bool debugEnabled, const char *format, ...) {
 }
 ```
 
-**La bandera se pasa como parámetro, no se consulta una global.** Esa decisión es
-la que hace que el módulo no tenga estado y que cada llamador tenga que tener a
-mano su `options->debug`. El costo es un parámetro extra en varias firmas; el
-beneficio es que no hay una variable global más que sincronizar.
-
-### Los prefijos que realmente se usan
-
-La convención nombra `[SCAN]`, `[TAC]`, `[OPT]` y `[ASM]`. Los que
-aparecen en el código son:
-
-| Prefijo | Dónde |
-| --- | --- |
-| `[SCAN]` | `driver.c`, en `runScan` |
-| `[OPT]` | `driver.c` (el total de transformaciones) y `optimizer.c` (el encabezado de cada volcado) |
-| `[ASM]` | `driver.c` |
-| `[ELIMINADA]` | `optimizer.c`, para marcar instrucciones removidas |
-
-**`[TAC]` está en la convención y no se usa**, y `[ELIMINADA]` se usa sin estar
-en la lista. Es una desincronización menor del comentario con el código: no hay
-salida de debug propia del generador de TAC, porque el TAC se vuelca completo con
-`getBuiltString` sin prefijos.
-
-**No toda la salida de debug pasa por `debugPrintf`.** El volcado del optimizador
-(`printTACWithDeletedInRed`) y el del análisis de variables vivas imprimen con
-`printf`/`fprintf` directo, pero solo se ejecutan si `-debug` está activo: el
-optimizador consulta su bandera una vez al entrar a la función, y el driver solo
-llama a `printLiveVariableAnalysis` con `-debug`. El efecto es el mismo: sin
-`-debug` no se imprime nada.
-
-También queda afuera de la convención el volcado del
-[análisis de variables vivas](../06-optimizador/01-variables-vivas.md), que imprime un banner con
-separadores `=====` en lugar de líneas con prefijo. Es la única salida de debug
-que no sigue el formato.
-
-### La trampa de la función `static` en un header
-
-Declarar `static void debugPrintf(...)` en un header significa que **cada unidad
-de traducción que lo incluya recibe su propia copia**. Si una de ellas lo incluye
-y no lo llama, GCC avisa:
-
-```
-include/debug.h:16:13: warning: 'debugPrintf' defined but not used [-Wunused-function]
-```
-
-Hoy no pasa, porque el único archivo que incluye `debug.h` es `driver.c`, que sí
-la usa. Pero cualquier archivo nuevo que lo incluya sin llamarla va a disparar el
-aviso. El arreglo es una palabra: `static inline`, que le dice al compilador que
-la definición puede no usarse.
+- **Control explícito por parámetro:** en lugar de mantener una bandera global, `debugPrintf` recibe `debugEnabled` (`options->debug`) en cada llamada.
+- **Prefijos por etapa:** las líneas emitidas identifican su origen mediante prefijos en texto plano sin códigos ANSI: `[SCAN]` y `[ASM]` en `driver.c`, y `[OPT]` y `[ELIMINADA]` en `driver.c` y `optimizer.c`.
+- **Volcados multilínea:** el optimizador (`printTACWithDeletedInRed`) y el [análisis de variables vivas](../06-optimizador/01-variables-vivas.md) (`printLiveVariableAnalysis`, que formatea bloques con separadores `=====`) imprimen con `printf`/`fprintf` directo, pero solo son invocados cuando `options->debug` es verdadero.
+- **Vinculación `static`:** `debugPrintf` está declarada como `static` (no `static inline`) en `debug.h`. Actualmente solo `driver.c` incluye este encabezado; si otro archivo lo incluyera sin invocar a `debugPrintf`, GCC emitiría una advertencia `-Wunused-function` a menos que se cambie a `static inline`.
 
 ---
 
-## 4. Cómo se combinan las dos convenciones
+## 4. Comportamiento de canales y códigos de salida
 
-Los tres casos que hay que poder distinguir:
+| Escenario | `stdout` | `stderr` | Código de retorno | Archivo de salida |
+| --- | --- | --- | --- | --- |
+| Compilación exitosa sin `-debug` | Vacío | Vacío | `0` | Generado |
+| Compilación exitosa con `-debug` | Trazas de las etapas ejecutadas | Vacío | `0` | Generado (más `.tmp.s` si aplica) |
+| Error en cualquier fase | Vacío (o trazas previas si hay `-debug`) | Mensajes de error y resumen | `1` | No generado / eliminado |
 
-| Situación | `stdout` | `stderr` | Código de salida |
-| --- | --- | --- | --- |
-| Compilación exitosa, sin `-debug` | **nada** | nada | 0 |
-| Compilación exitosa, con `-debug` | el volcado de las etapas | nada | 0 |
-| Programa con errores | nada | los errores y el resumen | 1 |
-
-El primero es un **requisito explícito del enunciado** y es fácil de romper: un
-`printf` de depuración olvidado en cualquier fase lo viola. Que toda la salida de
-debug esté condicionada a `-debug` —por `debugPrintf` o por una bandera
-consultada antes de imprimir— es lo que lo previene, y se puede verificar en una
-línea:
+La separación entre `stdout` y `stderr` permite redirigir la traza de `-debug` a un archivo mientras los errores continúan mostrándose en la terminal:
 
 ```bash
-test -z "$(./mi_compilador examples/programa.ctds 2>&1)" && echo "silencio correcto"
+./mi_compilador -debug -target codinter programa.ctds > traza.txt
 ```
-
-Un error **nunca deja archivo de salida**: el driver lo borra con `remove` si la
-escritura ya había empezado. Entre eso y el código 1, un `&&` de shell encadena
-con seguridad.
 
 ---
 
-## 5. Conexión con las fases vecinas
+## 5. Conexión con otros módulos
 
-| Quién usa `error_handler` | Para qué |
+| Módulo | Uso de `error_handler.h` / `debug.h` |
 | --- | --- |
-| `lexer.l` | `lexicalError` por símbolo inválido y comentario sin cerrar |
-| `bison.y` | `syntaxError` desde `yyerror` |
-| `type_checker.c` | `semanticError` por los errores de tipos |
-| `semantic_analyzer.c` | `semanticError` por los de declaraciones y sentencias |
-| `driver.c` | Lee los contadores y llama a `compileAborted` |
-
-| Quién usa `debug.h` | Para qué |
-| --- | --- |
-| `driver.c` | Los volcados de cada etapa y el aviso del assembly intermedio. Es el único que lo incluye |
+| `lexer.l` | Invoca a `lexicalError` ante caracteres inválidos y comentarios sin cerrar. |
+| `bison.y` | Invoca a `syntaxError` desde `yyerror`. |
+| `type_checker.c` | Invoca a `semanticError` ante incompatibilidades de tipos. |
+| `semantic_analyzer.c` | Invoca a `semanticError` ante errores de declaración, alcance y firmas de métodos. |
+| `driver.c` | Consulta `lexical_errors` y `semantic_errors`, llama a `compileAborted` y emite las trazas con `debugPrintf`. |
 
 ---
 
 ## 6. Cómo se extiende
 
-### Un cuarto nivel de error
+### Agregar un nuevo nivel de error
 
-Por ejemplo `runtimeError` para errores que no encajan en las fases actuales.
-Son tres cosas: la función variádica que delegue en
-`reportError` con su propio nombre de etapa, su contador `extern`, y que el
-driver lo consulte. Quince líneas en total.
+1. Declarar la función variádica y su contador `extern` en `include/error_handler.h`.
+2. Implementarla en `src/core/error_handler.c` delegando en `reportError` con la etiqueta de la etapa y el puntero al nuevo contador, y reiniciar dicho contador en `resetErrorHandler`.
+3. Consultar el contador en `driver.c` al finalizar la etapa correspondiente.
 
-### Que los errores también vayan a un archivo
+### Redirigir errores a un `FILE *` configurable
 
-`reportError` escribe a `stderr` directo. Agregar un `FILE *` configurable
-—como el que ya acepta `printLiveVariableAnalysis`— permitiría redirigirlos, y es
-lo que haría falta para que una suite verifique el texto exacto de un mensaje sin
-capturar `stderr` del proceso.
+Actualmente `reportError` escribe de forma fija en `stderr`. Parametrizar el destino mediante un `FILE *` (por defecto `stderr`) permitiría capturar y verificar el texto exacto de los mensajes de error desde las suites unitarias sin redirigir el descriptor del proceso.
 
-### Un nivel de verbosidad (`-v`, `-vv`)
+### Niveles de verbosidad en depuración
 
-Hoy `debug` es un booleano. Convertirlo en un entero y que `debugPrintf` reciba
-el nivel mínimo requerido es un cambio mecánico, pero toca todas las llamadas.
-
-### Que los tests verifiquen el texto del error
-
-Hoy `test_semantic.c` verifica que hubo un error, no cuál. Guardar el último
-mensaje en `reportError` y exponerlo con una función de consulta permitiría
-comprobar el texto exacto. Existió una versión de esa API
-(`getLastErrorLine`/`getLastErrorMessage`) y se borró porque nadie la llamaba;
-volver a agregarla tiene sentido solo junto con los tests que la usen.
+Para soportar múltiples niveles de detalle (p. ej. `-v`, `-vv`), `options->debug` puede cambiarse de booleano a nivel entero, ajustando `debugPrintf` para recibir el umbral mínimo requerido por cada mensaje.
 
 ---
 
-## 7. Trampas y límites conocidos
+## 7. Validación
 
-- **`syntaxError` no incrementa ningún contador** (§2). Buscar un
-  `syntax_errors` global es perder el tiempo: no existe, y no hace falta porque el
-  parseo aborta en el primero.
-- **`debugPrintf` es `static` en un header** (§3): un archivo que lo incluya sin
-  usarlo dispara `-Wunused-function`. Hoy solo lo incluye `driver.c`. Se
-  arregla con `static inline`.
-- **Los contadores son globales y no se reinician solos** (§2). Fuera de los
-  tests nadie llama a `resetErrorHandler`, y está bien porque el compilador
-  procesa un archivo por proceso.
-- **El comentario de la convención de `debug.h` está desincronizado** (§3):
-  nombra `[TAC]`, que no se usa, y omite `[ELIMINADA]`, que sí.
-- **El volcado del análisis de variables vivas no respeta la convención** (§3):
-  usa banners con `=====` en vez de prefijos.
-- **El color ANSI se emite siempre**, incluso cuando `stderr` no es una terminal.
-  Redirigir los errores a un archivo mete los códigos de escape en el texto. La
-  solución habitual es `isatty(STDERR_FILENO)`, que no está.
-- **`semanticError(0, ...)` es la forma de reportar un error sin línea.** La línea
-  0 no existe en ningún archivo, así que el 0 funciona como centinela. Lo usa
-  `checkMainMethodExists`.
+El módulo se valida a través de las suites unitarias que reinician y consultan los contadores (`test_ast.c`, `test_semantic.c`, `test_integration.c`) y de `test_cli.c`, que verifica los códigos de salida y la ausencia de impresiones en compilaciones exitosas sin `-debug`.
 
----
-
-## 8. La teoría detrás
-
-- **Recuperación de errores** (*error recovery*): qué hace un compilador después
-  de encontrar un error. Las dos políticas clásicas son **abortar** (modo pánico
-  simple) y **acumular** para reportar todo de una pasada. Este compilador usa las
-  dos, y cuál conviene depende de si los errores de la fase son independientes
-  entre sí: los léxicos y los semánticos lo son, los sintácticos no.
-- **Modo pánico** (*panic mode*): la técnica de recuperación de errores
-  sintácticos consistente en descartar tokens hasta encontrar uno que permita
-  resincronizar. Bison lo soporta con el token especial `error` en las
-  producciones; esta gramática **no lo usa**, así que corta en el primer error.
-- **Cascadas de errores**: cuando un error primario genera decenas de mensajes
-  derivados. El mecanismo que lo evita en este compilador no está en este módulo
-  sino en el chequeo de tipos: `TYPE_ERROR` se propaga sin generar mensajes
-  nuevos (ver la [chequeo de tipos](../04-semantico/02-chequeo-de-tipos.md)).
-- **Separación de canales** `stdout`/`stderr`: es lo que permite que la salida
-  útil de un programa se pueda redirigir o encadenar en una tubería mientras los
-  diagnósticos siguen siendo visibles. Es una convención de POSIX, no una
-  decisión de este proyecto, y violarla rompe la composición con otras
-  herramientas.
-- **Compilación silenciosa en caso de éxito**: la convención de las herramientas
-  Unix —"no digas nada si todo salió bien"— que el enunciado adopta
-  explícitamente. Permite que un script procese cien archivos y que la salida
-  contenga solo los problemas.
-- **Instrumentación condicional**: pasar la bandera como parámetro en lugar de
-  consultar una global, y concentrar la impresión en una sola función, es lo que
-  hace que la salida de depuración se pueda apagar completa y auditar de un solo
-  lugar.
-
----
-
-## 9. Cómo se valida
-
-- **Suite:** no tiene una propia. Se valida indirectamente desde las seis suites
-  que llaman a `resetErrorHandler` y verifican los contadores, y desde
-  `test_cli.c`, que comprueba los códigos de salida y que no se imprima nada en
-  caso de éxito.
-- **Los tres casos de §4**, que son lo que hay que mantener:
+Comprobaciones en línea de comandos:
 
 ```bash
-# 1. exito sin -debug: silencio total
-test -z "$(./mi_compilador examples/programa.ctds 2>&1)" && echo "ok silencio"
+# 1. Compilación exitosa sin -debug: salida vacía en ambos canales
+test -z "$(./mi_compilador examples/programa.ctds 2>&1)" && echo "OK silencio"
 
-# 2. exito con -debug: sale por stdout, stderr vacio
-test -z "$(./mi_compilador -debug examples/programa.ctds 2>/dev/null >/dev/null; \
-           ./mi_compilador -debug examples/programa.ctds 2>&1 >/dev/null)" && echo "ok stderr vacio"
+# 2. Compilación exitosa con -debug: trazas en stdout, stderr vacío
+test -z "$(./mi_compilador -debug examples/programa.ctds 2>&1 >/dev/null)" && echo "OK stderr vacio"
 
-# 3. error: sale por stderr y devuelve 1
-./mi_compilador examples/programa_con_error.ctds 2>&1 >/dev/null | head -1
-```
-
-- **Que los errores acumulen donde deben**: un programa con varios errores
-  semánticos independientes tiene que reportarlos todos y cerrar con el resumen:
-
-```bash
+# 3. Acumulación de errores semánticos y salida por stderr
 ./mi_compilador -target sem examples/programa_con_error.ctds
 ```
 

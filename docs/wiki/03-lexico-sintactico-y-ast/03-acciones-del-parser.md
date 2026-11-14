@@ -2,56 +2,37 @@
 
 **Archivos:** `include/parser_helpers.h`, `src/parser/parser_helpers.c` (146 líneas)
 
-Las funciones que las acciones de [la gramática](02-analisis-sintactico.md) llaman
-para armar listas de nodos durante las reducciones.
+Funciones auxiliares invocadas por las acciones de [la gramática](02-analisis-sintactico.md) para acumular listas de nodos durante las reducciones ascendentes.
 
 ---
 
 ## 1. Qué problema resuelve
 
-La gramática produce **listas de longitud variable** —las sentencias de un bloque,
-los parámetros de un método, los argumentos de una llamada— pero un nodo del AST
-necesita recibir sus hijos de una sola vez, como un arreglo ya completo. Este
-módulo es el andamio que acumula los nodos mientras el parser los va reduciendo,
-y los entrega al nodo padre cuando la lista termina.
+En un parser ascendente (LALR), las construcciones de longitud variable —declaraciones, parámetros formales, sentencias de un bloque, argumentos de una llamada— se reducen elemento por elemento, mientras que un nodo padre del [AST](04-ast.md) requiere recibir su arreglo de hijos completo (`NodeAST **children`).
 
-Es código que **existe solo durante el parseo**: cuando el AST está armado, no
-queda ni un `NodeArray` vivo.
+Este módulo implementa el contenedor temporal `NodeArray` que acumula los nodos a medida que el parser reduce las producciones recursivas. Una vez completada la lista, su buffer interno se transfiere al nodo padre y el `NodeArray` se descarta: ningún `NodeArray` sobrevive una vez finalizado `yyparse()`.
 
-### Lo que este módulo no hace
-
-Conviene tenerlo claro porque es un reparto que se puede preguntar: **los nodos
-los construye `ast.c`**, no este archivo. Todos los constructores que llaman las
-acciones —`newOperatorNode`, `newMethodDeclaration`, `newParameterDeclaration`,
-`newIdentifierNode`, `newAssignmentNode`, `newMethodCallNode`, `newBlockNode`,
-`newParametersNode`, `newReturnNode`, `newWhileNode`, `newIfElseNode` y los tres
-de literales— viven en `ast.c` (documentado en la sección de [AST](04-ast.md)).
+### Reparto de responsabilidades con `ast.c`
 
 | Módulo | Responsabilidad |
 | --- | --- |
-| `ast.c` | Crear nodos del AST, adoptar como hijos una lista ya armada, y liberarlos |
-| `parser_helpers.c` | Acumular nodos en listas temporales mientras dura la reducción |
-
-La única excepción es `resolveVariableDefinition`, que modifica nodos en el
-lugar. Está acá porque resuelve un problema propio de la forma de la gramática,
-explicado en §7.
+| `parser_helpers.c` | Acumular nodos en listas dinámicas temporales (`NodeArray`) y resolver declaraciones múltiples (`int a, b, c;`) |
+| [`ast.c`](04-ast.md) | Construir nodos del AST, adoptar el buffer de un `NodeArray` como hijos (`resolveNodeArray`) y liberar subárboles (`freeAST`) |
 
 ---
 
 ## 2. Interfaz pública
 
-Cuatro funciones, todas declaradas en `parser_helpers.h`.
+`include/parser_helpers.h` expone la estructura `NodeArray` (utilizada en la `%union` y en las declaraciones `%type <array>` de `bison.y`) y cuatro funciones:
 
-| Función | Para qué |
+| Función | Comportamiento |
 | --- | --- |
-| `createNodeArray(int)` | Crear la lista vacía |
-| `appendNode(NodeArray *, NodeAST *)` | Agregar un nodo al final |
-| `mergeNodeArrays(NodeArray *, NodeArray *)` | Concatenar dos listas |
-| `resolveVariableDefinition(DataType, NodeArray *)` | Convertir los identificadores de `int a, b, c;` en declaraciones tipadas |
+| `createNodeArray(int initialCapacity)` | Reserva un `NodeArray` y su arreglo `items` (usa capacidad `4` si `initialCapacity <= 0`). Si falla el segundo `malloc`, libera la estructura antes de devolver `NULL` |
+| `appendNode(NodeArray *array, NodeAST *node)` | Agrega `node` al final de `array` duplicando la capacidad cuando se llena. Si `array` es `NULL`, crea la lista; si `node` es `NULL`, no hace nada. Si falla `realloc`, libera `node` con `freeAST` y conserva la lista previa |
+| `mergeNodeArrays(NodeArray *first, NodeArray *second)` | Concatena los punteros de `second` al final de `first` mediante `memcpy` (ajustando el tamaño con `realloc`), libera el contenedor `second` y devuelve `first`. Si falla `realloc`, libera los nodos de `second` con `freeAST` |
+| `resolveVariableDefinition(DataType type, NodeArray *identifiers)` | Transforma en el lugar una lista de `ID_NODE` provisorios en nodos `VARIABLE_DECLARATION_NODE` con el `DataType` indicado (ver §6) |
 
-El header también exporta la estructura `NodeArray`, que `bison.y` necesita para
-declarar `%type <array>` y para el campo `array` de la `%union`, y que los
-constructores de `ast.c` reciben para adoptar la lista (§6).
+Las acciones de `bison.y` no llaman a `createNodeArray` directamente: toda lista comienza en `NULL` en la producción base y es instanciada bajo demanda por la primera llamada a `appendNode`.
 
 ---
 
@@ -65,334 +46,126 @@ typedef struct NodeArray {
 } NodeArray;
 ```
 
-Un arreglo dinámico clásico. Los tres campos son los mínimos: `items` es el
-buffer, `count` cuántos hay y `capacity` cuántos caben antes de tener que crecer.
-
-**Por qué un arreglo y no una lista enlazada.** Porque el destino final es
-`NodeAST.children`, que es un `NodeAST **`. Si la acumulación fuera una lista
-enlazada habría que recorrerla para copiarla a un arreglo al final. Siendo un
-arreglo, la entrega es **gratis**: se le pasa el puntero al nodo padre y listo.
-Ver §6.
-
-**Por qué `capacity` separado de `count`.** Para no hacer un `realloc` por cada
-nodo agregado. `appendNode` duplica la capacidad cuando se llena, así que N
-agregados cuestan O(log N) reallocs en lugar de N.
+- **Arreglo contiguo en lugar de lista enlazada:** como el destino final de los elementos es `NodeAST.children` (también de tipo `NodeAST **`), almacenar los punteros en un arreglo contiguo permite transferir el buffer directamente al nodo padre en $O(1)$ sin copiar ni recorrer los elementos (ver §5).
+- **Crecimiento amortizado:** `appendNode` duplica `capacity` cuando `count == capacity`, realizando $O(\log N)$ realojamientos para $N$ inserciones. En cambio, `mergeNodeArrays` redimensiona `first->items` al total exacto (`first->count + second->count`), dado que se utiliza para combinar listas de declaraciones ya formadas.
 
 ---
 
-## 4. Inventario de funciones
+## 4. El convenio de `NULL`
 
-### `createNodeArray(int initialCapacity)`
+Las funciones de listas tratan `NULL` como representación válida de una lista vacía o de un nodo inexistente. Gracias a este invariante, ninguna acción semántica de `bison.y` necesita condicionales `if`:
 
-Reserva la estructura y su buffer. Si la capacidad pedida es `<= 0` usa **4** por
-defecto.
+| Llamada | Resultado | Caso de uso en `bison.y` |
+| --- | --- | --- |
+| `appendNode(NULL, node)` | Crea un `NodeArray` de capacidad 4 e inserta `node` | Primera reducción tras una producción `%empty` que devolvió `NULL` |
+| `appendNode(array, NULL)` | Devuelve `array` sin cambios | Sentencia vacía `';'` (`Statement : ';' { $$ = NULL; }`) |
+| `mergeNodeArrays(NULL, x)` / `mergeNodeArrays(x, NULL)` | Devuelve `x` | Bloques sin declaraciones locales o sin sentencias |
+| `newBlockNode(NULL)` / `newParametersNode(NULL)` / `newMethodCallNode(id, NULL)` | Inicializa el nodo con `children = NULL` y `childCount = 0` | Bloques vacíos `{ }`, métodos sin parámetros y llamadas sin argumentos |
 
-Libera lo que ya reservó si falla el segundo `malloc`, para no dejar la
-estructura huérfana:
-
-```c
-array->items = malloc(capacity * sizeof(NodeAST *));
-if (array->items == NULL) {
-    free(array);
-    return NULL;
-}
-```
-
-Es la única de las cuatro que las acciones de la gramática **no llaman nunca
-directamente**: la invoca `appendNode` cuando recibe una lista `NULL`.
-
-### `appendNode(NodeArray *array, NodeAST *node)`
-
-Agrega un nodo al final y devuelve la lista, que puede ser una recién creada. Es
-la función más usada del módulo.
-
-Tiene dos guardas que no son defensivas sino **parte del diseño** (§5):
-
-```c
-if (node == NULL) return array;          /* nodo vacio: no pasa nada */
-if (array == NULL) array = createNodeArray(4);  /* lista vacia: se crea */
-```
-
-Crecimiento por **duplicación** de la capacidad. Si el `realloc` falla, libera el
-nodo que no pudo guardar y devuelve la lista intacta: pierde ese nodo pero no
-corrompe nada.
-
-### `mergeNodeArrays(NodeArray *first, NodeArray *second)`
-
-Concatena la segunda lista al final de la primera, libera la estructura de la
-segunda y devuelve la primera.
-
-Lo usan las reglas que acumulan declaraciones, donde cada elemento ya viene como
-una lista (porque `int a, b, c;` es una sola declaración que produce tres nodos):
+Por ejemplo, en la regla de sentencias:
 
 ```
-Declarations : Declarations Declaration   { $$ = mergeNodeArrays($1, $2); }
-```
-
-Dos detalles:
-
-- **Copia los punteros con `memcpy`**, no los nodos. Los nodos no se mueven de
-  lugar; lo que se copia es el arreglo de punteros.
-- **Crece a `total` exacto**, no al doble: `realloc(first->items, total * sizeof(...))`.
-  Es una política de crecimiento distinta de la de `appendNode`, y significa un
-  `realloc` por cada merge. Para la cantidad de declaraciones de un programa
-  normal da igual, pero es una asimetría del archivo que vale notar.
-
-Si el `realloc` falla, libera **los nodos** de la segunda lista con `freeAST`
-antes de descartarla, porque esos nodos ya no van a llegar a ningún padre.
-
-### `resolveVariableDefinition(DataType type, NodeArray *identifiers)`
-
-Convierte, en el lugar, la lista de identificadores de una declaración múltiple
-en una lista de declaraciones individuales, ya tipadas. Ver §7.
-
-### Lo que se fue a `ast.c`
-
-Dos funciones que antes estaban acá ahora viven en el módulo del [AST](04-ast.md):
-`newParameterDeclaration`, que es un constructor más, y `resolveNodeArray`, la
-que disuelve la lista dentro del nodo padre (§6). Esta última es `static` en
-`ast.c`: la usan solo los tres constructores que reciben una lista
-(`newMethodCallNode`, `newBlockNode` y `newParametersNode`), así que la gramática
-ya no la llama.
-
----
-
-## 5. El convenio del `NULL`
-
-Esta es la decisión de diseño que más se nota leyendo `bison.y`: **ninguna acción
-de la gramática tiene un `if`**. Todas son una expresión. Eso no es casualidad,
-es consecuencia de que las funciones de listas trataran `NULL` como "lista vacía"
-de forma consistente:
-
-| Llamada | Qué hace |
-| --- | --- |
-| `appendNode(NULL, node)` | Crea la lista: así arrancan los `%empty` que devuelven `NULL` |
-| `appendNode(array, NULL)` | No hace nada: así desaparece la sentencia vacía `;` |
-| `mergeNodeArrays(NULL, x)` | Devuelve `x` |
-| `mergeNodeArrays(x, NULL)` | Devuelve `x` |
-| `newBlockNode(NULL)`, `newParametersNode(NULL)`, `newMethodCallNode(id, NULL)` | Dejan el nodo con `childCount = 0` |
-
-Con ese convenio, las producciones vacías de la gramática pueden devolver `NULL`
-sin más:
-
-```
-Statements : %empty              { $$ = NULL; }
+Statements : %empty               { $$ = NULL; }
            | Statements Statement { $$ = appendNode($1, $2); }
 ```
 
-En la primera iteración `$1` es `NULL` y `appendNode` crea la lista. Y si
-`Statement` fue la sentencia vacía, `$2` es `NULL` y `appendNode` la ignora, así
-que el `;` suelto **no deja rastro en el AST** sin que ninguna fase posterior
-tenga que saber de su existencia.
-
-Es un buen ejemplo de empujar la complejidad a un lugar donde se escribe una vez,
-en lugar de repartirla por las veinte acciones de la gramática.
+En la primera sentencia no vacía, `$1` es `NULL` y `appendNode` crea el acumulador; si aparece un `;` suelto, `$2` es `NULL` y `appendNode` lo ignora sin dejar rastro en el AST.
 
 ---
 
-## 6. La transferencia de propiedad en O(1)
+## 5. Transferencia de propiedad en $O(1)$
 
-La lista temporal se convierte en los hijos de un nodo dentro de los
-constructores de `ast.c` que la reciben, mediante `resolveNodeArray` (`static`
-en `ast.c`). Lo interesante es que **no copia nada**:
+Cuando se reduce el nodo padre (`newBlockNode`, `newParametersNode` o `newMethodCallNode`), la función interna `resolveNodeArray` en [`ast.c`](04-ast.md) adopta el buffer del `NodeArray` sin copiar el arreglo de punteros:
 
 ```c
-parent->children  = array->items;   /* el padre adopta el buffer */
+parent->children   = array->items;   /* el nodo padre adopta el buffer */
 parent->childCount = array->count;
-free(array);                        /* se libera solo el contenedor */
+free(array);                         /* se libera únicamente la envoltura */
 ```
 
-Se libera la estructura `NodeArray` y el buffer de punteros pasa a ser propiedad
-del nodo, en O(1).
-
-La consecuencia importante: después de pasarle la lista a un constructor, **el
-`NodeArray` ya no existe y su buffer le pertenece al nodo**. Usar el puntero de la
-lista después de eso es un uso después de liberar. En la gramática esto no pasa
-porque cada lista se entrega una sola vez, en la acción que crea su padre:
+Una vez invocada esta transferencia, el `NodeArray` deja de existir y el arreglo `items` pasa a ser propiedad exclusiva del `NodeAST` padre (que lo liberará en `freeAST`). Por ejemplo, al reducir un bloque:
 
 ```
-Block : '{' VariableDeclarations Statements '}'   { $$ = newBlockNode(mergeNodeArrays($2, $3)); }
+Block : '{' VariableDeclarations Statements '}' { $$ = newBlockNode(mergeNodeArrays($2, $3)); }
 ```
 
-Las declaraciones y las sentencias se concatenan primero y la lista resultante se
-disuelve dentro del bloque. **El orden importa**: las declaraciones quedan
-primero entre los hijos, que es el orden en el que están en el código fuente.
+`mergeNodeArrays` concatena las declaraciones delante de las sentencias y libera el contenedor de `$3`; luego `newBlockNode` adopta el buffer resultante y libera el contenedor de `$2`.
 
-### Los dos casos de borde
-
-| Caso | Qué hace | Cuándo pasa |
-| --- | --- | --- |
-| No se pudo crear el nodo padre | Libera los nodos de la lista con `freeAST`, el buffer y la estructura | Solo por falta de memoria |
-| Lista `NULL` o vacía | El nodo queda con `children = NULL` y `childCount = 0` | Un bloque vacío `{ }`, una lista de parámetros vacía, una llamada sin argumentos |
-
-El segundo es el que hace que `void f() { }` funcione sin ningún caso especial:
-el `BLOCK_NODE` queda con cero hijos, y recorrerlo es un `for` que no itera.
+| Caso de borde | Comportamiento |
+| --- | --- |
+| Fallo al reservar el nodo padre (`parent == NULL`) | `resolveNodeArray` libera todos los subárboles de la lista con `freeAST`, libera `array->items` y libera `array` |
+| `array == NULL` o `array->count == 0` | El nodo padre queda con `children = NULL` y `childCount = 0` |
 
 ---
 
-## 7. Por qué `int a, b, c;` necesita dos pasos
+## 6. Declaraciones múltiples (`int a, b, c;`)
 
-`resolveVariableDefinition` es la función menos obvia del archivo, y la razón
-está en **cuándo se ejecutan las acciones**.
+En la producción `VariableDeclaration : Type IdentifierList ';'`, el parser reduce primero `IdentifierList` de izquierda a derecha antes de reducir `VariableDeclaration`. Durante las reducciones de `IdentifierList`, el tipo declarado en `Type` está en la pila del parser pero fuera del alcance de la acción de `IdentifierList`.
 
-La regla es `VariableDeclaration : Type IdentifierList ';'`. Cuando el parser
-reduce `IdentifierList : ID`, todavía no puede usar el tipo: el `Type` ya está en
-la pila, pero la acción de `IdentifierList` no lo tiene entre sus `$n`. Entonces
-la gramática crea nodos **provisorios**:
+Por ello, la construcción se realiza en dos pasos:
 
-```
-IdentifierList : ID   { $$ = appendNode(NULL, newIdentifierNode($1)); }
-```
-
-Un `ID_NODE` con `TYPE_VOID`, que no es el tipo real sino un marcador de "todavía
-no se sabe". Recién al reducir la declaración completa, con el tipo ya disponible,
-`resolveVariableDefinition` recorre la lista y **modifica cada nodo en el
-lugar**:
+1. **Creación provisoria en `IdentifierList`:** cada identificador se crea mediante `newIdentifierNode($1)` como un `ID_NODE` con `type = TYPE_VOID` y su `Symbol` también en `TYPE_VOID`.
+2. **Resolución en `VariableDeclaration`:** al reducir la regla completa, `resolveVariableDefinition(type, identifiers)` recorre el `NodeArray` y modifica cada nodo en el lugar:
 
 ```c
-node->nodeType = VARIABLE_DECLARATION_NODE;   /* deja de ser una referencia */
+node->nodeType = VARIABLE_DECLARATION_NODE;
 node->type = type;
 node->symbol->type = type;
 ```
 
-No se crea ningún nodo nuevo ni se libera nada: el mismo nodo y el mismo
-`Symbol` pasan de "identificador sin tipo" a "declaración tipada". Como el nodo
-ahora es un `VARIABLE_DECLARATION_NODE`, `freeAST` lo trata como dueño de su
-símbolo, que es justo lo que corresponde a una declaración.
-
-### Verificación
-
-`int a, b, c;` produce tres nodos independientes, con el tipo ya resuelto en el
-`.sint` (antes del análisis semántico) y el `uid` todavía en 0:
+No se reservan ni liberan nodos adicionales: cada `ID_NODE` pasa a ser un `VARIABLE_DECLARATION_NODE` dueño de su `Symbol`. Así, `int a, b, c;` produce tres nodos de declaración independientes en el bloque contenedor:
 
 ```
-Bloque
+.sint (tras el parseo, uid = 0):
   | Declaracion Variable: a #0 (Tipo INT)
   | Declaracion Variable: b #0 (Tipo INT)
   | Declaracion Variable: c #0 (Tipo INT)
-```
 
-El mismo programa en `.sem`, después del análisis semántico, con los `uid`
-asignados:
-
-```
+.sem (tras el análisis semántico, con uid asignado):
   | Declaracion Variable: a #1 (Tipo INT)
   | Declaracion Variable: b #2 (Tipo INT)
   | Declaracion Variable: c #3 (Tipo INT)
 ```
 
-Comparar los dos archivos del mismo programa es la forma más directa de ver qué
-agrega cada fase.
-
-### Por qué los parámetros no necesitan esto
-
-Porque la gramática los declara de a uno con su tipo: `Parameters ',' Type ID`.
-Cada parámetro tiene el tipo disponible en su propia reducción, así que
-`newParameterDeclaration` lo construye terminado y no hace falta ningún paso de
-relleno. La asimetría entre las dos funciones es un reflejo directo de la
-asimetría entre las dos reglas de la gramática.
+Los parámetros formales (`Parameters : Type ID | Parameters ',' Type ID`) no requieren este paso intermedio porque cada parámetro incluye su propio `Type` en la misma producción, permitiendo que `newParameterDeclaration` construya el nodo con su tipo definitivo en una sola reducción.
 
 ---
 
-## 8. Conexión con las fases vecinas
+## 7. Cómo se extiende
 
-| Viene de | Qué cruza la frontera |
-| --- | --- |
-| `bison.y` | Nodos ya construidos y `DataType`; las acciones llaman a estas funciones |
-| `ast.c` | `freeAST`, que este módulo usa para descartar nodos cuando falla una reserva |
+### Nueva construcción con una lista de hijos
 
-| Hacia `ast.c` | Qué entrega |
-| --- | --- |
-| `newBlockNode`, `newParametersNode`, `newMethodCallNode` | Las listas armadas acá, que esos constructores adoptan como hijos |
+No requiere modificar `parser_helpers.c`: la producción recursiva en `bison.y` acumula los elementos con `appendNode` (devolviendo `NULL` en el caso base) y pasa el `NodeArray *` al constructor correspondiente en `ast.c`, que adopta el buffer mediante `resolveNodeArray`.
 
-| Va hacia | Qué entrega |
-| --- | --- |
-| El AST | Nodos con `children` y `childCount` ya poblados. **Ningún `NodeArray` sobrevive al parseo** |
-| Análisis semántico | Símbolos con nombre y tipo, pero con `uid` en 0 y sin ámbito resuelto |
+### Declaraciones con inicialización (`int a = 5, b = 10;`)
+
+Requiere que cada elemento de `IdentifierList` pueda llevar como hijo opcional la expresión inicializadora (o crear ya un nodo de declaración con `TYPE_VOID` e hijo opcional), manteniendo `resolveVariableDefinition` para propagar el `DataType` común al reducir `VariableDeclaration`, además de validar el tipo del inicializador en el análisis semántico y emitir la asignación en TAC.
+
+### Agregar un nuevo `DataType`
+
+No requiere cambios en este módulo: `resolveVariableDefinition` recibe `DataType` por valor y lo asigna de forma opaca a `node->type` y `node->symbol->type`.
 
 ---
 
-## 9. Cómo se extiende
+## 8. Consideraciones y límites
 
-### Una construcción con una lista de hijos nueva
-
-Es el caso más común y no requiere tocar este archivo. Por ejemplo, agregar una
-lista de inicializadores: se acumula con `appendNode` en la producción recursiva
-y se le entrega al constructor del nodo padre, que la adopta con
-`resolveNodeArray` en `ast.c`. El módulo ya da todo lo necesario.
-
-### Permitir declaraciones con inicialización (`int a = 5;`)
-
-Acá sí hay que tocarlo. Hoy `resolveVariableDefinition` recibe solo
-identificadores; habría que pasarle también la expresión de cada uno, y colgarla
-como hijo del `VARIABLE_DECLARATION_NODE`. Eso cambia la forma del nodo, así que
-arrastra al semántico (validar el tipo del inicializador) y al TAC (emitir la
-asignación).
-
-### Un tipo nuevo
-
-No toca este archivo: `DataType` pasa como parámetro y se propaga solo. Es un
-buen ejemplo de para qué sirve que el módulo no sepa nada de tipos concretos.
+- **Invalidación del `NodeArray *` tras construir el padre:** una vez entregado a `newBlockNode`, `newParametersNode` o `newMethodCallNode`, el contenedor `NodeArray` fue liberado; reutilizar ese puntero produce *use-after-free*.
+- **Diferencia de política de redimensionado:** `appendNode` crece por duplicación de capacidad, mientras que `mergeNodeArrays` ajusta el bloque al tamaño exacto de la concatenación.
+- **Símbolos provisorios en referencias:** para usos de identificadores (`ID_NODE`), asignaciones y llamadas a métodos, el parser crea un `Symbol` provisorio con `uid = 0`. A diferencia de las declaraciones múltiples (donde `resolveVariableDefinition` convierte el nodo en declaración dueña de ese símbolo), en las referencias el análisis semántico reemplaza el símbolo provisorio por el de la tabla de símbolos mediante `resolveNodeSymbol` (definida en [`ast.c`](04-ast.md)), que libera el símbolo provisorio para evitar fugas de memoria.
 
 ---
 
-## 10. Trampas y límites conocidos
+## 9. Cómo se valida
 
-- **Después de entregarle la lista a un constructor, la lista no existe.** El
-  puntero queda colgado y el buffer le pertenece al nodo.
-- **Dos políticas de crecimiento distintas**: `appendNode` duplica la capacidad,
-  `mergeNodeArrays` crece al total exacto. No es un bug, pero sorprende.
-- **Los `ID_NODE` provisorios nacen con `TYPE_VOID`.** No es un error: en el
-  momento de la reducción el tipo no está disponible. Aparece así en el `.sint`
-  de cualquier expresión.
-- **Los símbolos provisorios de las referencias se liberan en el semántico.** El
-  parser crea un `Symbol` provisorio con el nombre para cada aparición de un
-  identificador (uso, destino de asignación o llamada). El análisis semántico,
-  al resolverlo contra la tabla de símbolos, lo reemplaza por el declarado con
-  `resolveNodeSymbol` (definida en [AST](04-ast.md)), que libera el provisorio antes de pisar el
-  puntero. Antes de ese arreglo se perdía un símbolo por referencia: valgrind
-  sobre `examples/factorial.ctds` informaba 8 bloques perdidos desde
-  `newSymbol`.
-
----
-
-## 11. La teoría detrás
-
-- **Atributos sintetizados**: cada símbolo de la gramática lleva un valor que se
-  calcula a partir de los de sus hijos, de las hojas hacia la raíz. Las
-  funciones de este módulo son las operaciones con las que se combinan esos
-  atributos cuando el atributo es una secuencia.
-- **Por qué hace falta un andamio**: un parser ascendente reduce de a una
-  producción, así que una lista de N elementos se arma en N reducciones. El
-  `NodeArray` es el acumulador entre reducciones. En un parser descendente
-  recursivo este módulo no existiría: la función que parsea la lista tendría el
-  arreglo como variable local.
-- **Árbol de sintaxis abstracta como estructura final**: el AST se llena de abajo
-  hacia arriba, y el `NodeArray` es la estructura intermedia que permite que un
-  nodo reciba sus hijos de una sola vez aunque hayan sido producidos de a uno.
-- **Transferencia de propiedad** (*ownership transfer*): mover un recurso de un
-  dueño a otro en lugar de copiarlo. Es la idea de `resolveNodeArray`, y es lo
-  que permite que todo el parseo sea lineal en la cantidad de nodos.
-
----
-
-## 12. Cómo se valida
-
-- **Suite:** `tests/test_ast.c` ejercita la forma del árbol que producen estas
-  funciones: cantidad de hijos, orden, declaraciones múltiples y bloques vacíos.
-  `tests/test_parser.c` cubre que las producciones que las llaman acepten y
-  rechacen lo que corresponde.
-- **A mano:** comparar el `.sint` y el `.sem` del mismo programa es la forma de
-  ver qué construye este módulo y qué agrega el semántico encima:
+- **Tests unitarios:** `tests/test_ast.c` verifica el armado de listas, el orden de hijos, declaraciones múltiples y bloques vacíos; `tests/test_parser.c` valida las producciones de la gramática que los invocan.
+- **Inspección de `.sint` y `.sem`:**
 
 ```bash
 ./mi_compilador -target parse examples/programa.ctds
-./mi_compilador -target sem examples/programa.ctds
+./mi_compilador -target sem   examples/programa.ctds
 ```
 
-- **Fugas:** `valgrind --leak-check=full ./mi_compilador -target sem programa.ctds`
-  no debe mostrar bloques perdidos desde `newSymbol` (§10). Lo único que queda es
-  el árbol completo, que el driver no libera porque el proceso termina enseguida.
+- **Control de fugas de memoria:** `valgrind --leak-check=full ./mi_compilador -target sem examples/factorial.ctds` verifica que no queden contenedores `NodeArray` ni símbolos provisorios huérfanos desde `newSymbol` (ver §8).
 
 ---
 

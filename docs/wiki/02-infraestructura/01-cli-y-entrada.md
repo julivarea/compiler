@@ -1,29 +1,22 @@
 # Entrada y Línea de Comandos
 
-**Archivos:** `src/main.c`, `include/cli.h`, `src/core/cli.c` (487 líneas)
+**Archivos:** `src/main.c`, `include/cli.h`, `src/core/cli.c`
 
-Lo primero que corre: interpreta los argumentos, abre el archivo y le pasa el
-control al orquestador.
-
----
-
-## 1. Qué problema resuelve
-
-Convertir `./mi_compilador -opt all -target codinter programa.ctds` en una
-estructura con la configuración resuelta, y validar que la invocación tenga
-sentido antes de tocar nada.
-
-Es el módulo que implementa **el contrato de la CLI que exige el enunciado**, y
-la decisión de diseño que lo gobierna es una sola: `cli.c` **solo interpreta
-argumentos**. No abre archivos, no ejecuta etapas, no imprime nada que no sea un
-error de uso. Eso lo hace testeable sin compilar ningún programa, y es la razón
-de que `tests/test_cli.c` exista como suite aparte.
+Módulo encargado de interpretar y validar los argumentos de línea de comandos, abrir el archivo de entrada y transferir el control al orquestador del pipeline.
 
 ---
 
-## 2. `main.c`: veintiocho líneas
+## 1. Propósito y alcance
 
-El punto de entrada hace exactamente cuatro cosas, en orden:
+`cli.c` traduce la invocación de consola (por ejemplo, `./mi_compilador -opt all -target codinter programa.ctds`) en una estructura `Options` con la configuración resuelta. Aplica validación temprana (*fail fast*): cualquier error de argumentos se rechaza antes de abrir archivos o iniciar fases de compilación.
+
+El módulo se limita estrictamente a interpretar argumentos: no abre archivos de código fuente ni ejecuta etapas del compilador, lo que permite probar la interfaz de línea de comandos de forma aislada en `tests/test_cli.c`.
+
+---
+
+## 2. Punto de entrada (`main.c`)
+
+La función `main` ejecuta cuatro pasos secuenciales:
 
 ```c
 int main(int argc, char **argv) {
@@ -44,65 +37,54 @@ int main(int argc, char **argv) {
 }
 ```
 
-1. **Parsear.** Si los argumentos están mal, termina con 1 sin haber abierto nada.
-2. **Abrir el archivo**, asignándolo a `yyin`, que es la variable global que Flex
-   usa como entrada. Esa línea es toda la conexión entre el sistema de archivos y
-   el analizador léxico.
-3. **Delegar** en `compile`, que es la [driver](02-driver.md).
-4. **Liberar** y devolver el código que dio `compile`.
+1. **Parseo de opciones:** si los argumentos son inválidos, finaliza con código `1` sin tocar el sistema de archivos.
+2. **Apertura de la entrada:** asigna el archivo abierto a `yyin`, variable global de la que Flex consume el flujo de caracteres. Si `fopen` falla, informa el motivo del sistema operativo mediante `perror`.
+3. **Ejecución del pipeline:** delega la compilación en `compile(&options)`, implementada en el [driver](02-driver.md).
+4. **Limpieza:** cierra `yyin`, libera la memoria dinámica de `Options` y retorna el código de salida.
 
-Define además la global `NodeAST *astRoot = NULL;`, que es donde el parser deja
-la raíz del AST. Que viva en `main.c` y no en `bison.y` es lo que obliga al
-`#ifdef UNITY_TESTING` de la gramática, porque las suites de tests no linkean
-`main.c` (ver la [análisis sintáctico](../03-lexico-sintactico-y-ast/02-analisis-sintactico.md)).
-
-**El `perror` del paso 2 es el único mensaje de error que no pasa por
-`error_handler`**, y es correcto: no es un error del programa compilado ni de la
-invocación, es una falla del sistema operativo, y `perror` imprime el motivo real
-(`No such file or directory`, `Permission denied`).
+`main.c` define además la variable global `NodeAST *astRoot = NULL;`, donde el parser deposita la raíz del árbol sintáctico. Dado que los binarios de pruebas unitarias no enlazan `main.c`, la gramática en `bison.y` declara su propia instancia bajo `#ifdef UNITY_TESTING` (ver [análisis sintáctico](../03-lexico-sintactico-y-ast/02-analisis-sintactico.md)).
 
 ---
 
-## 3. `Options`: la configuración resuelta
+## 3. Estructura `Options` e interfaz pública
 
 ```c
 typedef struct Options {
-    const char *input;              /* apunta a argv: NO se libera */
-    char *output;                   /* reservado con malloc: SÍ se libera */
+    const char *input;              /* apunta a argv: no se libera */
+    char *output;                   /* reservado en heap: liberado por freeOptions */
     Target target;
-    int explicitTarget;             /* 1 si se pasó -target */
+    int explicitTarget;             /* 1 si el usuario pasó -target */
     int debug;
     OptimizationSet optimizations;
 } Options;
 ```
 
-| Campo | Por qué existe |
+| Campo | Descripción |
 | --- | --- |
-| `input` | La ruta del `.ctds`. **Apunta dentro de `argv`**, así que no es propiedad de la estructura |
-| `output` | La ruta de salida, **reservada dinámicamente**. Es lo único que `freeOptions` libera |
-| `target` | Hasta qué etapa compilar |
-| `explicitTarget` | Si el usuario pasó `-target` o se tomó el default. **No es redundante**: ver §5 |
-| `debug` | La bandera `-debug` |
-| `optimizations` | La máscara de optimizaciones, ya resuelta a bits |
+| `input` | Ruta del archivo `.ctds`. Apunta directamente al elemento de `argv`, por lo que su tiempo de vida está atado al proceso y no debe liberarse. |
+| `output` | Ruta del archivo de salida, reservada dinámicamente en el heap (ya sea copiada con `strdup` desde `-o` o construida al reemplazar la extensión). |
+| `target` | Etapa objetivo hasta la cual ejecutar el pipeline (`Target`). |
+| `explicitTarget` | Indica si el usuario especificó `-target` explícitamente (`1`) o si se utilizó el valor por defecto (`0`). Ver §5. |
+| `debug` | Estado del flag `-debug`. |
+| `optimizations` | Máscara de bits (`OptimizationSet`) con las optimizaciones habilitadas. |
 
-**La asimetría de propiedad entre `input` y `output` es deliberada** y hay que
-tenerla presente: `input` sobrevive porque `argv` vive mientras viva el proceso;
-`output` se construye, así que hay que liberarlo. `freeOptions` libera uno solo y
-pone el puntero en `NULL`.
+### Interfaz pública (`include/cli.h`)
 
-**`optimizations` llega acá ya parseada a bits.** El optimizador nunca ve una
-cadena de texto: la traducción de nombre a bandera ocurre entera en este módulo.
+| Función | Descripción |
+| --- | --- |
+| `parseArguments(argc, argv, options)` | Recorre `argv`, valida restricciones y completa `options`. Retorna `CLI_SUCCESS` (`0`) o `CLI_ERROR` (`1`). |
+| `freeOptions(options)` | Libera `options->output` y asigna `NULL` al puntero. Tolera `NULL`. |
+| `getTargetName(target)` | Devuelve el nombre textual de un valor de `Target` (o `"?"` si está fuera de rango). |
 
 ---
 
-## 4. Las tres tablas que gobiernan todo
+## 4. Tablas de despacho y validación de entrada
 
-El módulo no tiene `switch` sobre nombres: tiene tablas, y cada función las
-recorre. Agregar una etapa o una optimización es agregar una fila.
+El módulo utiliza tablas estáticas en lugar de cadenas de condicionales para asociar nombres de opciones con sus valores internos y generar el mensaje de ayuda (`printUsage`), evitando desincronizaciones entre la validación y la documentación en consola.
 
 ### `STAGES`: etapas y extensiones
 
-| Nombre | `Target` | Extensión |
+| Nombre CLI | Valor `Target` | Extensión por defecto |
 | --- | --- | --- |
 | `scan` | `TARGET_SCAN` | `.lex` |
 | `parse` | `TARGET_PARSE` | `.sint` |
@@ -110,87 +92,57 @@ recorre. Agregar una etapa o una optimización es agregar una fila.
 | `codinter` | `TARGET_CODINTER` | `.ci` |
 | `assembly` | `TARGET_ASSEMBLY` | `.ass` |
 
-El mensaje de uso lista las etapas en el mismo orden:
+El orden de las constantes en el enumerado `Target` refleja el orden de ejecución del pipeline, permitiendo comparar etapas con operadores relacionales.
 
-```
--target <etapa>  Compila hasta esa etapa: scan | parse | sem | codinter | assembly
-```
+### `OPT_NAMES`: catálogo de optimizaciones
 
-**El orden del enum `Target` respeta el pipeline**, y el header lo dice
-explícitamente: así se pueden comparar etapas con `<` para preguntar si una ya
-está disponible. Hoy nadie lo aprovecha, pero es la razón de que el orden no sea
-arbitrario.
-
-### `OPT_NAMES`: los ocho nombres de optimización
-
-`all`, `const-fold`, `const-prop`, `dead-code`, `const-branch`, `self-assign`,
-`peephole`, `strength-reduce`. `all` es la máscara completa, los otros siete un
-bit cada uno.
+Reconoce ocho identificadores: `all` (que activa todos los bits de `OPTIMIZATION_ALL`) y las siete pasadas individuales: `const-fold`, `const-prop`, `dead-code`, `const-branch`, `self-assign`, `peephole` y `strength-reduce`.
 
 ### `INPUT_EXTENSION`
 
-`".ctds"`, y es obligatoria. `hasInputExtension` compara el sufijo y además exige
-que el nombre sea **más largo** que la extensión, así que un archivo llamado
-exactamente `.ctds` se rechaza.
+La extensión `.ctds` es obligatoria. La validación comprueba que el argumento posicional termine en `.ctds` y que su longitud total sea estrictamente mayor a la del sufijo (rechazando un archivo llamado únicamente `.ctds`). Solo se admite un archivo de entrada por invocación.
 
 ---
 
-## 5. La ambigüedad del enunciado, y cómo se resolvió
+## 5. Objetivo por defecto y macro `BUILDS_EXECUTABLE`
 
-El enunciado dice dos cosas que no pueden valer a la vez:
+La constante `CURRENT_TARGET` está definida como `TARGET_ASSEMBLY`. Sin embargo, omitir `-target` y pasar `-target assembly` tienen comportamientos finales distintos aunque ambos asignen `target = TARGET_ASSEMBLY`:
 
-- Sin `-target`, se compila "hasta la etapa corriente" y se escribe un archivo
-  con la extensión de esa etapa.
-- Sin `-target`, se produce el ejecutable `nombreArchivo.out`.
+- Sin `-target`, el compilador recorre todas las etapas y enlaza el ejecutable `.out`.
+- Con `-target assembly`, el compilador detiene el proceso tras emitir el archivo de texto `.ass`.
 
-La resolución está en una macro de una línea:
+La distinción se resuelve mediante el campo `explicitTarget` y la macro:
 
 ```c
 #define BUILDS_EXECUTABLE(options) (!(options)->explicitTarget)
 ```
 
-**Si el usuario no pidió una etapa, se produce el ejecutable. Si la pidió, se
-produce el archivo de esa etapa y se para ahí.**
-
-Y de ahí sale para qué sirve `explicitTarget`: `target` vale `TARGET_ASSEMBLY`
-en los dos casos —porque `CURRENT_TARGET` es `TARGET_ASSEMBLY`— así que mirar
-`target` no alcanza para distinguir "pedí assembly" de "no pedí nada". La bandera
-es lo que los separa.
-
 ```bash
 ./mi_compilador programa.ctds                   # -> programa.out  (ejecutable)
-./mi_compilador -target assembly programa.ctds  # -> programa.ass  (texto, y para)
+./mi_compilador -target assembly programa.ctds  # -> programa.ass  (ensamblador en texto)
 ```
-
-**`CURRENT_TARGET` es el único número a mover al terminar una etapa.** Mientras el
-compilador estuvo incompleto valía `TARGET_CODINTER`; hoy vale `TARGET_ASSEMBLY`,
-y con eso las dos lecturas del enunciado coinciden: recorrer todo y dejar el
-ejecutable.
 
 ---
 
-## 6. La deducción del nombre de salida
+## 6. Deducción y protección del archivo de salida
 
-`getTargetExtension` decide la extensión en tres pasos, **y el orden importa**:
+Cuando no se indica `-o`, la función interna `getTargetExtension` determina la extensión de salida evaluando tres condiciones en orden de prioridad:
 
 ```c
-if (BUILDS_EXECUTABLE(options)) return ".out";              /* 1 */
+if (BUILDS_EXECUTABLE(options)) return ".out";                   /* 1 */
 if (options->optimizations != OPTIMIZATION_NONE) return ".opt";  /* 2 */
-return <extension de la etapa>;                             /* 3 */
+return <extension de la etapa>;                                  /* 3 */
 ```
 
-1. Sin `-target`, el ejecutable gana sobre todo lo demás.
-2. **Con `-opt`, la extensión pasa a `.opt`** en lugar de la de la etapa. Eso es
-   lo que hace que `-opt all -target codinter` produzca un `.opt` y no un `.ci`,
-   y permite tener los dos archivos para comparar.
-3. Si no, la extensión de la etapa.
+1. Si se compila hacia un ejecutable (sin `-target`), la extensión es `.out`.
+2. Si se especificó `-target` junto con alguna optimización (`-opt`), la extensión pasa a ser `.opt` en lugar de la propia de la etapa, permitiendo conservar en disco tanto la salida sin optimizar (p. ej. `.ci`) como la optimizada (`.opt`).
+3. En caso contrario, se emplea la extensión definida en `STAGES`.
 
-`buildOutputName` arma el nombre reemplazando la extensión: toma la longitud del
-nombre menos `strlen(".ctds")` y pega la nueva. Como `validateInputFile` ya
-garantizó que el nombre termina en `.ctds` y es más largo que eso, la resta nunca
-subdesborda.
+`buildOutputName` reemplaza el sufijo `.ctds` por la extensión seleccionada.
 
-### La protección contra sobrescribir el fuente
+### Protección contra sobrescritura del archivo fuente
+
+Para impedir que un argumento `-o` destruya el archivo de entrada, `validateOutputNotInput` verifica primero si ambas rutas son idénticas como cadenas y, si difieren, consulta `stat` para comparar dispositivo e inodo (`st_dev` y `st_ino`):
 
 ```c
 static bool validateOutputNotInput(const Options *options) {
@@ -206,26 +158,13 @@ static bool validateOutputNotInput(const Options *options) {
 }
 ```
 
-Primero compara las cadenas, y si difieren **compara dispositivo e inodo**. Eso es
-lo que hace que la protección no se pueda burlar escribiendo otra ruta al mismo
-archivo. Verificado: los tres casos se rechazan.
-
-```bash
-./mi_compilador -o p.ctds             p.ctds   # Error: igual al de entrada
-./mi_compilador -o ./p.ctds           p.ctds   # Error: mismo inodo
-./mi_compilador -o /ruta/abs/p.ctds   p.ctds   # Error: mismo inodo
-```
-
-Sin esto, un `-o` descuidado destruiría el código fuente, que es un error del que
-no se vuelve.
+De este modo se rechazan también rutas relativas equivalentes (`./p.ctds`), rutas absolutas o enlaces duros/simbólicos que apunten al mismo inodo que el archivo fuente.
 
 ---
 
-## 7. El argumento opcional de `-opt`
+## 7. Parseo de `-opt` y acumulación de pasadas
 
-`-opt` puede llevar nombre o no: `-opt all`, `-opt const-fold`, o `-opt` suelto
-que equivale a `all`. Distinguir las dos formas requiere una heurística, porque C
-no tiene forma de saber si el argumento siguiente le pertenece:
+La opción `-opt` admite un nombre de optimización opcional; si se omite, equivale a `-opt all`. Para determinar si el siguiente elemento de `argv` pertenece a `-opt` o es otro argumento del comando, se aplica la siguiente condición:
 
 ```c
 bool nextIsOption    = (hasNextArgument && argv[*index + 1][0] == '-');
@@ -236,206 +175,90 @@ const char *optName = "all";
 if (hasOptimizationName) optName = argv[++(*index)];
 ```
 
-El argumento siguiente es el nombre de la optimización **salvo que** empiece con
-`-` (es otra opción) o termine en `.ctds` (es el archivo de entrada).
-
-Verificado:
+El token siguiente se consume como argumento de `-opt` siempre que no comience con `-` (otra bandera) ni termine en `.ctds` (el archivo de entrada):
 
 ```bash
-./mi_compilador -opt programa.ctds        # -> 'all' sobre programa.ctds. Funciona.
-./mi_compilador -opt -debug programa.ctds # -> 'all' con -debug
-./mi_compilador -opt const-fold programa.ctds
+./mi_compilador -opt programa.ctds             # aplica 'all' sobre programa.ctds
+./mi_compilador -opt -debug programa.ctds      # aplica 'all' junto con -debug
+./mi_compilador -opt const-fold programa.ctds  # aplica solo 'const-fold'
 ```
 
-Es una heurística, no una regla: un archivo de entrada con otra extensión
-confundiría al parseo, pero la extensión `.ctds` es obligatoria, así que el caso
-no existe.
+### Acumulación en máscara de bits
 
-### Acumulación
-
-`parseOptimization` hace `*optimizations |= accumulated`, así que las tres formas
-son equivalentes y se pueden mezclar:
+Cada pasada se representa como una potencia de dos en `OptimizationSet`. La función de parseo acumula los valores mediante OR bit a bit (`*optimizations |= accumulated`), soportando tanto listas separadas por comas (recorridas con `strchr`) como múltiples apariciones del flag `-opt`:
 
 ```bash
 -opt all
--opt const-fold,dead-code      # lista separada por comas
--opt const-fold -opt dead-code # el flag repetido acumula
+-opt const-fold,dead-code
+-opt const-fold -opt dead-code
 ```
 
-La lista por comas se parsea a mano con `strchr`, copiando cada token a un buffer
-de 64 bytes con su chequeo de longitud. Un nombre desconocido hace fallar todo el
-parseo y el mensaje **lista las ocho opciones soportadas**, que es más útil que
-decir solo "desconocida".
+Si algún identificador no coincide con `OPT_NAMES`, el parseo falla e imprime la lista de optimizaciones soportadas.
 
 ---
 
-## 8. Inventario de funciones
+## 8. Conexión con otros módulos
 
-Dieciséis funciones: tres públicas y trece `static`. La estructura sigue la
-**regla de descenso** —cada función llama a las de abajo— así que leer el archivo
-de arriba hacia abajo va de lo general a lo particular.
-
-### Públicas
-
-| Función | Qué hace |
+| Origen / Destino | Interacción |
 | --- | --- |
-| `parseArguments(argc, argv, options)` | El bucle principal sobre `argv`; devuelve `CLI_SUCCESS` o `CLI_ERROR` |
-| `freeOptions(options)` | Libera `output` y lo pone en `NULL`. Acepta `NULL` |
-| `getTargetName(target)` | Nombre de una etapa para los mensajes; `"?"` si no la reconoce |
+| **Recibe de** `main` (SO) | `argc`, `argv` |
+| **Recibe de** `optimizer.h` | Enumerado `Optimization` y máscara `OPTIMIZATION_ALL` |
+| **Entrega a** `driver.c` | Estructura `Options` validada vía `compile(&options)` |
+| **Entrega a** `lexer.l` | Descriptor `FILE *` en `yyin` (abierto en `main.c`) |
 
-### Privadas
+`cli.c` no incluye encabezados del AST, de la tabla de símbolos ni del generador de código; su única dependencia interna es `optimizer.h`. Gracias a este aislamiento, el binario de pruebas de CLI se compila enlazando únicamente `cli.c`:
 
-| Función | Qué hace |
-| --- | --- |
-| `initDefaultOptions` | Todo a cero, `target = CURRENT_TARGET`, sin optimizaciones |
-| `parsePositionalArgument` | El argumento sin guion es el archivo. Rechaza opciones desconocidas y **más de un archivo** |
-| `validateInputFile` | Que exista el argumento y que termine en `.ctds` |
-| `parseOutputOption` | Lee el argumento de `-o`; rechaza la cadena vacía |
-| `parseTargetOption` | Lee el de `-target` y marca `explicitTarget` |
-| `parseOptimizationOption` | La heurística de §7 y el mensaje de error con la lista |
-| `resolveOutputPath` | Decide entre el `-o` del usuario y el nombre deducido |
-| `validateOutputNotInput` | La protección de §6 |
-| `parseTarget` | Busca el nombre en `STAGES` |
-| `parseOptimization` | Parsea la lista separada por comas y acumula |
-| `parseSingleOptimization` | Busca un nombre en `OPT_NAMES` |
-| `hasInputExtension` | ¿Termina en `.ctds` y es más largo que eso? |
-| `buildOutputName` | Reemplaza la extensión |
-| `getTargetExtension` | Los tres pasos de §6 |
-| `printUsage` | El mensaje de uso, **generado desde las tablas** |
-
-Que `printUsage` recorra `STAGES` y `OPT_NAMES` en lugar de tener el texto escrito
-es lo que garantiza que el mensaje de ayuda no se desincronice de lo que el
-compilador realmente acepta.
-
----
-
-## 9. Conexión con las fases vecinas
-
-| Viene de | Qué cruza la frontera |
-| --- | --- |
-| El sistema operativo | `argc`, `argv` |
-| `optimizer.h` | El enum `Optimization` y `OPTIMIZATION_ALL`, para traducir los nombres |
-
-| Va hacia | Qué entrega |
-| --- | --- |
-| `driver.c` | La estructura `Options` completa, vía `compile(&options)` |
-| `lexer.l` | El `FILE *` en `yyin`, que lo asigna `main.c` |
-
-**`cli.c` no incluye nada del compilador salvo `optimizer.h`.** No conoce el AST,
-ni el TAC, ni las fases. Esa independencia es lo que permite que `test_cli.c` se
-compile enlazando **solo `cli.c`**, sin arrastrar el compilador entero:
-
-```
+```bash
 gcc -DUNITY_TESTING ... tests/test_cli.c src/core/cli.c -o build/run_cli_tests
 ```
 
-Es la suite más liviana del proyecto y la prueba de que el módulo está bien
-aislado.
+---
+
+## 9. Cómo se extiende
+
+### Agregar una etapa a `-target`
+
+1. Añadir la constante correspondiente en el enumerado `Target` (`include/cli.h`) respetando el orden del pipeline.
+2. Agregar una fila en la tabla `STAGES` (`src/core/cli.c`) con el nombre de la etapa, su constante `Target` y su extensión de archivo. El parseo, la deducción del nombre de salida y `printUsage` se actualizan automáticamente a partir de la tabla.
+3. Incorporar el `case` correspondiente en el `switch` de `compile` en el [driver](02-driver.md).
+
+### Agregar una optimización
+
+1. Definir el nuevo bit en `enum Optimization` y sumarlo a `OPTIMIZATION_ALL` en `include/optimizer.h`.
+2. Agregar la fila con su nombre CLI en `OPT_NAMES` (`src/core/cli.c`). Si se omite en `OPT_NAMES`, la optimización solo se activará mediante `-opt all` pero no podrá seleccionarse individualmente por nombre.
+
+### Agregar una opción de línea de comandos
+
+1. Incorporar el campo en `struct Options` e inicializarlo en `initDefaultOptions`.
+2. Añadir la rama `else if` en el bucle de `parseArguments` (usando el patrón de `parseOutputOption` si requiere un argumento adicional) y documentarla en `printUsage`.
+
+### Soportar lectura desde `stdin`
+
+Actualmente el archivo `.ctds` es obligatorio. Soportar `-` para leer desde la entrada estándar requeriría omitir `validateInputFile`, exigir `-o` explícito cuando no haya nombre base del cual deducir la salida, y evitar el `fopen`/`fclose` sobre `yyin` en `main.c`.
 
 ---
 
-## 10. Cómo se extiende
+## 10. Validación
 
-### Una etapa nueva de `-target`
+La suite `tests/test_cli.c` verifica el parseo de cada opción, la deducción de extensiones según combinaciones de `-target` y `-opt`, los códigos de retorno, la protección por inodo contra sobrescritura del archivo fuente y el manejo de rutas con caracteres especiales.
 
-Una fila en `STAGES` con su nombre, su valor de `Target` y su extensión, más el
-valor en el enum **en la posición que le corresponde según el pipeline**. El
-parseo, el mensaje de uso y la deducción de la extensión la toman de la tabla sin
-tocar nada más. Después hay que agregar su caso en el `switch` de `compile`
-(en el [driver](02-driver.md)).
-
-### Una optimización nueva
-
-Una fila en `OPT_NAMES` y el bit en el enum de `optimizer.h`. Olvidar la fila hace
-que el flag exista pero **no se pueda pedir por nombre**: solo se activaría con
-`-opt all`.
-
-### Una opción nueva (`-Wall`, `-O2`, `-v`)
-
-Un `else if` en el bucle de `parseArguments`, un campo en `Options`, y su línea
-en `printUsage`. El patrón de las que llevan argumento está en
-`parseOutputOption`: incrementar el índice, verificar que no se pasó del final, y
-validar el valor.
-
-### Leer de la entrada estándar
-
-Hoy el archivo es obligatorio. Permitir `-` como nombre para leer de `stdin`
-requeriría saltear `validateInputFile`, no deducir nombre de salida y que
-`main.c` no haga `fopen`. Es un cambio chico pero rompe la deducción automática
-del nombre de salida, que depende de tener un nombre de entrada.
-
----
-
-## 11. Trampas y límites conocidos
-
-- **`input` apunta a `argv` y `output` es del heap** (§3). Liberar `input` sería
-  un error; no liberar `output` es una fuga.
-- **`explicitTarget` no es redundante con `target`** (§5). Es lo único que
-  distingue "pedí assembly" de "no pedí nada".
-- **La heurística de `-opt`** (§7) depende de que la extensión de entrada sea
-  obligatoria.
-- **El comentario del `#define _POSIX_C_SOURCE` menciona `strtok_r`**, que el
-  archivo **ya no usa**: la lista por comas se parsea a mano con `strchr`. El
-  `#define` sigue haciendo falta por `strdup`, así que el efecto es correcto y el
-  comentario quedó viejo.
-- **El mensaje de optimización desconocida no tiene espacio tras los dos
-  puntos**: imprime `Soportadas:all, const-fold, …`. Cosmético.
-- **Un archivo llamado exactamente `.ctds` se rechaza**, porque
-  `hasInputExtension` exige que el nombre sea más largo que la extensión. Es
-  correcto, pero el mensaje de error dice "debe tener extension .ctds", que
-  confunde.
-
----
-
-## 12. La teoría detrás
-
-- **Separación entre interpretación de argumentos y ejecución**: `cli.c` resuelve
-  *qué* hay que hacer y `driver.c` lo hace. Es la misma separación que en
-  cualquier herramienta de línea de comandos, y lo que la hace valiosa acá es que
-  permite testear el contrato de la CLI sin ejecutar el compilador.
-- **Tablas en lugar de condicionales**: las tres tablas estáticas convierten
-  "agregar una etapa" en "agregar una fila", y hacen que el mensaje de ayuda sea
-  **derivado** en vez de escrito. Es el patrón de *tabla de despacho*, y su
-  beneficio concreto acá es que la documentación que ve el usuario no se puede
-  desincronizar del comportamiento.
-- **Máscara de bits para un conjunto de opciones**: representar las siete
-  optimizaciones como potencias de dos permite combinarlas con `|`, consultarlas
-  con `&` y pasarlas como un solo `unsigned int`. La alternativa —siete booleanos
-  o un arreglo— no permitiría `OPTIMIZATION_ALL` como una constante.
-- **Validación temprana** (*fail fast*): todo lo que se puede rechazar se rechaza
-  antes de abrir el archivo. Un error de uso nunca deja archivos a medio escribir.
-- **Identidad de archivos por inodo**: comparar rutas como cadenas no alcanza para
-  saber si dos nombres son el mismo archivo. El par (dispositivo, inodo) es la
-  identidad real en un sistema de archivos POSIX, y es por eso que la protección
-  de §6 usa `stat`.
-
----
-
-## 13. Cómo se valida
-
-- **Suite:** `tests/test_cli.c` (751 líneas), la segunda más grande. Cubre el
-  parseo de cada opción, las extensiones de salida por etapa, los códigos de
-  retorno, la protección contra sobrescribir el fuente y los casos con rutas
-  hostiles.
-- **A mano**, los casos que conviene probar al tocar este módulo:
+Verificaciones manuales representativas:
 
 ```bash
-./mi_compilador                                  # falta archivo -> 1 + usage
-./mi_compilador -o salida                        # falta archivo -> 1
-./mi_compilador programa.txt                     # extension mala -> 1
-./mi_compilador a.ctds b.ctds                    # dos archivos -> 1
-./mi_compilador -target noexiste programa.ctds   # etapa mala -> 1 + usage
-./mi_compilador -opt inventada programa.ctds     # opt mala -> 1 + las ocho
-./mi_compilador -o programa.ctds programa.ctds   # sobrescribiria el fuente -> 1
-./mi_compilador -target assembly programa.ctds   # -> .ass, no ejecutable
-./mi_compilador programa.ctds                    # -> .out ejecutable
+./mi_compilador                                  # falta archivo -> retorna 1 + usage
+./mi_compilador programa.txt                     # extensión inválida -> retorna 1
+./mi_compilador a.ctds b.ctds                    # múltiples entradas -> retorna 1
+./mi_compilador -target noexiste programa.ctds   # etapa inválida -> retorna 1 + usage
+./mi_compilador -opt inventada programa.ctds     # optimización inválida -> retorna 1
+./mi_compilador -o programa.ctds programa.ctds   # misma ruta/inodo de entrada -> retorna 1
+./mi_compilador -target assembly programa.ctds   # genera programa.ass
+./mi_compilador programa.ctds                    # genera ejecutable programa.out
 ```
 
-- **Y que una compilación exitosa sin `-debug` no imprima nada**, que es un
-  requisito explícito del enunciado:
+Para comprobar que una compilación exitosa sin `-debug` no emita salida por `stdout` ni `stderr`:
 
 ```bash
-test -z "$(./mi_compilador programa.ctds 2>&1)" && echo "silencio correcto"
+test -z "$(./mi_compilador examples/programa.ctds 2>&1)" && echo "OK"
 ```
 
 ---
