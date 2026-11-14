@@ -41,7 +41,7 @@ generar código. La regla del proyecto es que la generación solo corre si no hu
 errores, y para cumplirla había que **contarlos**.
 
 Es también lo que dio origen a la separación entre `lexical_errors`,
-`syntax_errors` y `semantic_errors`, que la [ficha F03](wiki/01.6-errors.md)
+`syntax_errors` y `semantic_errors`, que la [documentación de manejo de errores](../wiki/02-infraestructura/03-errores-y-debug.md)
 desarrolla.
 
 ### 1.2 Un comentario multilínea sin cerrar terminaba en silencio
@@ -79,7 +79,7 @@ Statement  : Assignment ';' | ...
 **Por qué hizo falta.** No por una necesidad del compilador actual, sino de
 diseño: una asignación **sin** el punto y coma es la pieza que pide la cabecera
 de un `for`, y embebida en `Statement` no se podía escribir. Lo desarrolla la
-[ficha F06](wiki/02.5-syntax-analysis.md), que además muestra cómo queda la
+[análisis sintáctico](../wiki/03-lexico-sintactico-y-ast/02-analisis-sintactico.md), que además muestra cómo queda la
 extensión del `for` apoyada en el no terminal nuevo.
 
 ---
@@ -147,7 +147,7 @@ usuario.
 
 Se documenta en lugar de borrarse en silencio porque es la respuesta a **"¿por
 qué no optimizaron el árbol?"**, que es una pregunta razonable. El argumento
-completo está en la [ficha F15](wiki/05.9-optimizer.md).
+completo está en la [optimizador](../wiki/06-optimizador/02-optimizador.md).
 
 ---
 
@@ -172,7 +172,7 @@ punteros a función: un método solo puede aparecer en una llamada.
 primero real y el resto consecuencia del primero. Propagar `TYPE_ERROR` en
 silencio hace que **un error primario produzca exactamente un mensaje**, que es
 lo que vuelve usable la salida. Lo desarrolla la
-[ficha F10](wiki/04.5-type-checker.md).
+[chequeo de tipos](../wiki/04-semantico/02-chequeo-de-tipos.md).
 
 ### 3.3 Validaciones redundantes
 
@@ -183,7 +183,7 @@ tipos ya hacía.
 `type_checker.c`, con el riesgo clásico: dos copias de una regla que se
 desincronizan y empiezan a dar mensajes distintos para el mismo programa. El
 reparto quedó explícito —el analizador recorre y abre ámbitos, el chequeador
-decide tipos— y está documentado en las fichas F10 y F11.
+decide tipos— y está documentado en [chequeo de tipos](../wiki/04-semantico/02-chequeo-de-tipos.md) y [análisis semántico](../wiki/04-semantico/03-analisis-semantico.md).
 
 ---
 
@@ -214,7 +214,7 @@ una capa de auxiliares, ordenadas de lo general a lo particular.
 traducción adentro, de varios cientos de líneas. Con una función por caso, cada
 traducción se lee y se testea sola, y el `switch` queda como índice. El criterio
 es el de *Convenciones del Código*; el resultado está inventariado en la
-[ficha F18](wiki/06-object-code.md).
+[código objeto](../wiki/07-codigo-objeto/02-generacion-codigo-objeto.md).
 
 ---
 
@@ -258,7 +258,7 @@ La lección es la que ya estaba escrita en la documentación antes de que pasara
 **un tipo que el front-end acepta y el back-end no entiende es la peor
 combinación posible**. Por eso el recorte terminó con un rechazo explícito en el
 generador de TAC en lugar de con un hueco. Está en §9 de la
-[ficha F13](wiki/05.5-tac-generation.md).
+[generación de TAC](../wiki/05-codigo-intermedio/02-generacion-tac.md).
 
 ### Qué se mantuvo, y por qué
 

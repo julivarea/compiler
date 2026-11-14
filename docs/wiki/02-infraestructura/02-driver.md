@@ -1,6 +1,6 @@
 # Orquestación de las Etapas
 
-**Ficha F02** · Archivos: `include/driver.h`, `src/core/driver.c` (349 líneas)
+**Archivos:** `include/driver.h`, `src/core/driver.c` (349 líneas)
 
 Decide qué fases correr según `-target`, corta ante el primer error de una fase,
 escribe el archivo de salida y, si corresponde, llama a `gcc` para ensamblar.
@@ -15,8 +15,8 @@ dónde parar, y manejar lo que no es traducción: abrir archivos, volcar la sali
 invocar el ensamblador.
 
 Es el único módulo que incluye a **todas** las fases, y por eso es también el
-mapa de cómo se arma el pipeline. Si hay una ficha que contesta *"¿qué pasa
-exactamente cuando corrés `./mi_compilador programa.ctds`?"*, es esta.
+mapa de cómo se arma el pipeline. Si hay un documento que contesta *"¿qué pasa
+exactamente cuando corrés `./mi_compilador programa.ctds`?"*, es este.
 
 ---
 
@@ -116,7 +116,7 @@ while ((token = yylex()) != 0) {
 Llama a `yylex()` hasta que devuelva 0 e imprime una línea por token con su
 número de línea y su lexema. **Es el único consumidor de `yylex` que no es el
 parser**, y por eso el léxico tiene dos clientes (ver la
-[ficha F05](02-lexical-analysis.md)).
+[análisis léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md)).
 
 `getTokenName` traduce el número de token a su nombre. Devuelve `NULL` para los
 tokens que son **un carácter** —`'+'`, `';'`, `'('`— porque esos no tienen
@@ -133,7 +133,7 @@ if (lexical_errors > 0) { compileAborted("lexicos", lexical_errors); return 1; }
 Dos chequeos, y el orden tiene sentido: `yyparse` consume todos los tokens, así
 que para cuando termina, el contador de errores léxicos ya está completo.
 
-**Un error léxico no aborta el parseo.** El lexer reporta y sigue (ver F05), así
+**Un error léxico no aborta el parseo.** El lexer reporta y sigue (ver [análisis léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md)), así
 que el parser puede completar su trabajo; recién al final se mira el contador. Eso
 permite reportar todos los símbolos inválidos de una pasada en lugar de uno por
 corrida.
@@ -146,7 +146,7 @@ if (semantic_errors > 0) { compileAborted("semanticos", semantic_errors); return
 ```
 
 El `NULL` del segundo parámetro es lo que le dice al análisis semántico "este es
-el ámbito global" (ver la [ficha F11](04-semantic-analysis.md)). **Se descarta el
+el ámbito global" (ver la [análisis semántico](../04-semantico/03-analisis-semantico.md)). **Se descarta el
 `Scope` que devuelve**: el resultado útil quedó anotado en el AST.
 
 ### `runIntermediateCode(options, tacList)`
@@ -185,7 +185,7 @@ return result;
 ```
 
 Acá se materializa la decisión de `BUILDS_EXECUTABLE` de la
-[ficha F01](01.2-cli.md): con `-target assembly` el `.ass` **es** la salida; sin
+[CLI y entrada](01-cli-y-entrada.md): con `-target assembly` el `.ass` **es** la salida; sin
 `-target`, el assembly es un **paso intermedio** que se escribe a
 `<salida>.tmp.s`, se ensambla y se borra.
 
@@ -236,7 +236,7 @@ opcional en el sentido fuerte: no es que no cambie nada, es que no corre.
 **El cast `(TACList *)` descarta el `const`** con el que
 `generateIntermediateCode` devolvió la lista, porque el optimizador la modifica
 en el lugar. Es deliberado y está en la línea 69; la
-[ficha F13](05.5-tac-generation.md) lo explica desde el otro lado.
+[generación de TAC](../05-codigo-intermedio/02-generacion-tac.md) lo explica desde el otro lado.
 
 **El análisis de variables vivas se imprime solo con `-debug`, y se imprime
 siempre que haya `-debug`, incluso sin `-opt`.** O sea que se puede ver el CFG de
@@ -345,20 +345,20 @@ parecer válido.
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `cli.c` (F01) | La estructura `Options` y la macro `BUILDS_EXECUTABLE` |
-| `main.c` (F01) | El `FILE *` ya abierto en `yyin` |
+| `cli.c` | La estructura `Options` y la macro `BUILDS_EXECUTABLE` |
+| `main.c` | El `FILE *` ya abierto en `yyin` |
 
 | Va hacia | Qué llama |
 | --- | --- |
-| `lexer.l` (F05) | `yylex()` en bucle, solo en `-target scan` |
-| `bison.y` (F06) | `yyparse()` |
-| `semantic_analyzer.c` (F11) | `analyzeSemantics(astRoot, NULL)` |
-| `intermediate_code.c` (F13) | `generateIntermediateCode(astRoot)` |
-| `optimizer.c` (F15) | `optimizeIntermediateCode` |
-| `live_variable_analysis.c` (F14) | El volcado del CFG con `-debug` |
-| `object_code.c` (F18) | `generateAssembly` |
-| `string_builder.c` (F04) | El acumulador de la salida textual |
-| `error_handler.c` (F03) | Los contadores y `compileAborted` |
+| `lexer.l` | `yylex()` en bucle, solo en `-target scan` |
+| `bison.y` | `yyparse()` |
+| `semantic_analyzer.c` | `analyzeSemantics(astRoot, NULL)` |
+| `intermediate_code.c` | `generateIntermediateCode(astRoot)` |
+| `optimizer.c` | `optimizeIntermediateCode` |
+| `live_variable_analysis.c` | El volcado del CFG con `-debug` |
+| `object_code.c` | `generateAssembly` |
+| `string_builder.c` | El acumulador de la salida textual |
+| `error_handler.c` | Los contadores y `compileAborted` |
 | El sistema operativo | `fork`, `execvp`, `waitpid`, `fopen`, `remove` |
 
 **Es el único archivo que incluye a todas las fases.** Eso lo vuelve el punto de
@@ -374,7 +374,7 @@ aislada ni testear sola.
 
 Un `case` en el `switch` de `compile`, con el prefijo acumulativo de las fases
 anteriores y la llamada a su propia función de etapa. Más la fila en `STAGES` de
-la [ficha F01](01.2-cli.md).
+la [CLI y entrada](01-cli-y-entrada.md).
 
 Si se olvida el `case`, cae en el `default` que **devuelve 1 sin mensaje**: el
 compilador falla silenciosamente para ese target. Es mejor que hacer algo
@@ -413,7 +413,7 @@ afecte a las tres salidas con una sola línea.
   parsear y puede emitir además un error de sintaxis derivado.
 - **El `Scope` del análisis semántico se descarta** y **el AST nunca se libera**.
   Son fugas al salir, deliberadas: el proceso termina y el sistema operativo
-  recupera todo. Está anotado en las fichas F08 y F09.
+  recupera todo. Está anotado en la documentación del [AST](../03-lexico-sintactico-y-ast/04-ast.md) y de la [tabla de símbolos](../04-semantico/01-tabla-de-simbolos.md).
 - **`MAX_PATH_LENGTH` es 4096** y el chequeo de truncamiento existe, pero el
   nombre del temporal se deriva del de salida, así que un `-o` de 4090 caracteres
   haría fallar la compilación con un mensaje sobre la ruta intermedia y no sobre
@@ -489,4 +489,4 @@ done
 
 ---
 
-**Siguiente:** [Errores y Salida de Debug](01.6-errors.md)
+**Siguiente:** [Errores y Salida de Debug](03-errores-y-debug.md)

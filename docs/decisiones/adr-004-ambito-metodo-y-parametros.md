@@ -1,4 +1,4 @@
-# ADR / Reporte de Bug: Redefinición de Parámetro Formal en el Cuerpo del Método
+# ADR 004: Ámbito Único de Método y Parámetros Formales
 
 ## Problema
 

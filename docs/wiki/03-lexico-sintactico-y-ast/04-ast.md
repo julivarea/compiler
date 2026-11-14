@@ -1,8 +1,8 @@
 # Árbol de Sintaxis Abstracta (AST)
 
-**Ficha F08** · Archivos: `include/ast.h`, `src/parser/ast.c` (535 líneas)
+**Archivos:** `include/ast.h`, `src/parser/ast.c` (535 líneas)
 
-La estructura que produce el [parser](02.5-syntax-analysis.md) y que consumen
+La estructura que produce el [parser](02-analisis-sintactico.md) y que consumen
 todas las fases siguientes.
 
 ---
@@ -252,7 +252,7 @@ aridad y los tipos de las llamadas.
 que armó la gramática y lo convierten en los hijos del nodo con
 `resolveNodeArray`, **sin copiar**: el nodo adopta el buffer de punteros y se
 libera solo el contenedor. Si el nodo no se pudo crear, libera los nodos de la
-lista. El detalle está en la [ficha F07](02.7-parser-actions.md).
+lista. El detalle está en la [acciones del parser](03-acciones-del-parser.md).
 
 ### `newReturnNode`, `newWhileNode`, `newIfElseNode`
 
@@ -332,7 +332,7 @@ Traduce el `OperationType` al símbolo que se imprime. `OP_UMINUS` se muestra co
 
 Traduce el `DataType` a `"INT"`, `"BOOL"`, `"FLOAT"`, `"VOID"`, `"ERROR"` o
 `"UNKNOWN"`. **Está declarada en `types.h` pero definida acá**, que es una
-pequeña incoherencia de ubicación: pertenece conceptualmente a la ficha F04.
+pequeña incoherencia de ubicación: pertenece conceptualmente a [utilidades y tipos](../02-infraestructura/04-utilidades-y-tipos.md).
 
 ---
 
@@ -480,13 +480,13 @@ línea de inicio de cada token y que cada acción de la gramática la propagara.
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `bison.y` y `parser_helpers.c` (F06, F07) | Los nodos se crean durante las reducciones con los constructores de acá; las listas que acumula `parser_helpers.c` las adopta `resolveNodeArray` |
-| `symbol_table.c` (F09) | `Symbol`, `newSymbol`, `freeSymbol` |
+| `bison.y` y `parser_helpers.c` | Los nodos se crean durante las reducciones con los constructores de acá; las listas que acumula `parser_helpers.c` las adopta `resolveNodeArray` |
+| `symbol_table.c` | `Symbol`, `newSymbol`, `freeSymbol` |
 
 | Va hacia | En qué estado |
 | --- | --- |
-| Análisis semántico (F09–F11) | `type` en `TYPE_VOID`, `uid` en 0, símbolos provisorios. **El semántico anota el árbol en el lugar** |
-| Generación de TAC (F13) | Árbol ya anotado: `type` resuelto en cada expresión, símbolos apuntando a la tabla |
+| Análisis semántico | `type` en `TYPE_VOID`, `uid` en 0, símbolos provisorios. **El semántico anota el árbol en el lugar** |
+| [Generación de TAC](../05-codigo-intermedio/02-generacion-tac.md) | Árbol ya anotado: `type` resuelto en cada expresión, símbolos apuntando a la tabla |
 
 El punto importante: **el AST no se copia ni se transforma entre fases**. Es la
 misma estructura, que el semántico enriquece. Comparar el `.sint` con el `.sem`
@@ -577,7 +577,7 @@ una llamada por acceso.
   paréntesis no dejan rastro.
 - **Representación intermedia arbórea**: el AST es la primera de las tres
   representaciones del programa que maneja este compilador. Después vienen el
-  TAC (lineal, F12–F13) y el assembly. Cada una es más cercana a la máquina y
+  [TAC](../05-codigo-intermedio/01-representacion-tac.md) (lineal, generado en la etapa siguiente) y el assembly. Cada una es más cercana a la máquina y
   más lejana de la estructura del lenguaje.
 - **Anotación del árbol**: el análisis semántico no genera una estructura nueva
   sino que **decora** la existente (el campo `type`, los punteros a símbolos
@@ -612,4 +612,4 @@ una llamada por acceso.
 
 ---
 
-**Siguiente:** [Tabla de Símbolos y Ámbitos](04-symbol-table.md)
+**Siguiente:** [Tabla de Símbolos y Ámbitos](../04-semantico/01-tabla-de-simbolos.md)

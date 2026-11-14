@@ -1,6 +1,6 @@
 # Errores y Salida de Debug
 
-**Ficha F03** · Archivos: `include/error_handler.h`, `src/core/error_handler.c`,
+**Archivos:** `include/error_handler.h`, `src/core/error_handler.c`,
 `include/debug.h` (126 líneas)
 
 Los dos canales de salida del compilador: los errores por `stderr` y la
@@ -189,7 +189,7 @@ llama a `printLiveVariableAnalysis` con `-debug`. El efecto es el mismo: sin
 `-debug` no se imprime nada.
 
 También queda afuera de la convención el volcado del
-[análisis de variables vivas](05.7-live-variables.md), que imprime un banner con
+[análisis de variables vivas](../06-optimizador/01-variables-vivas.md), que imprime un banner con
 separadores `=====` en lugar de líneas con prefijo. Es la única salida de debug
 que no sigue el formato.
 
@@ -240,15 +240,15 @@ con seguridad.
 
 | Quién usa `error_handler` | Para qué |
 | --- | --- |
-| `lexer.l` (F05) | `lexicalError` por símbolo inválido y comentario sin cerrar |
-| `bison.y` (F06) | `syntaxError` desde `yyerror` |
-| `type_checker.c` (F10) | `semanticError` por los errores de tipos |
-| `semantic_analyzer.c` (F11) | `semanticError` por los de declaraciones y sentencias |
-| `driver.c` (F02) | Lee los contadores y llama a `compileAborted` |
+| `lexer.l` | `lexicalError` por símbolo inválido y comentario sin cerrar |
+| `bison.y` | `syntaxError` desde `yyerror` |
+| `type_checker.c` | `semanticError` por los errores de tipos |
+| `semantic_analyzer.c` | `semanticError` por los de declaraciones y sentencias |
+| `driver.c` | Lee los contadores y llama a `compileAborted` |
 
 | Quién usa `debug.h` | Para qué |
 | --- | --- |
-| `driver.c` (F02) | Los volcados de cada etapa y el aviso del assembly intermedio. Es el único que lo incluye |
+| `driver.c` | Los volcados de cada etapa y el aviso del assembly intermedio. Es el único que lo incluye |
 
 ---
 
@@ -321,7 +321,7 @@ volver a agregarla tiene sentido solo junto con los tests que la usen.
 - **Cascadas de errores**: cuando un error primario genera decenas de mensajes
   derivados. El mecanismo que lo evita en este compilador no está en este módulo
   sino en el chequeo de tipos: `TYPE_ERROR` se propaga sin generar mensajes
-  nuevos (ver la [ficha F10](04.5-type-checker.md)).
+  nuevos (ver la [chequeo de tipos](../04-semantico/02-chequeo-de-tipos.md)).
 - **Separación de canales** `stdout`/`stderr`: es lo que permite que la salida
   útil de un programa se pueda redirigir o encadenar en una tubería mientras los
   diagnósticos siguen siendo visibles. Es una convención de POSIX, no una
@@ -367,4 +367,4 @@ test -z "$(./mi_compilador -debug examples/programa.ctds 2>/dev/null >/dev/null;
 
 ---
 
-**Siguiente:** [Utilidades y Tipos Base](01.8-utilities.md)
+**Siguiente:** [Utilidades y Tipos Base](04-utilidades-y-tipos.md)

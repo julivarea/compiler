@@ -1,6 +1,6 @@
 # Entrada y Línea de Comandos
 
-**Ficha F01** · Archivos: `src/main.c`, `include/cli.h`, `src/core/cli.c` (487 líneas)
+**Archivos:** `src/main.c`, `include/cli.h`, `src/core/cli.c` (487 líneas)
 
 Lo primero que corre: interpreta los argumentos, abre el archivo y le pasa el
 control al orquestador.
@@ -48,13 +48,13 @@ int main(int argc, char **argv) {
 2. **Abrir el archivo**, asignándolo a `yyin`, que es la variable global que Flex
    usa como entrada. Esa línea es toda la conexión entre el sistema de archivos y
    el analizador léxico.
-3. **Delegar** en `compile`, que es la [ficha F02](01.4-driver.md).
+3. **Delegar** en `compile`, que es la [driver](02-driver.md).
 4. **Liberar** y devolver el código que dio `compile`.
 
 Define además la global `NodeAST *astRoot = NULL;`, que es donde el parser deja
 la raíz del AST. Que viva en `main.c` y no en `bison.y` es lo que obliga al
 `#ifdef UNITY_TESTING` de la gramática, porque las suites de tests no linkean
-`main.c` (ver la [ficha F06](02.5-syntax-analysis.md)).
+`main.c` (ver la [análisis sintáctico](../03-lexico-sintactico-y-ast/02-analisis-sintactico.md)).
 
 **El `perror` del paso 2 es el único mensaje de error que no pasa por
 `error_handler`**, y es correcto: no es un error del programa compilado ni de la
@@ -314,12 +314,12 @@ compilador realmente acepta.
 | Viene de | Qué cruza la frontera |
 | --- | --- |
 | El sistema operativo | `argc`, `argv` |
-| `optimizer.h` (F15) | El enum `Optimization` y `OPTIMIZATION_ALL`, para traducir los nombres |
+| `optimizer.h` | El enum `Optimization` y `OPTIMIZATION_ALL`, para traducir los nombres |
 
 | Va hacia | Qué entrega |
 | --- | --- |
-| `driver.c` (F02) | La estructura `Options` completa, vía `compile(&options)` |
-| `lexer.l` (F05) | El `FILE *` en `yyin`, que lo asigna `main.c` |
+| `driver.c` | La estructura `Options` completa, vía `compile(&options)` |
+| `lexer.l` | El `FILE *` en `yyin`, que lo asigna `main.c` |
 
 **`cli.c` no incluye nada del compilador salvo `optimizer.h`.** No conoce el AST,
 ni el TAC, ni las fases. Esa independencia es lo que permite que `test_cli.c` se
@@ -342,7 +342,7 @@ Una fila en `STAGES` con su nombre, su valor de `Target` y su extensión, más e
 valor en el enum **en la posición que le corresponde según el pipeline**. El
 parseo, el mensaje de uso y la deducción de la extensión la toman de la tabla sin
 tocar nada más. Después hay que agregar su caso en el `switch` de `compile`
-(ficha F02).
+(en el [driver](02-driver.md)).
 
 ### Una optimización nueva
 
@@ -440,4 +440,4 @@ test -z "$(./mi_compilador programa.ctds 2>&1)" && echo "silencio correcto"
 
 ---
 
-**Siguiente:** [Orquestación de las Etapas](01.4-driver.md)
+**Siguiente:** [Orquestación de las Etapas](02-driver.md)

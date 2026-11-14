@@ -1,8 +1,8 @@
 # Análisis Sintáctico
 
-**Ficha F06** · Archivo: `src/parser/bison.y` (162 líneas)
+**Archivo:** `src/parser/bison.y` (162 líneas)
 
-Toma la secuencia de tokens que produce el [análisis léxico](02-lexical-analysis.md)
+Toma la secuencia de tokens que produce el [análisis léxico](01-analisis-lexico.md)
 y verifica que forme un programa válido según la gramática de C-TDS, construyendo
 el AST en el camino.
 
@@ -107,7 +107,7 @@ según el símbolo, Bison usa una unión:
 
 La distinción `node` / `array` es la decisión de diseño central de las acciones:
 un `Block` es un nodo, pero `Statements` es una lista que después se cuelga de un
-nodo. El detalle está en la ficha F07.
+nodo. El detalle está en [acciones del parser](03-acciones-del-parser.md).
 
 ### Tokens
 
@@ -207,7 +207,7 @@ devuelve 7, y `!!true` es verdadero.
 ## 6. Inventario de producciones
 
 Los 17 no terminales, en el orden del archivo. La columna *Acción* resume qué construye;
-el detalle de cada función auxiliar es la ficha F07.
+el detalle de cada función auxiliar está en [acciones del parser](03-acciones-del-parser.md).
 
 ### Estructura del programa
 
@@ -285,7 +285,7 @@ código de chequeo después.
 | `IF '(' Expression ')' Block ELSE Block` | `newIfElseNode($3, $5, $7)`: `IF_ELSE_NODE` con las dos ramas |
 | `';'` | `NULL`: la sentencia vacía no genera nodo |
 
-Cada acción llama a un **constructor con nombre** de `ast.c` (ficha F08) en lugar
+Cada acción llama a un **constructor con nombre** de [`ast.c`](04-ast.md) en lugar
 de armar el nodo con `newNode` y sus tres hijos posicionales: la acción dice qué
 construcción es, y el orden de los hijos queda en un solo lugar.
 
@@ -432,7 +432,7 @@ intermedias, de modo que el token de anticipación alcance para decidir:
 Un solo token basta, así que entra en LALR(1). El efecto visible es que se
 pueden intercalar globales y métodos en cualquier orden. Verificado con un
 programa que alterna `int g1; int f(...){...} int g2; boolean g3, g4; void main(){...}`.
-El paso a paso de por qué ocurría el conflicto original y cómo se reformuló está desarrollado en [Explicación del conflicto en Bison](../decisiones/explicacion_conflicto_bison.md).
+El paso a paso de por qué ocurría el conflicto original y cómo se reformuló está desarrollado en [Explicación del conflicto en Bison](../../decisiones/explicacion_conflicto_bison.md).
 
 ### No hay problema del `else` colgante
 
@@ -615,4 +615,4 @@ bison -Wall -d src/parser/bison.y -o /tmp/check.tab.c
 
 ---
 
-**Siguiente:** [Acciones del Parser](02.7-parser-actions.md)
+**Siguiente:** [Acciones del Parser](03-acciones-del-parser.md)

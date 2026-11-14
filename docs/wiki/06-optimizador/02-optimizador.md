@@ -1,10 +1,10 @@
 # Optimización del Código Intermedio
 
-**Ficha F15** · Archivos: `include/optimizer.h`, `src/optimizer/optimizer.c` (674 líneas)
+**Archivos:** `include/optimizer.h`, `src/optimizer/optimizer.c` (674 líneas)
 
 Las siete transformaciones que reducen el código generado sin cambiar lo que el
-programa hace, sobre las [cuádruplas TAC](05-tac-representation.md) y apoyadas en
-el [análisis de variables vivas](05.7-live-variables.md).
+programa hace, sobre las [cuádruplas TAC](../05-codigo-intermedio/01-representacion-tac.md) y apoyadas en
+el [análisis de variables vivas](01-variables-vivas.md).
 
 Este documento describe las optimizaciones implementadas en el compilador C-TDS: qué hace
 cada una, sobre qué representación trabaja, bajo qué condiciones es segura y cómo se verifica.
@@ -193,7 +193,7 @@ La transformación es cortar las sentencias posteriores al `return` en cada rama
 equivalente es descartar las instrucciones entre un `ret` y la siguiente etiqueta o `end_func`.
 
 **Relación con el análisis semántico:** el analizador semántico **no** reporta esto como error,
-y es deliberado — está documentado como la decisión 3 de la [ficha F11](04-semantic-analysis.md) (§7),
+y es deliberado — está documentado como la decisión 3 de la [análisis semántico](../04-semantico/03-analisis-semantico.md) (§7),
 porque el enunciado no lo prohíbe y pide no informar lo que no es una violación. Que sea válido
 es justamente lo que lo convierte en caso de optimización: el programa es correcto, solo que
 parte de su código no puede ejecutarse nunca.
@@ -435,7 +435,7 @@ objeto: cuando un relacional deja un temporal que lee el salto condicional sigui
 `emitFusedComparisonAndJump` emite un `cmpl` y un único salto (`jge .L`), sin materializar el
 booleano con `setl` + `movzbl` ni volver a compararlo contra cero. La decisión y sus
 condiciones están en el
-[ADR 003](../decisiones/adr-003-fusion-comparacion-y-salto-condicional.md).
+[ADR 003](../../decisiones/adr-003-fusion-comparacion-y-salto-condicional.md).
 
 **Pendientes de la mirilla**, los tres que sí dependen de la máquina y van sobre el assembly
 emitido: `movl X, %eax` seguido de `movl %eax, X`, `movl $0, %eax` reemplazado por
@@ -576,7 +576,7 @@ Los pasos concretos de código —dónde va el bit, el nombre, la pasada y la ll
 | `strength-reduce` | **Assembly** | `emitStrengthReducedMultiplication` en `object_code.c` |
 
 - **La eliminación de asignaciones muertas quedó conectada.** Es la parte de `dead-code` que se
-  apoya en el [análisis de variables vivas](05.7-live-variables.md): `removeDeadStores`
+  apoya en el [análisis de variables vivas](01-variables-vivas.md): `removeDeadStores`
   construye el CFG, resuelve el punto fijo y elimina toda definición cuyo destino no esté en
   `LIVE_OUT` ni se lea después dentro de su bloque. Las variables **globales se excluyen** de las
   candidatas, porque una llamada podría observarlas y el análisis es intraprocedural.
@@ -847,7 +847,7 @@ auxiliar que mantener: la etiqueta está viva si algún `goto` la nombra en su
 
 | Función | Qué hace |
 | --- | --- |
-| `printTACWithDeletedInRed` | Imprime **toda** la lista marcando con `[ELIMINADA]` las que están por irse, con el motivo. Cada línea sale de `fprintTACInstruction` de F12 |
+| `printTACWithDeletedInRed` | Imprime **toda** la lista marcando con `[ELIMINADA]` las que están por irse, con el motivo. Cada línea sale de `fprintTACInstruction` de [representación TAC](../05-codigo-intermedio/01-representacion-tac.md) |
 
 Imprimir la lista completa y no solo lo que se borra es lo que hace útil al
 `-debug`: se ve la instrucción eliminada **en su contexto**. Y se llama **antes**
@@ -860,7 +860,7 @@ una vez al entrar.
 
 **El nombre miente un poco.** `printTACWithDeletedInRed` no emite ningún código
 ANSI: marca las líneas con el prefijo `[ELIMINADA]` y nada más. El color sí
-existe en los mensajes de error (ficha F03), no acá. Verificado con `cat -v`
+existe en los mensajes de error ([errores y debug](../02-infraestructura/03-errores-y-debug.md)), no acá. Verificado con `cat -v`
 sobre la salida.
 
 ---
@@ -894,7 +894,7 @@ ningún aviso.
 | Los tres patrones de mirilla sobre assembly (§3.4) | Eliminar pares `movl` redundantes y acortar `movl $0` | Trabajar sobre el texto emitido, o introducir una representación de instrucciones de máquina antes de imprimir |
 | Subexpresiones comunes locales | Reusar `t0` en vez de recalcular `a + b` dos veces en el mismo bloque | Una tabla de expresiones ya calculadas por bloque, invalidada al reasignar cualquier operando |
 | Propagación de copias | Reemplazar los usos de `x` por `y` tras `x = y` | Casi lo mismo que la propagación de constantes, cambiando "constante" por "operando" |
-| Variables desvanecidas | Eliminar el acumulador de un ciclo cuyo resultado no se usa | Otro análisis de punto fijo, explicado en la ficha F14 |
+| Variables desvanecidas | Eliminar el acumulador de un ciclo cuyo resultado no se usa | Otro análisis de punto fijo, explicado en [análisis de variables vivas](01-variables-vivas.md) |
 
 ---
 
@@ -913,8 +913,8 @@ ningún aviso.
   la eliminación de asignaciones muertas es global, porque consulta `LIVE_OUT`,
   que sale de un análisis sobre todo el grafo. Es el contraste más claro del
   módulo y vale tenerlo presente.
-- **Análisis contra transformación.** La ficha F14 es un **análisis**: calcula
-  información y no cambia nada. Esta ficha son **transformaciones**: consumen esa
+- **Análisis contra transformación.** El [análisis de variables vivas](01-variables-vivas.md) es un **análisis**: calcula
+  información y no cambia nada. El optimizador aplica **transformaciones**: consumen esa
   información para reescribir el código. Casi toda optimización no trivial se
   parte así.
 - **Plegado de constantes** (*constant folding*) y **propagación de constantes**
@@ -995,4 +995,4 @@ correspondencia es:
 
 ---
 
-**Siguiente:** [Marco de Pila](06.5-stack-frame.md)
+**Siguiente:** [Marco de Pila](../07-codigo-objeto/01-marco-de-pila.md)

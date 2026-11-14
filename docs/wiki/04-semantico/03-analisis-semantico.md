@@ -1,10 +1,10 @@
 # Análisis Semántico
 
-**Ficha F11** · Archivos: `include/semantic_analyzer.h`, `src/semantic/semantic_analyzer.c` (299 líneas)
+**Archivos:** `include/semantic_analyzer.h`, `src/semantic/semantic_analyzer.c` (299 líneas)
 
 El recorrido que valida las reglas contextuales del lenguaje, construyendo la
-[tabla de símbolos](04-symbol-table.md) y apoyándose en el
-[chequeo de tipos](04.5-type-checker.md) para las expresiones.
+[tabla de símbolos](01-tabla-de-simbolos.md) y apoyándose en el
+[chequeo de tipos](02-chequeo-de-tipos.md) para las expresiones.
 
 ---
 
@@ -309,7 +309,7 @@ aproximado, y la pregunta es de qué lado se equivoca.**
 
 Los que reporta este archivo, todos verificados ejecutándolos. Los de las
 expresiones (tipos de operandos, aridad de llamadas, argumentos incompatibles)
-están en la [ficha F10](04.5-type-checker.md).
+están en la [chequeo de tipos](02-chequeo-de-tipos.md).
 
 | Situación | Mensaje |
 | --- | --- |
@@ -368,7 +368,7 @@ acá cada sentencia se puede validar de forma independiente de las demás.
 La contracara es el riesgo de **errores en cascada**: un identificador no
 declarado podría generar un mensaje por cada operación que lo use. Eso se evita
 con `TYPE_ERROR` propagándose en silencio, descrito en la
-[ficha F10](04.5-type-checker.md).
+[chequeo de tipos](02-chequeo-de-tipos.md).
 
 ### El corte del pipeline
 
@@ -398,7 +398,7 @@ conciencia y conviene confirmarlas con la cátedra:
    para `<` y `>` (regla 10, que pide operandos "int o float" sin exigir que
    coincidan) la coerción sí aplica. Consecuencia visible: `x > y` con un `int`
    y un `float` se acepta, `x == y` no. El detalle de las reglas está en la
-   [ficha F10](04.5-type-checker.md).
+   [chequeo de tipos](02-chequeo-de-tipos.md).
 2. **`%` acepta solo enteros.** La regla 10 dice que los operadores aritméticos
    —y `%` figura entre ellos— admiten `int` o `float`, pero la sección
    *Expresiones* dice que `%` computa el resto de una división de enteros. Se
@@ -411,7 +411,7 @@ conciencia y conviene confirmarlas con la cátedra:
    que no es violación, se disparaba con cualquier sentencia posterior a un
    `return` y dejaba de analizarla, de modo que un error real ubicado después
    quedaba invisible. `examples/two_returns.ctds` es un programa válido; el
-   código inalcanzable lo elimina el optimizador con `dead-code` (ficha F15).
+   código inalcanzable lo elimina el [optimizador](../06-optimizador/02-optimizador.md) con `dead-code`.
 
 > **Advertencia:** el programa de ejemplo del propio enunciado (página 3) tiene
 > un `void main()` que ejecuta `return 1;`, lo que viola la regla 6. No sirve
@@ -423,17 +423,17 @@ conciencia y conviene confirmarlas con la cátedra:
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `ast.c` (F08) | El árbol con `type` en `TYPE_VOID`, `uid` en 0 y símbolos provisorios |
-| `symbol_table.c` (F09) | `createScope`, `appendSymbol`, las dos búsquedas |
-| `type_checker.c` (F10) | `analyzeExpression`, `analyzeMethodCall`, `isAssignable` |
+| `ast.c` | El árbol con `type` en `TYPE_VOID`, `uid` en 0 y símbolos provisorios |
+| `symbol_table.c` | `createScope`, `appendSymbol`, las dos búsquedas |
+| `type_checker.c` | `analyzeExpression`, `analyzeMethodCall`, `isAssignable` |
 
 | Va hacia | Qué entrega |
 | --- | --- |
-| `intermediate_code.c` (F13) | El **mismo árbol**, anotado: tipos resueltos, `uid` asignados, símbolos apuntando a la tabla. Más la garantía de que el programa es válido |
+| `intermediate_code.c` | El **mismo árbol**, anotado: tipos resueltos, `uid` asignados, símbolos apuntando a la tabla. Más la garantía de que el programa es válido |
 
-El reparto con F10, que es la confusión más natural:
+El reparto con [chequeo de tipos](02-chequeo-de-tipos.md), que es la confusión más natural:
 
-| | `semantic_analyzer.c` (F11) | `type_checker.c` (F10) |
+| | `semantic_analyzer.c` | `type_checker.c` |
 | --- | --- | --- |
 | Recorre | Declaraciones y sentencias | Expresiones |
 | Pregunta | "¿Está permitido esto acá?" | "¿De qué tipo es esto?" |
@@ -446,7 +446,7 @@ El reparto con F10, que es la confusión más natural:
 ### Una construcción de control nueva (`for`, `do while`)
 
 Si se desazucara en la gramática a partir de `while` e `if`
-(ver la [ficha F06](02.5-syntax-analysis.md)), **este archivo no se toca**: el
+(ver la [análisis sintáctico](../03-lexico-sintactico-y-ast/02-analisis-sintactico.md)), **este archivo no se toca**: el
 árbol que llega está hecho de nodos que ya se saben analizar. Es el argumento
 más fuerte a favor de ese camino.
 
@@ -494,7 +494,7 @@ Es la extensión más chica que amplía el conjunto de programas aceptados.
 - **`while (true)` no garantiza retorno** (§5). Es deliberado y conservador.
 - **El símbolo provisorio de una asignación se libera al resolverla.**
   `analyzeAssignmentNode` reemplaza el símbolo del destino con
-  `resolveNodeSymbol(node, resolvedSymbol)` (ficha F08), que libera el
+  `resolveNodeSymbol(node, resolvedSymbol)` (definida en [AST](../03-lexico-sintactico-y-ast/04-ast.md)), que libera el
   provisorio. Antes era una asignación directa del puntero y lo perdía.
 - **El chequeo de `return` fuera de una función es código muerto.** El mensaje
   `Sentencia 'return' fuera del cuerpo de una funcion.` no se puede provocar: un
@@ -529,7 +529,7 @@ Es la extensión más chica que amplía el conjunto de programas aceptados.
   general.
 - **Análisis de alcanzabilidad** (*reachability* / *definite return analysis*):
   `guaranteesReturn` es una versión mínima de un análisis de flujo de control. A
-  diferencia del [análisis de variables vivas](05.7-live-variables.md), que
+  diferencia del [análisis de variables vivas](../06-optimizador/01-variables-vivas.md), que
   resuelve un punto fijo sobre un grafo, acá alcanza con una recursión sobre el
   árbol, porque las construcciones del lenguaje son estructuradas (no hay `goto`)
   y el único caso que bifurca es el `if`.
@@ -579,4 +579,4 @@ Es la extensión más chica que amplía el conjunto de programas aceptados.
 
 ---
 
-**Siguiente:** [La Representación Intermedia (TAC)](05-tac-representation.md)
+**Siguiente:** [La Representación Intermedia (TAC)](../05-codigo-intermedio/01-representacion-tac.md)

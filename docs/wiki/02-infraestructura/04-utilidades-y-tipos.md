@@ -1,6 +1,6 @@
 # Utilidades y Tipos Base
 
-**Ficha F04** · Archivos: `include/string_builder.h`, `src/core/string_builder.c`,
+**Archivos:** `include/string_builder.h`, `src/core/string_builder.c`,
 `include/types.h` (205 líneas)
 
 El acumulador con el que se arma la salida de texto de cada etapa, y los dos
@@ -73,16 +73,16 @@ válido. Ver §3.
 
 | Archivo | Llamadas |
 | --- | --- |
-| `object_code.c` (F18) | **50** |
-| `driver.c` (F02) | 7 |
-| `tac.c` (F12) | 1 |
+| `object_code.c` | **50** |
+| `driver.c` | 7 |
+| `tac.c` | 1 |
 
 El reparto cuenta una historia: el generador de código objeto emite todo el
 assembly como texto directo, el driver lo resetea y lo vuelca, y el TAC lo usa
 **una sola vez** —`printTACInstruction` delega en `formatTACInstruction`, que
 escribe a un buffer del llamador y no al acumulador. Esa indirección es lo que
 permite que el formato del TAC tenga tres consumidores distintos (ver la
-[ficha F12](05-tac-representation.md)).
+[representación TAC](../05-codigo-intermedio/01-representacion-tac.md)).
 
 ### El crecimiento
 
@@ -201,7 +201,7 @@ lenguaje sino valores de control**, y entender la diferencia importa:
 `TYPE_ERROR` es la pieza central de la política de errores del chequeo de tipos:
 una expresión con un operando inválido devuelve `TYPE_ERROR`, y cada operación
 que la consuma devuelve `TYPE_ERROR` **sin reportar nada nuevo**. Así un error
-primario produce exactamente un mensaje. La [ficha F10](04.5-type-checker.md) lo
+primario produce exactamente un mensaje. La [chequeo de tipos](../04-semantico/02-chequeo-de-tipos.md) lo
 desarrolla.
 
 Que `TYPE_VOID` cumpla dos papeles —tipo de retorno y "todavía no se sabe"— es
@@ -222,13 +222,13 @@ tres relacionales, dos lógicos binarios y dos unarios.
 
 **El orden es arbitrario** —`OP_UMINUS` y `OP_NOT` quedaron entre `OP_ADD` y
 `OP_SUB`— y nada depende de él, al contrario del enum `Target` de la
-[ficha F01](01.2-cli.md), cuyo orden sí refleja el pipeline.
+[CLI y entrada](01-cli-y-entrada.md), cuyo orden sí refleja el pipeline.
 
 `OP_AND` y `OP_OR` existen en este enum pero **no tienen opcode de TAC
 equivalente**: el generador los desvía a la secuencia de saltos del corto
 circuito antes de llegar a la traducción. Es la asimetría más importante entre
 este enum y el de operaciones TAC, y está explicada en la
-[ficha F12](05-tac-representation.md).
+[representación TAC](../05-codigo-intermedio/01-representacion-tac.md).
 
 ### `getDataTypeName`: declarada acá, definida en otro módulo
 
@@ -266,9 +266,9 @@ si `types.h` dependiera de algo, ese algo sería dependencia de todos.
 
 | Quién usa `string_builder` | Para qué |
 | --- | --- |
-| `object_code.c` (F18) | Emitir todo el assembly como texto directo |
-| `tac.c` (F12) | Una llamada: `printTACInstruction` |
-| `driver.c` (F02) | Resetear, chequear el error y volcar al archivo |
+| `object_code.c` | Emitir todo el assembly como texto directo |
+| `tac.c` | Una llamada: `printTACInstruction` |
+| `driver.c` | Resetear, chequear el error y volcar al archivo |
 
 | Quién usa `types.h` | Para qué |
 | --- | --- |
@@ -294,7 +294,7 @@ tienen `default`.
 
 Un valor en `OperationType`, su símbolo en `getOperationName` de `ast.c`, su
 regla de tipos en el chequeo y su traducción en el TAC. La
-[ficha F10](04.5-type-checker.md) tiene el recorrido completo para `!=`.
+[chequeo de tipos](../04-semantico/02-chequeo-de-tipos.md) tiene el recorrido completo para `!=`.
 
 ### Varios acumuladores a la vez
 
@@ -343,8 +343,7 @@ cambio de diez líneas.
 ## 8. La teoría detrás
 
 - **Arreglo dinámico amortizado**: duplicar la capacidad al agotarla da un costo
-  amortizado constante por agregado. Es la misma estructura que `NodeArray`
-  (F07), `TACList` (F12) y los arreglos de `Scope` (F09) y `FunctionFrame` (F17):
+  amortizado constante por agregado. Es la misma estructura que `NodeArray`, `TACList` y los arreglos de `Scope` y `FunctionFrame`:
   el proyecto la reimplementa cinco veces porque C no tiene una en su biblioteca
   estándar.
 - **Medir antes de escribir**: `vsnprintf(NULL, 0, ...)` devolviendo la longitud
@@ -399,4 +398,4 @@ gcc -x assembler examples/programa.ass -o /tmp/p -no-pie && echo "ensambla"
 Con esto se completa el bloque de infraestructura: ya está cubierto todo lo que
 el compilador hace antes de mirar una sola letra del programa.
 
-**Siguiente:** [Análisis Léxico](02-lexical-analysis.md) · empieza el recorrido de las fases
+**Siguiente:** [Análisis Léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md) · empieza el recorrido de las fases

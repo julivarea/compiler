@@ -1,12 +1,12 @@
 # Chequeo de Tipos
 
-**Ficha F10** · Archivos: `include/type_checker.h`, `src/semantic/type_checker.c` (256 líneas)
+**Archivos:** `include/type_checker.h`, `src/semantic/type_checker.c` (256 líneas)
 
-Deduce el tipo de cada expresión del [AST](03-ast.md) y verifica que las
+Deduce el tipo de cada expresión del [AST](../03-lexico-sintactico-y-ast/04-ast.md) y verifica que las
 operaciones sean legales, resolviendo los nombres contra la
-[tabla de símbolos](04-symbol-table.md).
+[tabla de símbolos](01-tabla-de-simbolos.md).
 
-!!! note "Lo de `float` de esta ficha sí era obligatorio; lo de abajo no"
+!!! note "Lo de `float` en el chequeo de tipos sí era obligatorio; lo de abajo no"
     Las reglas de tipos para `float` **sí** entran en el alcance de esta etapa:
     la regla 14 de la especificación del lenguaje, que permite las conversiones
     entre `int` y `float`, es una de las catorce que el análisis semántico debe
@@ -14,10 +14,9 @@ operaciones sean legales, resolviendo los nombres contra la
 
     Lo que **no** era necesario es **generar código** para `float`: el enunciado
     acotaba las etapas de código intermedio y de código objeto a tipos enteros y
-    lógicos. O sea que las reglas que esta ficha describe habrían podido quedar
-    sin efecto más abajo. Se implementó el camino completo igual; el argumento
-    está en la sección *Extensiones sobre el enunciado* de
-    [la página inicial](../index.md).
+    lógicos. O sea que las reglas que este documento describe habrían podido quedar
+    sin efecto más abajo. Se implementó su soporte de tipos en el front-end igual;
+    el argumento está en [Alcance y Extensiones](../../decisiones/alcance-y-extensiones.md#1-alcance-de-float).
 
 ---
 
@@ -93,10 +92,10 @@ resolveNodeSymbol(node, symbol);   /* reapunta al simbolo de la tabla */
 node->type = symbol->type;
 ```
 
-`resolveNodeSymbol` (ficha F08) libera el símbolo provisorio que había creado el
+`resolveNodeSymbol` (definida en [AST](../03-lexico-sintactico-y-ast/04-ast.md)) libera el símbolo provisorio que había creado el
 parser solo para llevar el nombre, y deja el nodo apuntando al declarado. Antes
 era un `node->symbol = symbol` directo, que perdía el provisorio (ver la
-[ficha F07](02.7-parser-actions.md)).
+[acciones del parser](../03-lexico-sintactico-y-ast/03-acciones-del-parser.md)).
 
 ### `analyzeMethodCall(node, scope, isExpression)`
 
@@ -165,7 +164,7 @@ Verificado: `a = noexiste + 1 + 2 + 3;` reporta **un solo** error
 
 ### `resolveOperation(operator, left, right)` (privada)
 
-La tabla de reglas de tipos. Es el corazón de la ficha y está en §4.
+La tabla de reglas de tipos. Es el corazón del módulo y está en §4.
 
 ### `resolveNumericOperation(left, right)` (privada)
 
@@ -287,8 +286,8 @@ dos direcciones —su regla 14 habla de coerciones **y truncamientos**— pero l
 implementación solo admite el ensanchamiento. Es una decisión **más restrictiva
 que la letra**: rechaza programas que la especificación permitiría, pero nunca
 acepta uno inválido, que es el lado correcto para equivocarse en un chequeo de
-corrección. Queda registrada como aclaración de alcance en la sección
-*Extensiones sobre el enunciado* de [la portada](../index.md).
+corrección. Queda registrada como aclaración de alcance en
+[Alcance y Extensiones](../../decisiones/alcance-y-extensiones.md#1-alcance-de-float).
 
 ### Dónde se ve la coerción
 
@@ -323,19 +322,19 @@ conversión. Para verificar que una coerción ocurrió, el archivo a mirar es el
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `ast.c` (F08) | El árbol con `type` en `TYPE_VOID` y símbolos provisorios |
-| `symbol_table.c` (F09) | `lookupSymbol` para resolver nombres, y `symbol->parameters` para leer firmas |
-| `semantic_analyzer.c` (F11) | Los llamados: el recorrido decide *dónde* hay una expresión, esta unidad decide *de qué tipo es* |
+| `ast.c` | El árbol con `type` en `TYPE_VOID` y símbolos provisorios |
+| `symbol_table.c` | `lookupSymbol` para resolver nombres, y `symbol->parameters` para leer firmas |
+| `semantic_analyzer.c` | Los llamados: el recorrido decide *dónde* hay una expresión, esta unidad decide *de qué tipo es* |
 
 | Va hacia | Qué entrega |
 | --- | --- |
-| `semantic_analyzer.c` (F11) | El tipo de cada expresión, para validar condiciones, asignaciones y `return` |
-| `intermediate_code.c` (F13) | `node->type` en cada nodo de expresión y `node->symbol` apuntando a la tabla. **El generador confía en esos tipos y no revalida nada** |
+| `semantic_analyzer.c` | El tipo de cada expresión, para validar condiciones, asignaciones y `return` |
+| `intermediate_code.c` | `node->type` en cada nodo de expresión y `node->symbol` apuntando a la tabla. **El generador confía en esos tipos y no revalida nada** |
 
-**El reparto con F11** es la distinción que conviene tener clara, porque los dos
+**El reparto con [análisis semántico](03-analisis-semantico.md)** es la distinción que conviene tener clara, porque los dos
 archivos se llaman "análisis semántico" en el habla común:
 
-| | `type_checker.c` (F10) | `semantic_analyzer.c` (F11) |
+| | `type_checker.c` | `semantic_analyzer.c` |
 | --- | --- | --- |
 | Recorre | Expresiones | Sentencias y declaraciones |
 | Pregunta | "¿De qué tipo es esto?" | "¿Está permitido esto acá?" |
@@ -463,4 +462,4 @@ estructura actual.
 
 ---
 
-**Siguiente:** [Análisis Semántico](04-semantic-analysis.md)
+**Siguiente:** [Análisis Semántico](03-analisis-semantico.md)

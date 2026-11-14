@@ -1,8 +1,8 @@
 # Acciones del Parser
 
-**Ficha F07** · Archivos: `include/parser_helpers.h`, `src/parser/parser_helpers.c` (146 líneas)
+**Archivos:** `include/parser_helpers.h`, `src/parser/parser_helpers.c` (146 líneas)
 
-Las funciones que las acciones de [la gramática](02.5-syntax-analysis.md) llaman
+Las funciones que las acciones de [la gramática](02-analisis-sintactico.md) llaman
 para armar listas de nodos durante las reducciones.
 
 ---
@@ -25,12 +25,12 @@ los construye `ast.c`**, no este archivo. Todos los constructores que llaman las
 acciones —`newOperatorNode`, `newMethodDeclaration`, `newParameterDeclaration`,
 `newIdentifierNode`, `newAssignmentNode`, `newMethodCallNode`, `newBlockNode`,
 `newParametersNode`, `newReturnNode`, `newWhileNode`, `newIfElseNode` y los tres
-de literales— viven en `ast.c` y son la ficha F08.
+de literales— viven en `ast.c` (documentado en la sección de [AST](04-ast.md)).
 
 | Módulo | Responsabilidad |
 | --- | --- |
-| `ast.c` (F08) | Crear nodos del AST, adoptar como hijos una lista ya armada, y liberarlos |
-| `parser_helpers.c` (F07) | Acumular nodos en listas temporales mientras dura la reducción |
+| `ast.c` | Crear nodos del AST, adoptar como hijos una lista ya armada, y liberarlos |
+| `parser_helpers.c` | Acumular nodos en listas temporales mientras dura la reducción |
 
 La única excepción es `resolveVariableDefinition`, que modifica nodos en el
 lugar. Está acá porque resuelve un problema propio de la forma de la gramática,
@@ -148,7 +148,7 @@ en una lista de declaraciones individuales, ya tipadas. Ver §7.
 
 ### Lo que se fue a `ast.c`
 
-Dos funciones que antes estaban acá ahora son de la ficha F08:
+Dos funciones que antes estaban acá ahora viven en el módulo del [AST](04-ast.md):
 `newParameterDeclaration`, que es un constructor más, y `resolveNodeArray`, la
 que disuelve la lista dentro del nodo padre (§6). Esta última es `static` en
 `ast.c`: la usan solo los tres constructores que reciben una lista
@@ -298,17 +298,17 @@ asimetría entre las dos reglas de la gramática.
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `bison.y` (F06) | Nodos ya construidos y `DataType`; las acciones llaman a estas funciones |
-| `ast.c` (F08) | `freeAST`, que este módulo usa para descartar nodos cuando falla una reserva |
+| `bison.y` | Nodos ya construidos y `DataType`; las acciones llaman a estas funciones |
+| `ast.c` | `freeAST`, que este módulo usa para descartar nodos cuando falla una reserva |
 
-| Hacia `ast.c` (F08) | Qué entrega |
+| Hacia `ast.c` | Qué entrega |
 | --- | --- |
 | `newBlockNode`, `newParametersNode`, `newMethodCallNode` | Las listas armadas acá, que esos constructores adoptan como hijos |
 
 | Va hacia | Qué entrega |
 | --- | --- |
 | El AST | Nodos con `children` y `childCount` ya poblados. **Ningún `NodeArray` sobrevive al parseo** |
-| Análisis semántico (F09–F11) | Símbolos con nombre y tipo, pero con `uid` en 0 y sin ámbito resuelto |
+| Análisis semántico | Símbolos con nombre y tipo, pero con `uid` en 0 y sin ámbito resuelto |
 
 ---
 
@@ -349,7 +349,7 @@ buen ejemplo de para qué sirve que el módulo no sepa nada de tipos concretos.
   parser crea un `Symbol` provisorio con el nombre para cada aparición de un
   identificador (uso, destino de asignación o llamada). El análisis semántico,
   al resolverlo contra la tabla de símbolos, lo reemplaza por el declarado con
-  `resolveNodeSymbol` (ficha F08), que libera el provisorio antes de pisar el
+  `resolveNodeSymbol` (definida en [AST](04-ast.md)), que libera el provisorio antes de pisar el
   puntero. Antes de ese arreglo se perdía un símbolo por referencia: valgrind
   sobre `examples/factorial.ctds` informaba 8 bloques perdidos desde
   `newSymbol`.
@@ -396,4 +396,4 @@ buen ejemplo de para qué sirve que el módulo no sepa nada de tipos concretos.
 
 ---
 
-**Siguiente:** [Árbol de Sintaxis Abstracta (AST)](03-ast.md)
+**Siguiente:** [Árbol de Sintaxis Abstracta (AST)](04-ast.md)

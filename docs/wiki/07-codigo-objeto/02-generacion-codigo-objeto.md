@@ -1,10 +1,10 @@
 # Generación de Código Objeto
 
-**Ficha F18** · Archivos: `include/object_code.h`, `src/object_code/object_code.c` (668 líneas)
+**Archivos:** `include/object_code.h`, `src/object_code/object_code.c` (668 líneas)
 
-La traducción de cada [cuádrupla TAC](05-tac-representation.md) a assembly
-x86-64 usando el [marco de pila](06.5-stack-frame.md). El assembly se emite como
-texto con `buildStringf` del [acumulador de cadenas](01.8-utilities.md): no hay
+La traducción de cada [cuádrupla TAC](../05-codigo-intermedio/01-representacion-tac.md) a assembly
+x86-64 usando el [marco de pila](01-marco-de-pila.md). El assembly se emite como
+texto con `buildStringf` del [acumulador de cadenas](../02-infraestructura/04-utilidades-y-tipos.md): no hay
 una representación intermedia de instrucciones de máquina. **Es el archivo más
 grande del proyecto.**
 
@@ -12,7 +12,7 @@ grande del proyecto.**
     El enunciado acota el código objeto a **tipos enteros y lógicos**, así que
     acá no hay nada de `float`: un programa que use reales se rechaza antes, al
     generar el código intermedio, con el mensaje y la línea correspondientes.
-    Ver [la página inicial](../index.md).
+    Ver [Alcance y Extensiones](../../decisiones/alcance-y-extensiones.md#1-alcance-de-float).
 
 ---
 
@@ -48,7 +48,7 @@ que los tests puedan emitir una instrucción aislada sin recorrer un programa
 entero; las otras **treinta y dos** funciones del módulo son `static`.
 
 **`enabled` llega acá porque `strength-reduce` es la única optimización que
-depende de la máquina** (ver la [ficha F15](05.9-optimizer.md)): decidir si una
+depende de la máquina** (ver la [optimizador](../06-optimizador/02-optimizador.md)): decidir si una
 multiplicación se convierte en un desplazamiento solo tiene sentido cuando ya se
 sabe qué instrucción se va a emitir.
 
@@ -76,7 +76,7 @@ buildStringf("\n.section .note.GNU-stack,\"\",@progbits\n");
 ```
 
 Dos secciones del objeto y **dos pasadas por función**, detalladas en la
-[ficha F17](06.5-stack-frame.md).
+[marco de pila](01-marco-de-pila.md).
 
 **Las dos secciones se emiten en ese orden y no es indistinto:** las variables
 globales tienen que estar declaradas antes de que el código las referencie, porque el ensamblador resuelve los símbolos en una pasada.
@@ -178,7 +178,7 @@ llamada interna sobrescriba los registros.
 
 Es la función más compleja del módulo. Cuando llega el `call n`, los `n`
 argumentos ya están copiados en ranuras del marco (los dejó ahí cada `param`,
-ver la [ficha F17](06.5-stack-frame.md)); los últimos `n` de la pila de
+ver la [marco de pila](01-marco-de-pila.md)); los últimos `n` de la pila de
 pendientes son los de esta llamada:
 
 ```c
@@ -260,7 +260,7 @@ Las instrucciones `setl`, `setg`, `sete` solo pueden escribir en un registro de
 para `TAC_LT`, `TAC_GT` y `TAC_EQ` devuelve las tres variantes que se usan: el
 `setCC` para producir el booleano, y el salto que se toma si la comparación da
 verdadera y si da falsa (estos dos los usa la fusión con el salto siguiente, ver
-el [ADR 003](../decisiones/adr-003-fusion-comparacion-y-salto-condicional.md)):
+el [ADR 003](../../decisiones/adr-003-fusion-comparacion-y-salto-condicional.md)):
 
 ```asm
 cmpl   %edx, %eax      # calcula %eax - %edx y setea flags
@@ -344,7 +344,7 @@ devuelve `operand->symbol->id` —el identificador original— y solo cae al
 **Saber si un operando es global no requiere ninguna búsqueda:**
 `isDeclaredGlobal` lee `operand->symbol->isGlobal`, la marca que dejó la tabla
 de símbolos al registrar la variable en el ámbito global (ver el
-[ADR 002](../decisiones/adr-002-resolucion-variables-globales-isglobal.md)).
+[ADR 002](../../decisiones/adr-002-resolucion-variables-globales-isglobal.md)).
 
 Eso es deliberado y vale entender por qué: el `@uid` existe para desambiguar
 nombres repetidos, y **una global no puede estar repetida**, porque hay un solo
@@ -477,7 +477,7 @@ argumentos se pisarían.
 
 **Las tres posiciones distintas de la etiqueta** —`result` en `emitLabel`,
 `firstOperand` en `emitGoto`, `secondOperand` en los saltos condicionales— son la
-asimetría del catálogo de cuádruplas ([ficha F12](05-tac-representation.md)).
+asimetría del catálogo de cuádruplas ([representación TAC](../05-codigo-intermedio/01-representacion-tac.md)).
 Acá se paga: hay que saber en qué campo guardó la etiqueta cada opcode.
 
 **`emitNot` merece un párrafo.** Negar un booleano con `xorl $1` da el resultado
@@ -539,14 +539,14 @@ entre dos llamadas a `generateAssembly`.
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `tac.h` (F12, F13) | La lista de cuádruplas, ya optimizada si se pidió |
-| `optimizer.h` (F15) | El `OptimizationSet`, para `strength-reduce` y la fusión de `peephole` |
-| `function_frame.h` (F17) | `frameSize` y un offset por operando |
-| `string_builder.h` (F04) | `buildStringf`, por donde sale todo el assembly |
+| `tac.h` | La lista de cuádruplas, ya optimizada si se pidió |
+| `optimizer.h` | El `OptimizationSet`, para `strength-reduce` y la fusión de `peephole` |
+| `function_frame.h` | `frameSize` y un offset por operando |
+| `string_builder.h` | `buildStringf`, por donde sale todo el assembly |
 
 | Va hacia | Qué entrega |
 | --- | --- |
-| `driver.c` (F02) | El texto del assembly, que se escribe al `.ass` o se pasa a `gcc` |
+| `driver.c` | El texto del assembly, que se escribe al `.ass` o se pasa a `gcc` |
 
 **Lo que esta fase asume y no verifica**, porque las anteriores lo garantizan:
 
@@ -565,7 +565,7 @@ entre dos llamadas a `generateAssembly`.
 Un `case` en `generateInstruction` que llame a una función de emisión existente
 o a una nueva. **Si se omite, cae en el `default` que no hace nada**: la
 instrucción desaparece del ejecutable sin un solo aviso. Es el fallo silencioso
-de esta ficha, el mismo patrón que en F13.
+de este módulo, el mismo patrón que en [generación de TAC](../05-codigo-intermedio/02-generacion-tac.md).
 
 ### Un operador relacional nuevo (`!=`, `<=`, `>=`)
 
@@ -573,7 +573,7 @@ Un `case` en `getRelationalMnemonics` con sus tres mnemónicos (por ejemplo
 `setne` / `jne` / `je` para `!=`) y su opcode en la lista de relacionales del
 despachador, más su opcode en el TAC y su fila en el chequeo de tipos. La fusión
 con el salto siguiente funciona sola, porque lee la misma tabla. Es la extensión
-más barata de todas, y está desarrollada en la [ficha F15](05.9-optimizer.md).
+más barata de todas, y está desarrollada en la [optimizador](../06-optimizador/02-optimizador.md).
 
 ### Reducir el código generado
 

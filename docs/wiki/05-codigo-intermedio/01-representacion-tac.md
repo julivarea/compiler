@@ -1,6 +1,6 @@
 # La Representación Intermedia (Cuádruplas TAC)
 
-**Ficha F12** · Archivos: `include/tac.h`, `src/intermediate_code/tac.c` (~610 líneas)
+**Archivos:** `include/tac.h`, `src/intermediate_code/tac.c` (~610 líneas)
 
 La estructura de datos del **Código de Tres Direcciones**: el puente entre el
 front-end y el back-end.
@@ -9,13 +9,13 @@ front-end y el back-end.
     El enunciado acota esta etapa a **tipos enteros y lógicos**. El operando
     constante guarda un `int` y nada más, y un programa que use `float` se
     rechaza al empezar a generar, con su línea. Ver la
-    [ficha F13](05.5-tac-generation.md).
+    [generación de TAC](02-generacion-tac.md).
 
 ---
 
 ## 1. Qué problema resuelve
 
-El [AST](03-ast.md) es una estructura **arbórea**, buena para representar la
+El [AST](../03-lexico-sintactico-y-ast/04-ast.md) es una estructura **arbórea**, buena para representar la
 sintaxis del lenguaje. El assembly es una secuencia **lineal** de instrucciones
 que operan sobre registros y memoria. Pasar de uno al otro de un salto es
 difícil, porque hay que resolver al mismo tiempo el orden de evaluación, los
@@ -24,7 +24,7 @@ resultados intermedios, el control de flujo y la asignación de registros.
 El TAC es el paso intermedio: **lineal como el assembly, pero todavía sin
 máquina**. No hay registros ni direcciones; hay operandos con nombre y
 temporales ilimitados. Eso convierte el problema en dos problemas chicos:
-aplanar el árbol (ficha F13) y asignar almacenamiento (ficha F17).
+aplanar el árbol ([generación TAC](02-generacion-tac.md)) y asignar almacenamiento ([marco de pila](../07-codigo-objeto/01-marco-de-pila.md)).
 
 Es además la representación sobre la que trabaja el **optimizador**: es
 suficientemente simple para analizar y suficientemente abstracta para que una
@@ -67,7 +67,7 @@ t1 = a + t0
 ```
 
 Esa descomposición es lo que convierte el árbol en una lista, y es todo el
-trabajo de la ficha F13.
+trabajo de la [generación de TAC](02-generacion-tac.md).
 
 ### Por qué cuádruplas y no texto
 
@@ -201,7 +201,7 @@ snprintf(qualifiedName, sizeof(qualifiedName), "%s@%d", id, symbol->uid);
 **Por qué hace falta.** El TAC es una lista plana: **no tiene ámbitos**. Un
 programa con tres variables llamadas `x` en ámbitos distintos produciría tres
 operandos con el mismo nombre, y ninguna fase posterior podría distinguirlas. El
-`uid` que asignó la [tabla de símbolos](04-symbol-table.md) es único en todo el
+`uid` que asignó la [tabla de símbolos](../04-semantico/01-tabla-de-simbolos.md) es único en todo el
 programa, así que el nombre calificado los separa.
 
 ```c
@@ -338,7 +338,7 @@ L0:
 ```
 
 El detalle de cómo se generan estas secuencias es la
-[ficha F13](05.5-tac-generation.md). Lo que importa acá es que **la ausencia de
+[generación de TAC](02-generacion-tac.md). Lo que importa acá es que **la ausencia de
 esos dos opcodes es lo que garantiza la semántica del lenguaje**.
 
 ---
@@ -418,7 +418,7 @@ mitades sueltas existen para que los tests armen y enlacen instrucciones a mano.
 
 **`appendInstruction` devuelve la instrucción que creó, o `NULL` si no pudo
 reservarla.** El `emit` del generador (ver la
-[ficha F13](05.5-tac-generation.md)) usa ese `NULL` para detectar la falta de
+[generación de TAC](02-generacion-tac.md)) usa ese `NULL` para detectar la falta de
 memoria, y los tests usan el puntero para inspeccionar la instrucción recién
 agregada. Las etiquetas de salto no necesitan retocar nada después de emitido:
 son nombres, así que se pueden referenciar antes de definirlas.
@@ -442,18 +442,18 @@ consecuencias:
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `symbol_table.c` (F09) | El `Symbol` con su `uid`, que `tacVariable` convierte en `x@uid` |
-| `types.h` (F04) | `DataType`, que viaja en cada operando |
+| `symbol_table.c` | El `Symbol` con su `uid`, que `tacVariable` convierte en `x@uid` |
+| `types.h` | `DataType`, que viaja en cada operando |
 
 | Va hacia | Qué entrega |
 | --- | --- |
-| `intermediate_code.c` (F13) | Los constructores con los que arma la lista |
-| `optimizer.c` (F15) | La lista, que recorre y modifica en el lugar |
-| `live_variable_analysis.c` (F14) | La lista, que parte en bloques básicos |
-| `object_code.c` (F18) | La lista, que traduce instrucción por instrucción |
-| `driver.c` (F02) | `formatTACList` para escribir el `.ci` o el `.opt` |
+| `intermediate_code.c` | Los constructores con los que arma la lista |
+| `optimizer.c` | La lista, que recorre y modifica en el lugar |
+| `live_variable_analysis.c` | La lista, que parte en bloques básicos |
+| `object_code.c` | La lista, que traduce instrucción por instrucción |
+| `driver.c` | `formatTACList` para escribir el `.ci` o el `.opt` |
 
-**Esta ficha es solo la estructura: no genera ni analiza nada.** Es la definición
+**Este módulo es solo la estructura: no genera ni analiza nada.** Es la definición
 del formato que comparten las cuatro fases de arriba, y esa es la razón de que
 sea la primera que había que estabilizar antes de escribir el optimizador o el
 generador de código.
@@ -536,7 +536,7 @@ instrucción por tres, porque hay tres operandos.
 - **Temporales**: nombres que genera el compilador para los resultados
   intermedios. En el TAC son **ilimitados**, y eso es deliberado: posponer la
   decisión de cuántos registros hay hasta la generación de código objeto. Acá esa
-  decisión se simplifica dándole a cada temporal un lugar en la pila (ficha F17),
+  decisión se simplifica dándole a cada temporal un lugar en la pila ([marco de pila](../07-codigo-objeto/01-marco-de-pila.md)),
   que es lo correcto pero no lo eficiente; la alternativa es la **asignación de
   registros**, que se modela como un coloreo del grafo de interferencia.
 - **Renombrado único**: el sufijo `@uid` resuelve el mismo problema que las formas
@@ -590,4 +590,4 @@ int main(){
 
 ---
 
-**Siguiente:** [Generación de Código Intermedio](05.5-tac-generation.md)
+**Siguiente:** [Generación de Código Intermedio](02-generacion-tac.md)

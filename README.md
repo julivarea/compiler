@@ -52,7 +52,7 @@ Las optimizaciones disponibles son:
 | `peephole` | Mirilla sobre instrucciones contiguas: saltos redundantes a la etiqueta siguiente |
 | `strength-reduce` | Reducción de fuerza: multiplicaciones por potencias de 2 pasan a desplazamientos |
 
-En la [Wiki de Onboarding](docs/wiki/00-index.md) hay
+En la [Wiki](docs/wiki/index.md) hay
 una versión navegable estructurada paso a paso. Se lee mucho mejor servida como
 sitio que como archivos sueltos: ver [Documentación](#documentación).
 
@@ -107,7 +107,8 @@ sitio que como archivos sueltos: ver [Documentación](#documentación).
 ├── examples/                                        # programas .ctds de ejemplo, válidos e inválidos
 ├── build/                                           # archivos de compilacion
 ├── docs/                                            # páginas del sitio de documentación (ver "Documentación")
-│   ├── wiki/                                        # wiki de onboarding, una página por fase
+│   ├── wiki/                                        # wiki agrupada por etapa (espejando src/)
+│   ├── decisiones/                                  # alcance, ADRs y cambios a etapas anteriores
 │   └── spec/                                        # enunciado y especificación del lenguaje (PDF)
 ├── mkdocs.yml                                       # configuración del sitio: docs_dir, nav y tema
 ├── pyproject.toml / uv.lock                         # dependencias de la documentación (MkDocs)
@@ -336,14 +337,14 @@ Deja el HTML en `site/`, que es un artefacto generado y está en `.gitignore`.
 
 ### Por dónde empezar a leer
 
-El recorrido pensado para alguien que llega al proyecto es la **Wiki de
-Onboarding**, que va de la visión general del compilador hasta cada fase en el
-orden en que se ejecutan: léxico y sintáctico, AST, análisis semántico, código
-intermedio, análisis de variables vivas, optimización y código objeto. La sección
-**Documentación Técnica** es material de consulta puntual (ADRs de arquitectura,
-explicación del conflicto de Bison, algoritmo de Sethi-Ullman y cambios a etapas anteriores),
-no se lee de corrido. En `docs/spec/` quedan el enunciado y la especificación oficial,
-y en `docs/historicos/` el archivo de borradores e informes tempranos.
+El recorrido pensado para alguien que llega al proyecto es la **Wiki**, organizada
+en las etapas del compilador (espejando `src/`): infraestructura (`core/`),
+léxico/sintáctico/AST (`parser/`), análisis semántico (`semantic/`), código
+intermedio (`intermediate_code/`), optimizador (`optimizer/`) y código objeto
+(`object_code/`). Las pestañas **Decisiones de Diseño** y **Problemas Conocidos**
+reúnen el alcance, ADRs y limitaciones requeridas por el enunciado. En `docs/spec/`
+quedan el enunciado y la especificación oficial, en `docs/convenciones/` las guías
+internas del equipo y en `docs/historicos/` el archivo de borradores tempranos.
 
 ### Agregar una página nueva
 

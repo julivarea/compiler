@@ -1,6 +1,6 @@
 # Análisis Léxico
 
-**Ficha F05** · Archivo: `src/parser/lexer.l` (78 líneas)
+**Archivo:** `src/parser/lexer.l` (78 líneas)
 
 ---
 
@@ -449,4 +449,4 @@ Lo que implementa esta fase, con los nombres de la bibliografía:
 
 ---
 
-**Siguiente:** [Análisis Sintáctico](02.5-syntax-analysis.md)
+**Siguiente:** [Análisis Sintáctico](02-analisis-sintactico.md)

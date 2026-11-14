@@ -197,4 +197,4 @@ esperado.
 
 ---
 
-**Siguiente:** [Visión General y Arquitectura](01-overview.md)
+**Siguiente:** [Visión General y Arquitectura](02-vision-general.md)

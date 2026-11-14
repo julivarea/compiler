@@ -6,6 +6,7 @@ repo_name: julivarea/compiler
 docs_dir: docs
 edit_uri: edit/main/docs/
 exclude_docs: |
+  convenciones/
   historicos/
 
 extra:
@@ -50,41 +51,44 @@ theme:
 
 nav:
   - Inicio: index.md
-  - Wiki de Onboarding:
-      - Índice: wiki/00-index.md
-      - 1. Primeros Pasos: wiki/00.5-getting-started.md
-      - 2. Visión General y Arquitectura: wiki/01-overview.md
-      - 3. Entrada y Línea de Comandos: wiki/01.2-cli.md
-      - 4. Orquestación de las Etapas: wiki/01.4-driver.md
-      - 5. Errores y Salida de Debug: wiki/01.6-errors.md
-      - 6. Utilidades y Tipos Base: wiki/01.8-utilities.md
-      - 7. Análisis Léxico: wiki/02-lexical-analysis.md
-      - 8. Análisis Sintáctico: wiki/02.5-syntax-analysis.md
-      - 9. Acciones del Parser: wiki/02.7-parser-actions.md
-      - 10. Árbol de Sintaxis Abstracta (AST): wiki/03-ast.md
-      - 11. Tabla de Símbolos y Ámbitos: wiki/04-symbol-table.md
-      - 12. Chequeo de Tipos: wiki/04.5-type-checker.md
-      - 13. Análisis Semántico: wiki/04-semantic-analysis.md
-      - 14. Representación Intermedia (TAC): wiki/05-tac-representation.md
-      - 15. Generación de Código Intermedio: wiki/05.5-tac-generation.md
-      - 16. Análisis de Variables Vivas: wiki/05.7-live-variables.md
-      - 17. Optimización del Código Intermedio: wiki/05.9-optimizer.md
-      - 18. Marco de Pila: wiki/06.5-stack-frame.md
-      - 19. Generación de Código Objeto: wiki/06-object-code.md
-  - Documentación Técnica:
+  - Wiki:
+      - Índice: wiki/index.md
+      - 1. Introducción:
+          - 1.1 Primeros Pasos: wiki/01-introduccion/01-primeros-pasos.md
+          - 1.2 Visión General y Arquitectura: wiki/01-introduccion/02-vision-general.md
+      - 2. Infraestructura (core/):
+          - 2.1 Entrada y Línea de Comandos: wiki/02-infraestructura/01-cli-y-entrada.md
+          - 2.2 Orquestación (driver): wiki/02-infraestructura/02-driver.md
+          - 2.3 Errores y Salida de Debug: wiki/02-infraestructura/03-errores-y-debug.md
+          - 2.4 Utilidades y Tipos Base: wiki/02-infraestructura/04-utilidades-y-tipos.md
+      - 3. Léxico, Sintáctico y AST (parser/):
+          - 3.1 Análisis Léxico: wiki/03-lexico-sintactico-y-ast/01-analisis-lexico.md
+          - 3.2 Análisis Sintáctico: wiki/03-lexico-sintactico-y-ast/02-analisis-sintactico.md
+          - 3.3 Acciones del Parser: wiki/03-lexico-sintactico-y-ast/03-acciones-del-parser.md
+          - 3.4 Árbol de Sintaxis Abstracta (AST): wiki/03-lexico-sintactico-y-ast/04-ast.md
+      - 4. Análisis Semántico (semantic/):
+          - 4.1 Tabla de Símbolos y Ámbitos: wiki/04-semantico/01-tabla-de-simbolos.md
+          - 4.2 Chequeo de Tipos: wiki/04-semantico/02-chequeo-de-tipos.md
+          - 4.3 Análisis Semántico: wiki/04-semantico/03-analisis-semantico.md
+      - 5. Código Intermedio (intermediate_code/):
+          - 5.1 Representación Intermedia (TAC): wiki/05-codigo-intermedio/01-representacion-tac.md
+          - 5.2 Generación de Código Intermedio: wiki/05-codigo-intermedio/02-generacion-tac.md
+      - 6. Optimizador (optimizer/):
+          - 6.1 Análisis de Variables Vivas: wiki/06-optimizador/01-variables-vivas.md
+          - 6.2 Optimización del Código Intermedio: wiki/06-optimizador/02-optimizador.md
+      - 7. Código Objeto (object_code/):
+          - 7.1 Marco de Pila: wiki/07-codigo-objeto/01-marco-de-pila.md
+          - 7.2 Generación de Código Objeto: wiki/07-codigo-objeto/02-generacion-codigo-objeto.md
+  - Decisiones de Diseño:
+      - Alcance y Extensiones: decisiones/alcance-y-extensiones.md
+      - Cambios a Etapas Anteriores: decisiones/cambios-etapas-anteriores.md
       - Desacoplamiento TAC y Stack Offsets (ADR 001): decisiones/adr-001-desacoplamiento-tac-offsets-stack.md
       - Resolución O(1) de Variables Globales (ADR 002): decisiones/adr-002-resolucion-variables-globales-isglobal.md
       - Fusión de Comparaciones y Saltos (ADR 003): decisiones/adr-003-fusion-comparacion-y-salto-condicional.md
-      - Explicación Conflicto Bison: decisiones/explicacion_conflicto_bison.md
+      - Ámbito Único de Método y Parámetros (ADR 004): decisiones/adr-004-ambito-metodo-y-parametros.md
+      - Conflicto Shift/Reduce en Bison: decisiones/explicacion_conflicto_bison.md
       - Algoritmo de Sethi-Ullman: decisiones/algoritmo_sethi_ullman.md
-      - Cambios a Etapas Anteriores: cambios-etapas-anteriores.md
-  - Convenciones del Código:
-      - Estilo y Organización: convenciones/refactor.md
-      - Comentarios y Doxygen: convenciones/convenciones_comentarios.md
-  - Bugs Resueltos:
-      - Asignación a un método: bugs/asignacion_de_metodo.md
-      - Redefinición de un parámetro: bugs/redefinicion_parametro_en_metodo.md
-      - Casteos en una comparación: bugs/tipos_casteados_en_op_bin.md
+  - Problemas Conocidos: problemas-conocidos.md
 
 markdown_extensions:
   - admonition

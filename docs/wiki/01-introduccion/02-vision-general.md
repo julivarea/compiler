@@ -636,4 +636,4 @@ flowchart LR
 
 ---
 
-**Siguiente:** [Entrada y Línea de Comandos](01.2-cli.md)
+**Siguiente:** [Entrada y Línea de Comandos](../02-infraestructura/01-cli-y-entrada.md)

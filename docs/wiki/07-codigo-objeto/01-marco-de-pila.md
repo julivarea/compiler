@@ -1,6 +1,6 @@
 # Marco de Pila
 
-**Ficha F17** · Archivos: `include/function_frame.h`, `src/object_code/function_frame.c` (247 líneas)
+**Archivos:** `include/function_frame.h`, `src/object_code/function_frame.c` (247 líneas)
 
 Dónde vive cada variable, parámetro y temporal durante la ejecución de un
 método.
@@ -14,7 +14,7 @@ método.
 
 ## 1. Qué problema resuelve
 
-El [TAC](05-tac-representation.md) tiene **temporales ilimitados** con nombres
+El [TAC](../05-codigo-intermedio/01-representacion-tac.md) tiene **temporales ilimitados** con nombres
 simbólicos (`t0`, `x@3`), y la máquina tiene dieciséis registros y memoria. Hay
 que decidir dónde queda cada uno.
 
@@ -114,7 +114,7 @@ typedef struct StackSlot {
 
 Nada más. Es una entrada de un mapa nombre → offset, y el nombre es el del
 operando TAC tal cual, con su sufijo `@uid`. **Ahí se cobra el renombrado único**
-de la ficha F09: como los nombres ya son irrepetibles en todo el programa, buscar
+de la [tabla de símbolos](../04-semantico/01-tabla-de-simbolos.md): como los nombres ya son irrepetibles en todo el programa, buscar
 por nombre no puede confundir dos variables homónimas de ámbitos distintos.
 
 ### `FunctionFrame`: trece campos en cuatro grupos
@@ -341,7 +341,7 @@ Nótese que **las globales no reciben ranura**: viven en `.data` y se acceden co
 ### Pasada 2: `emitFunction`
 
 Prólogo, traducir instrucción por instrucción consultando `getSlotOffset`,
-epílogo. Es la ficha F18.
+epílogo. Es la parte documentada en [generación de código objeto](02-generacion-codigo-objeto.md).
 
 ---
 
@@ -389,11 +389,11 @@ otra unidad.
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `tac.h` (F12) | Los `TACOperand`, de los que se usa el `name` como clave |
+| `tac.h` | Los `TACOperand`, de los que se usa el `name` como clave |
 
 | Va hacia | Qué entrega |
 | --- | --- |
-| `object_code.c` (F18) | `frameSize` para el prólogo, y un offset por cada operando, que se escribe como `offset(%rbp)` |
+| `object_code.c` | `frameSize` para el prólogo, y un offset por cada operando, que se escribe como `offset(%rbp)` |
 
 El módulo **no emite assembly**: no incluye `string_builder.h`. Es pura
 contabilidad, y eso lo hace testeable sin generar una línea de código.
@@ -420,7 +420,7 @@ fijo. `StackSlot` necesitaría un campo de tamaño.
 
 La mejora grande. En vez de darle ranura a cada temporal, mantener los más usados
 en registros. Se construye el **grafo de interferencia** a partir del
-[análisis de variables vivas](05.7-live-variables.md) —dos valores vivos al mismo
+[análisis de variables vivas](../06-optimizador/01-variables-vivas.md) —dos valores vivos al mismo
 tiempo interfieren y no pueden compartir registro— y se lo colorea con tantos
 colores como registros haya; lo que no se puede colorear se derrama a la pila.
 Este módulo seguiría existiendo para los derrames.
@@ -481,7 +481,7 @@ de coloreo, y es bastante más simple que hacerlo con registros.
 - **Asignación de almacenamiento** (*storage allocation*): decidir dónde vive cada
   valor. El espectro va desde "todo en memoria" —lo de acá, simple y lento— hasta
   la asignación de registros por coloreo de grafos. La información que habilita lo
-  segundo es exactamente el análisis de variables vivas de la ficha F14, lo cual
+  segundo es exactamente el [análisis de variables vivas](../06-optimizador/01-variables-vivas.md), lo cual
   explica por qué ese análisis es la pieza central de un back-end optimizador.
 - **Derrame** (*spilling*): cuando no hay registros suficientes, mover un valor a
   memoria. En este compilador **todo está derramado desde el principio**, que es el
@@ -519,4 +519,4 @@ grep -A3 '^factorial:' examples/factorial.ass          # el subq del prologo
 
 ---
 
-**Siguiente:** [Generación de Código Objeto](06-object-code.md)
+**Siguiente:** [Generación de Código Objeto](02-generacion-codigo-objeto.md)

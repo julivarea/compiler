@@ -1,9 +1,9 @@
 # Generación de Código Intermedio
 
-**Ficha F13** · Archivos: `include/intermediate_code.h`, `src/intermediate_code/intermediate_code.c` (392 líneas)
+**Archivos:** `include/intermediate_code.h`, `src/intermediate_code/intermediate_code.c` (392 líneas)
 
-El recorrido que aplana el [AST](03-ast.md) anotado a la lista lineal de
-[cuádruplas](05-tac-representation.md).
+El recorrido que aplana el [AST](../03-lexico-sintactico-y-ast/04-ast.md) anotado a la lista lineal de
+[cuádruplas](01-representacion-tac.md).
 
 !!! note "Esta etapa cubre tipos enteros y lógicos"
     El enunciado acota el código intermedio a **tipos enteros y lógicos**. El
@@ -81,7 +81,7 @@ int f(int a, int b){ return a * b; }  ->  t0 = a@4 * b@5
 ```
 
 Repetir `t0` entre funciones no confunde a nadie: un temporal solo existe dentro
-de su función, y el marco de pila de cada una es independiente (ficha F17). Las
+de su función, y el marco de pila de cada una es independiente (ver [marco de pila](../07-codigo-objeto/01-marco-de-pila.md)). Las
 etiquetas, en cambio, terminan siendo símbolos del assembly (`.L3`), así que
 tienen que ser únicas en todo el archivo; por eso `labelCount` no se reinicia.
 
@@ -96,7 +96,7 @@ static void emit(TACOperation operation, TACOperand result,
                  TACOperand firstOperand, TACOperand secondOperand);
 ```
 
-`emit` llama a `appendInstruction` de la [ficha F12](05-tac-representation.md)
+`emit` llama a `appendInstruction` de la [representación TAC](01-representacion-tac.md)
 sobre `currentCode` y, si la reserva falla, prende `tacMemoryError` (§11). Cada
 sitio pasa los cuatro campos de la cuádrupla, con `tacNone()` en los que el
 opcode no usa:
@@ -109,11 +109,11 @@ emit(TAC_LABEL, elseIf, tacNone(), tacNone());       /* la etiqueta va en result
 Hay que conocer en qué campo va cada cosa, y la asimetría que más confunde es la
 de las etiquetas: en `TAC_LABEL` la etiqueta va en **`result`**, en `TAC_GOTO` en
 **`firstOperand`** y en los saltos condicionales en **`secondOperand`**. La tabla
-de opcodes de la ficha F12 lo resume.
+de opcodes de [representación TAC](01-representacion-tac.md) lo resume.
 
 ## 5. Los dos dispatchers
 
-La estructura espeja la del [análisis semántico](04-semantic-analysis.md), y la
+La estructura espeja la del [análisis semántico](../04-semantico/03-analisis-semantico.md), y la
 diferencia entre las dos funciones es la idea central del archivo.
 
 ### `generateStatementCode(node)` — no devuelve nada
@@ -137,7 +137,7 @@ se recorre igual que cualquier bloque. **Lo que separa el `global x@1, INT` del
 `generateVariableDeclarationCode` emite `TAC_GLOBAL_DECL` si
 `node->symbol->isGlobal` y `TAC_LOCAL_DECL` si no. Esa marca la dejó la tabla de
 símbolos al registrar la variable en el ámbito global (ver el
-[ADR 002](../decisiones/adr-002-resolucion-variables-globales-isglobal.md)).
+[ADR 002](../../decisiones/adr-002-resolucion-variables-globales-isglobal.md)).
 
 ### `generateExpressionCode(node)` — devuelve un `TACOperand`
 
@@ -517,14 +517,14 @@ generador de código objeto traduciría a un programa roto.
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| El AST anotado (F08, F10, F11) | `node->type` resuelto en cada expresión, `node->symbol` apuntando a la tabla, y la garantía de validez |
-| `tac.c` (F12) | Los constructores de operandos y `appendInstruction` |
+| El AST anotado | `node->type` resuelto en cada expresión, `node->symbol` apuntando a la tabla, y la garantía de validez |
+| `tac.c` | Los constructores de operandos y `appendInstruction` |
 
 | Va hacia | Qué entrega |
 | --- | --- |
-| `optimizer.c` (F15) | La lista, que modifica en el lugar tras el cast de `const` |
-| `object_code.c` (F18) | La lista, traducida instrucción por instrucción |
-| `driver.c` (F02) | La lista, que se vuelca al `.ci` con `formatTACList` |
+| `optimizer.c` | La lista, que modifica en el lugar tras el cast de `const` |
+| `object_code.c` | La lista, traducida instrucción por instrucción |
+| `driver.c` | La lista, que se vuelca al `.ci` con `formatTACList` |
 
 Lo que esta fase **garantiza** a las siguientes, y que conviene poder enumerar:
 
@@ -576,7 +576,7 @@ natural al estado actual.
 - **Los temporales se repiten entre métodos** (§3): cada función arranca en
   `t0`. Las etiquetas, en cambio, son únicas en todo el programa.
 - **No hay plegado de constantes acá.** `2 + 3` genera `t0 = 2 + 3`, no `t0 = 5`.
-  Es deliberado: el plegado es trabajo del optimizador (ficha F15), y mezclarlo
+  Es deliberado: el plegado es trabajo del [optimizador](../06-optimizador/02-optimizador.md), y mezclarlo
   acá haría que el `.ci` sin `-opt` no reflejara el programa escrito.
 - **El `default` de `generateStatementCode` es `generateBlockCode`**, que recorre
   los hijos. Un `NodeType` nuevo sin caso propio no da error: hace algo
@@ -618,7 +618,7 @@ natural al estado actual.
   alternativa al **código de valor numérico**, que calcularía los dos operandos.
 - **Temporales ilimitados**: generar tantos como haga falta y posponer la decisión
   de dónde viven. Es lo que permite separar la traducción de la asignación de
-  almacenamiento, que acá resuelve el marco de pila (ficha F17).
+  almacenamiento, que acá resuelve el [marco de pila](../07-codigo-objeto/01-marco-de-pila.md).
 
 ---
 
@@ -655,4 +655,4 @@ natural al estado actual.
 
 ---
 
-**Siguiente:** [Análisis de Variables Vivas](05.7-live-variables.md)
+**Siguiente:** [Análisis de Variables Vivas](../06-optimizador/01-variables-vivas.md)

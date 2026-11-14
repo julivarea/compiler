@@ -1,9 +1,9 @@
 # Análisis de Variables Vivas
 
-**Ficha F14** · Archivos: `include/live_variable_analysis.h`,
+**Archivos:** `include/live_variable_analysis.h`,
 `src/optimizer/live_variable_analysis.c` (484 líneas)
 
-El análisis de flujo de datos que le dice al optimizador (ficha F15) qué
+El análisis de flujo de datos que le dice al [optimizador](02-optimizador.md) qué
 asignaciones puede eliminar sin cambiar el comportamiento del programa.
 
 El análisis de variables vivas opera sobre la lista de instrucciones TAC (código de tres direcciones) generada tras el análisis semántico. Su objetivo es detectar **definiciones muertas** (asignaciones cuyo valor nunca se leerá) para que una etapa posterior pueda eliminarlas. Sus responsabilidades están organizadas en los módulos `src/optimizer/live_variable_analysis.c` y `include/live_variable_analysis.h`.
@@ -314,7 +314,7 @@ búsqueda por instrucción.
 | Función | Qué hace |
 | --- | --- |
 | `findBlockByLabel` | Busca el bloque que arranca con una etiqueta dada. Lo usa el armado de aristas |
-| `printBasicBlock` | Un bloque: sus instrucciones (vía `fprintTACInstruction` de F12), sus sucesores y sus cuatro conjuntos |
+| `printBasicBlock` | Un bloque: sus instrucciones (vía `fprintTACInstruction` de [representación TAC](../05-codigo-intermedio/01-representacion-tac.md)), sus sucesores y sus cuatro conjuntos |
 | `printVariableSet` | Un conjunto de bits como `{ a@1, t0 }`, traduciendo índices a nombres |
 
 `printVariableSet` es lo que hace legible el volcado: sin esa traducción de bits
@@ -542,4 +542,4 @@ de intentar un análisis interprocedural.
 
 ---
 
-**Siguiente:** [Optimización del Código Intermedio](05.9-optimizer.md)
+**Siguiente:** [Optimización del Código Intermedio](02-optimizador.md)

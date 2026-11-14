@@ -1,6 +1,6 @@
 # Tabla de Símbolos y Ámbitos
 
-**Ficha F09** · Archivos: `include/symbol_table.h`, `src/semantic/symbol_table.c` (278 líneas)
+**Archivos:** `include/symbol_table.h`, `src/semantic/symbol_table.c` (278 líneas)
 
 La estructura con la que el compilador sabe qué identificadores existen, de qué
 tipo son y cuál de los que comparten nombre corresponde en cada punto del
@@ -10,13 +10,13 @@ programa.
 
 ## 1. Qué problema resuelve
 
-El [AST](03-ast.md) tiene los nombres pero no sabe a qué se refieren: un `ID_NODE`
+El [AST](../03-lexico-sintactico-y-ast/04-ast.md) tiene los nombres pero no sabe a qué se refieren: un `ID_NODE`
 con el nombre `x` no dice qué `x`. La tabla de símbolos responde esa pregunta
 respetando el **anidamiento de ámbitos** del lenguaje, donde una declaración
 interna puede ocultar a una externa del mismo nombre.
 
 Es una estructura de datos, no una fase: la construye y consulta el
-[análisis semántico](04-semantic-analysis.md).
+[análisis semántico](03-analisis-semantico.md).
 
 ---
 
@@ -106,7 +106,7 @@ signifique dos cosas según el contexto.
 symbol->id = id;   /* no hay strdup aca */
 ```
 
-La cadena viene del `strdup` que hizo el [analizador léxico](02-lexical-analysis.md)
+La cadena viene del `strdup` que hizo el [analizador léxico](../03-lexico-sintactico-y-ast/01-analisis-lexico.md)
 y se libera en `freeSymbol`. Es la misma cadena recorriendo todo el front-end sin
 una sola copia intermedia; el precio es que pasarle un literal de string a
 `newSymbol` haría que `freeSymbol` intentara liberar memoria estática.
@@ -246,7 +246,7 @@ Esto tiene dos usos y los dos importan:
 **1. `uid == 0` significa "nunca registrado".** Es lo que usa `freeAST` para
 decidir si un nodo es dueño de su símbolo, y `resolveNodeSymbol` para saber si
 el símbolo que va a reemplazar es un provisorio del parser que hay que liberar
-(ver la [ficha F08](03-ast.md)). Por eso el contador arranca en 1 y no en 0.
+(ver la [AST](../03-lexico-sintactico-y-ast/04-ast.md)). Por eso el contador arranca en 1 y no en 0.
 
 **2. Desambiguar nombres repetidos en las fases posteriores.** El código
 intermedio y el assembly no tienen ámbitos: son listas planas de instrucciones.
@@ -358,13 +358,13 @@ declarado". Con este orden, `fact(5)` devuelve 120. Verificado.
 
 | Viene de | Qué cruza la frontera |
 | --- | --- |
-| `ast.c` (F08) | Los `Symbol` ya creados por el parser, con `uid` en 0 y tipo provisorio |
+| `ast.c` | Los `Symbol` ya creados por el parser, con `uid` en 0 y tipo provisorio |
 
 | Va hacia | Qué entrega |
 | --- | --- |
-| `type_checker.c` (F10) | `lookupSymbol` para resolver cada identificador y leer su tipo |
-| `semantic_analyzer.c` (F11) | `lookupSymbolInScope` para detectar duplicados, `scope->function` para el tipo de retorno |
-| `intermediate_code.c` (F13) | El `uid` de cada símbolo, que se convierte en el sufijo `@n` de los nombres del TAC |
+| `type_checker.c` | `lookupSymbol` para resolver cada identificador y leer su tipo |
+| `semantic_analyzer.c` | `lookupSymbolInScope` para detectar duplicados, `scope->function` para el tipo de retorno |
+| `intermediate_code.c` | El `uid` de cada símbolo, que se convierte en el sufijo `@n` de los nombres del TAC |
 
 El punto importante: después del análisis semántico, **los símbolos están
 compartidos**. Todos los nodos del AST que mencionan la misma variable apuntan al
@@ -387,7 +387,7 @@ nada avisa si falta un caso.
 
 Es la extensión que pediría el generador de código si se quisiera evitar el
 cálculo de offsets aparte: un campo `int stackOffset` en `Symbol`, que el
-generador rellenaría. Hoy eso vive en `function_frame.c` (ficha F17), indexado por
+generador rellenaría. Hoy eso vive en [`function_frame.c`](../07-codigo-objeto/01-marco-de-pila.md), indexado por
 nombre. Ponerlo acá acoplaría la tabla de símbolos al backend, que es
 justamente lo que la separación actual evita.
 
@@ -395,7 +395,7 @@ justamente lo que la separación actual evita.
 
 Cambiar `symbols` por una tabla de hash dentro de cada `Scope`. La interfaz
 (`lookupSymbol`, `lookupSymbolInScope`, `appendSymbol`) no cambia, así que
-**ninguna otra ficha se entera**: es un buen ejemplo de para qué sirve que la
+**ningún otro módulo se entera**: es un buen ejemplo de para qué sirve que la
 estructura esté detrás de funciones. Lo que se perdería es el orden de
 declaración, que hoy el arreglo conserva gratis.
 
@@ -404,7 +404,7 @@ declaración, que hoy el arreglo conserva gratis.
 Hoy un método solo ve a los declarados antes que él, porque el registro ocurre
 durante el mismo recorrido que analiza los cuerpos. Para permitirlo haría falta
 **una pasada previa** que registre todas las firmas en el ámbito global antes de
-analizar ningún cuerpo. Es un cambio en F11, no acá: la tabla ya soporta el caso.
+analizar ningún cuerpo. Es un cambio en el [análisis semántico](03-analisis-semantico.md), no acá: la tabla ya soporta el caso.
 
 ---
 
@@ -487,4 +487,4 @@ analizar ningún cuerpo. Es un cambio en F11, no acá: la tabla ya soporta el ca
 
 ---
 
-**Siguiente:** [Chequeo de Tipos](04.5-type-checker.md)
+**Siguiente:** [Chequeo de Tipos](02-chequeo-de-tipos.md)
