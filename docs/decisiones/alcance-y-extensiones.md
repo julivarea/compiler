@@ -17,7 +17,7 @@ El compilador implementa esa separación exacta entre front-end y back-end:
 | [Código intermedio](../wiki/05-codigo-intermedio/02-generacion-tac.md), [optimizador](../wiki/06-optimizador/02-optimizador.md) y [código objeto](../wiki/07-codigo-objeto/02-generacion-codigo-objeto.md) | **Fuera de alcance según el enunciado.** Al iniciar la generación de TAC se rechaza explícitamente cualquier programa que contenga nodos o símbolos `float`, informando la línea correspondiente. |
 
 ```text
-$ ./mi_compilador programa.ctds
+$ ./mi_compilador examples/error_float_en_codegen.ctds
 Error en la linea 2: la generacion de codigo para el tipo 'float' no esta
 soportada: esta etapa cubre tipos enteros y logicos.
 ```

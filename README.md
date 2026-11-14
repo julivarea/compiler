@@ -52,9 +52,7 @@ Las optimizaciones disponibles son:
 | `peephole` | Mirilla sobre instrucciones contiguas: saltos redundantes a la etiqueta siguiente |
 | `strength-reduce` | Reducción de fuerza: multiplicaciones por potencias de 2 pasan a desplazamientos |
 
-En la [Wiki](docs/wiki/index.md) hay
-una versión navegable estructurada paso a paso. Se lee mucho mejor servida como
-sitio que como archivos sueltos: ver [Documentación](#documentación).
+En la [Wiki](docs/wiki/index.md) se encuentra la documentación técnica de cada módulo; las instrucciones para levantar el sitio con MkDocs están en la sección [Documentación](#documentación).
 
 ## Estructura del repositorio
 
@@ -236,18 +234,6 @@ donde indique `-target`:
 
 El compilador finaliza con código de salida `0` si el programa es válido, o `1` si se detecta cualquier error.
 
-**Decisión de diseño sobre el comportamiento por defecto:** el enunciado dice que
-sin `-target` se compila "hasta la etapa corriente" generando un archivo con la
-extensión de esa etapa, y también que sin `-target` se produce el ejecutable
-`nombreArchivo.out`. Mientras el compilador estuvo incompleto las dos cosas no
-podían valer a la vez, así que se usó una constante `CURRENT_TARGET`
-(en `include/cli.h`) que se iba moviendo al terminar cada etapa. Ahora que el
-pipeline está completo vale `TARGET_ASSEMBLY`, con lo cual las dos lecturas
-coinciden: sin `-target` se recorre todo y queda el ejecutable
-`nombreArchivo.out`.
-
-
-
 ## Tests
 
 ```bash
@@ -290,23 +276,19 @@ VERBOSE=1 bash test_suite.sh
 
 ## Documentación
 
-La documentación del proyecto es un sitio navegable hecho con
+La documentación del proyecto se publica con
 [MkDocs](https://www.mkdocs.org/) y el tema
-[Material](https://squidfunk.github.io/mkdocs-material/). Las páginas son los
-`.md` de `docs/` y la configuración está en `mkdocs.yml`.
+[Material](https://squidfunk.github.io/mkdocs-material/) a partir de los
+archivos `.md` de `docs/` y la configuración en `mkdocs.yml`.
 
 ### Prerrequisitos
 
-Las dependencias de Python se manejan con [`uv`](https://docs.astral.sh/uv/),
-que es lo que fija `pyproject.toml` y `uv.lock`. Si no lo tenés instalado:
+Las dependencias de Python se gestionan con [`uv`](https://docs.astral.sh/uv/)
+mediante `pyproject.toml` y `uv.lock`:
 
 ```bash
 pipx install uv
 ```
-
-No hace falta crear ni activar un entorno virtual a mano: `uv` arma el `.venv`
-solo la primera vez, leyendo las versiones exactas de `uv.lock`. Por eso todos
-vemos el sitio igual.
 
 ### Levantar el sitio
 
@@ -314,75 +296,47 @@ vemos el sitio igual.
 uv run mkdocs serve
 ```
 
-Imprime la dirección donde quedó escuchando (por defecto
-`http://127.0.0.1:8000/`) y se corta con `Ctrl+C`. Mientras está corriendo
-recarga sola: guardás un `.md` y el navegador se actualiza sin reiniciar nada.
-Es la forma recomendada de escribir documentación, porque las tablas, los
-bloques de código y los diagramas Mermaid se ven renderizados al instante y no
-como texto plano.
+Levanta el servidor local en `http://127.0.0.1:8000/` con recarga automática al
+modificar archivos en `docs/`. Alternativamente, sin `uv`, puede instalarse con
+`pipx install mkdocs-material` y ejecutarse con `mkdocs serve`.
 
-Si preferís no instalar `uv`, también alcanza con
-`pipx install mkdocs-material` y después `mkdocs serve`. El único plugin que usa
-`mkdocs.yml` es `search`, que viene incorporado al tema, así que no falta nada
-más; lo que se pierde es la garantía de usar las mismas versiones que el resto
-del grupo.
-
-Para generar el sitio estático en vez de servirlo:
+Para generar el sitio estático en `site/`:
 
 ```bash
 uv run mkdocs build
 ```
 
-Deja el HTML en `site/`, que es un artefacto generado y está en `.gitignore`.
+### Organización de la documentación
 
-### Por dónde empezar a leer
+- **Wiki (`docs/wiki/`):** arquitectura e implementación por etapas del compilador (`core/`, `parser/`, `semantic/`, `intermediate_code/`, `optimizer/` y `object_code/`).
+- **Decisiones de Diseño (`docs/decisiones/`):** alcance e interpretación del enunciado (como el tratamiento de `float` y las opciones de CLI), ADRs y algoritmo de Sethi-Ullman.
+- **Problemas Conocidos (`docs/problemas-conocidos.md`):** limitaciones documentadas del lenguaje y la implementación.
+- **Referencia interna:** especificación oficial en `docs/spec/` y convenciones de código y commits en `docs/convenciones/`.
 
-El recorrido pensado para alguien que llega al proyecto es la **Wiki**, organizada
-en las etapas del compilador (espejando `src/`): infraestructura (`core/`),
-léxico/sintáctico/AST (`parser/`), análisis semántico (`semantic/`), código
-intermedio (`intermediate_code/`), optimizador (`optimizer/`) y código objeto
-(`object_code/`). Las pestañas **Decisiones de Diseño** y **Problemas Conocidos**
-reúnen el alcance, ADRs y limitaciones requeridas por el enunciado. En `docs/spec/`
-quedan el enunciado y la especificación oficial, en `docs/convenciones/` las guías
-internas del equipo y en `docs/historicos/` el archivo de borradores tempranos.
-
-### Agregar una página nueva
-
-Dos pasos, y el segundo es el que se olvida:
-
-1. Crear el `.md` **dentro de `docs/`**. Es el `docs_dir` del sitio, así
-   que todo lo que esté en la raíz del repo (como este mismo `README.md`)
-   queda afuera y no aparece.
-2. Agregarlo al `nav:` de `mkdocs.yml`. Una página que no está en el `nav` igual
-   se compila, pero no figura en el menú y solo se llega a ella por el buscador
-   o por un link directo, así que en la práctica es invisible.
+Para incorporar una página nueva al sitio, crear el archivo `.md` dentro de
+`docs/` y declararlo en la clave `nav:` de `mkdocs.yml`.
 
 ## Flujo de trabajo
 
-Después de cada cambio en `src/` o `include/`, estos dos pasos en orden:
+Para compilar el proyecto y ejecutar todas las suites de pruebas:
 
 ```bash
 ./build.sh && ./test_suite.sh
 ```
 
-El `&&` importa: si la build falla, no tiene sentido correr los tests. Ojo que
-los dos scripts regeneran Flex/Bison por su cuenta, así que `test_suite.sh`
-compila su propia copia y **no** valida el ejecutable que dejó `build.sh`. Por
-eso al final conviene probar el compilador de verdad sobre un ejemplo:
+Tanto `build.sh` como `test_suite.sh` regeneran los archivos de Flex y Bison de
+forma independiente (`test_suite.sh` enlaza sus propios ejecutables de prueba en
+`tests/`). Para verificar el binario `./mi_compilador` sobre los programas de
+ejemplo:
 
 ```bash
 ./mi_compilador examples/valido_completo.ctds
+./mi_compilador examples/error_suma_booleano_entero.ctds
 ```
 
-`programa.ctds` usa todas las construcciones de la gramática, así que sirve de
-prueba de humo de todas las fases de una sola pasada. Para chequear que los
-errores se siguen detectando, `./mi_compilador examples/error_suma_booleano_entero.ctds`
-tiene que reportar un error semántico y salir con código 1 sin dejar archivo de
-salida.
-
-Con `-debug` se ve, además, el grafo de flujo de control con los conjuntos de
-variables vivas y —si se pasó `-opt`— qué instrucciones eliminó cada
-optimización.
+`valido_completo.ctds` ejercita todas las construcciones de la gramática y
+debe finalizar con código `0`. `error_suma_booleano_entero.ctds` debe reportar
+error semántico y finalizar con código `1` sin generar archivo de salida.
 
 ### Prueba completa por etapas
 
@@ -392,77 +346,15 @@ Para validar todas las etapas sobre un mismo programa:
 for etapa in scan parse sem codinter assembly; do ./mi_compilador -target $etapa examples/valido_completo.ctds || echo "FALLO en $etapa"; done
 ```
 
-Debe generar `programa.lex`, `programa.sint`, `programa.sem`, `programa.ci` y
-`valido_completo.ass` en `examples/`, sin imprimir nada. Son artefactos generados:
-están en `.gitignore` y se borran con
-`rm -f examples/*.lex examples/*.sint examples/*.sem examples/*.ci examples/*.ass`.
+Genera `valido_completo.lex`, `valido_completo.sint`, `valido_completo.sem`,
+`valido_completo.ci` y `valido_completo.ass` en `examples/` (ignorados por Git).
 
-### Verificar que una optimización no cambió la semántica
+### Verificar preservación semántica de las optimizaciones
 
-El chequeo que importa no es que el TAC quede más corto, sino que el programa
-siga haciendo lo mismo. Para eso se compila dos veces y se comparan los
-resultados de la ejecución:
+Para comprobar que las pasadas de optimización no alteran el resultado de un
+programa, se compila con y sin `-opt all` y se comparan los códigos de salida:
 
 ```bash
 ./mi_compilador -o /tmp/sin_opt examples/valido_optimizacion_codigo_muerto.ctds && /tmp/sin_opt; echo "sin opt -> $?"
 ./mi_compilador -opt all -o /tmp/con_opt examples/valido_optimizacion_codigo_muerto.ctds && /tmp/con_opt; echo "con opt -> $?"
 ```
-
-Los dos códigos de salida tienen que coincidir entre sí y con el valor esperado.
-Como C-TDS no tiene salida por pantalla, el código de salida de `main` es la
-única forma de observar lo que hizo un programa, y solo sirve con los `main` que
-devuelven `int`.
-
-## Alcance de `float`
-
-La especificación del lenguaje incluye `float` entre los tipos de C-TDS y su
-regla 14 permite las conversiones entre `int` y `float`. El enunciado del
-proyecto, en cambio, acota las etapas de **código intermedio y código objeto** a
-**tipos enteros y lógicos**, y la descripción de las asignaciones menciona solo
-`int` y `boolean`.
-
-El compilador respeta las dos cosas, y el corte está exactamente en la frontera
-entre ellas:
-
-| Fase | `float` |
-| --- | --- |
-| Léxico, sintáctico, AST, tabla de símbolos | **Sí.** Es un tipo del lenguaje: se reconoce y se representa |
-| Chequeo de tipos | **Sí.** La regla 14 es una de las catorce que el análisis semántico debe verificar |
-| Código intermedio, optimizador, código objeto | **No.** Un programa que usa `float` se rechaza acá, con su línea |
-
-```
-$ ./mi_compilador programa.ctds
-Error en la linea 2: la generacion de codigo para el tipo 'float' no esta
-soportada: esta etapa cubre tipos enteros y logicos.
-```
-
-Hasta `-target sem` el programa se acepta: el front-end lo entiende entero,
-incluida la coerción de la regla 14. Lo que no está en alcance es generarle
-código, y el rechazo ocurre en la primera fase que lo haría.
-
-**Por qué rechazar y no ignorar.** Si el generador emitiera las operaciones de
-todos modos, el código objeto trataría el patrón de bits IEEE-754 como si fuera
-un entero: `1.0 + 1.0` se compilaría a una suma entera de dos patrones de bits y
-no daría `2.0`, **sin una sola queja**. Un error explícito con su línea es
-siempre mejor que un ejecutable que calcula mal.
-
-## Extensión sobre el enunciado: el valor `sem` de `-target`
-
-El enunciado enumera `scan`, `parse`, `codinter` y `assembly`, pero también
-lista la extensión `.sem` entre las salidas posibles. Se agregó `-target sem`
-porque, de otro modo, la etapa de análisis semántico no era alcanzable y esa
-extensión no se podía producir.
-
-## Problemas conocidos
-
-- **Un método solo ve a los declarados antes que él.** No hay declaración
-  adelantada en C-TDS, así que `main(){ g(); }` con `g` definido más abajo da
-  `Método no declarado`. Es lo que pide la letra ("todo se declara antes de
-  usarse"), pero conviene tenerlo presente al escribir ejemplos.
-- **El plegado de constantes desborda con signo en `+`, `-` y `*`.** Al plegar
-  una expresión como `2147483647 * 3` el cálculo se hace en `int`, lo que en C es
-  comportamiento indefinido. Hoy no se nota, porque GCC envuelve en silencio y el
-  resultado coincide con el que produciría el assembly generado, pero formalmente
-  no está garantizado. La división y el módulo sí están protegidos, tanto contra
-  el divisor cero como contra el único desborde posible (`INT_MIN / -1`). Se
-  detectó compilando el proyecto con UBSan.
