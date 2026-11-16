@@ -52,6 +52,10 @@ BIN         0[bB][01]+
 "="                             { return '='; }
 
     /* ARITMETICOS */
+"+="                            { return ADD_ASSIGN; }
+"-="                            { return SUB_ASSIGN; }
+"*="                            { return MUL_ASSIGN; }
+"/="                            { return DIV_ASSIGN; }
 "+"|"-"|"*"|"/"|"%"             { return yytext[0]; }
 
     /* RELACIONALES */

@@ -1,0 +1,10 @@
+/* Prueba de asignaciones compuestas: +=, -=, *=, /= */
+int main() {
+    int x;
+    x = 10;
+    x += 5;       // 15
+    x -= 3;       // 12
+    x *= 2 + 1;   // 12 * (2 + 1) = 36
+    x /= 4;       // 36 / 4 = 9
+    return x;     // Esperado: 9
+}

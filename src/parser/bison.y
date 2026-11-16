@@ -6,6 +6,7 @@
 #include "ast.h"
 #include "parser_helpers.h"
 #include "error_handler.h"
+#include "string.h"
 extern int yylex(void);
 extern int yylineno;
 static void yyerror(const char *s) {
@@ -39,6 +40,8 @@ extern NodeAST *astRoot;
 %token VOID INT FLOAT BOOLEAN IF ELSE WHILE RETURN
 
 %token EQ AND OR NOT NEQ LEQ GEQ
+
+%token ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN
 
 %token <strval> ID
 %token <intval> NUMBER BOOL_CONST
@@ -130,6 +133,10 @@ Statement
 
 Assignment
     : ID '=' Expression                         { $$ = newAssignmentNode($1, $3); }
+    | ID ADD_ASSIGN Expression                  { $$ = newAssignmentNode($1, newOperatorNode(OP_ADD, newIdentifierNode(strdup($1)), $3)); }
+    | ID SUB_ASSIGN Expression                  { $$ = newAssignmentNode($1, newOperatorNode(OP_SUB, newIdentifierNode(strdup($1)), $3)); }
+    | ID MUL_ASSIGN Expression                  { $$ = newAssignmentNode($1, newOperatorNode(OP_MUL, newIdentifierNode(strdup($1)), $3)); }
+    | ID DIV_ASSIGN Expression                  { $$ = newAssignmentNode($1, newOperatorNode(OP_DIV, newIdentifierNode(strdup($1)), $3)); }
     ;
 
 MethodCall
