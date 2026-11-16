@@ -1,0 +1,15 @@
+/* Prueba de operadores ++ y -- */
+int main() {
+    int i, acc;
+    i = 0;
+    acc = 10;
+
+    while (i < 5) {
+        acc++;      // +1 en cada vuelta (llega a 15)
+        i++;
+    }
+
+    acc--;          // 14
+    acc--;          // 13
+    return acc;     // Esperado: 13
+}

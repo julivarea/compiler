@@ -56,6 +56,8 @@ BIN         0[bB][01]+
 "-="                            { return SUB_ASSIGN; }
 "*="                            { return MUL_ASSIGN; }
 "/="                            { return DIV_ASSIGN; }
+"++"                            { return INC; }
+"--"                            { return DEC; }
 "+"|"-"|"*"|"/"|"%"             { return yytext[0]; }
 
     /* RELACIONALES */
