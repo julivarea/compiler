@@ -27,7 +27,7 @@ NodeAST *newNode(NodeType nodeType, Symbol *symbol, NodeAST *left, NodeAST *mid,
     node->line = yylineno;
 
     // if/while/method se reducen tras su bloque: usar la línea del encabezado, no la del '}'.
-    if ((nodeType == IF_ELSE_NODE || nodeType == WHILE_NODE || nodeType == METHOD_DECLARATION_NODE) && left != NULL) {
+    if ((nodeType == IF_ELSE_NODE || nodeType == WHILE_NODE || nodeType == DO_WHILE_NODE || nodeType == METHOD_DECLARATION_NODE) && left != NULL) {
         node->line = left->line;
     }
 
@@ -108,6 +108,10 @@ NodeAST *newReturnNode(NodeAST *expression) {
 
 NodeAST *newWhileNode(NodeAST *condition, NodeAST *body) {
     return newNode(WHILE_NODE, NULL, condition, body, NULL);
+}
+
+NodeAST *newDoWhileNode(NodeAST *condition, NodeAST *body) {
+    return newNode(DO_WHILE_NODE, NULL, condition, body, NULL);
 }
 
 NodeAST *newIfElseNode(NodeAST *condition, NodeAST *ifBlock, NodeAST *elseBlock) {
@@ -266,6 +270,9 @@ static void describeNode(FILE *out, const NodeAST *node) {
             break;
         case WHILE_NODE:
             fprintf(out, "While\n");
+            break;
+        case DO_WHILE_NODE:
+            fprintf(out, "Do-While\n");
             break;
         case RETURN_NODE:
             fprintf(out, "Return\n");

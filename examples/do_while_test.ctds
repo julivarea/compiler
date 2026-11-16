@@ -1,0 +1,19 @@
+/* Prueba de ciclo do-while */
+int main() {
+    int i, acc;
+    i = 1;
+    acc = 0;
+
+    // 1. Ciclo normal: suma 1 + 2 + 3 + 4 = 10
+    do {
+        acc += i;
+        i++;
+    } while (i <= 4);
+
+    // 2. Condicion inicialmente falsa: se ejecuta exactamente 1 vez (+100 -> 110)
+    do {
+        acc += 100;
+    } while (false);
+
+    return acc; // Esperado: 110
+}

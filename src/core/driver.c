@@ -253,6 +253,7 @@ static const char *getTokenName(int token) {
         case IF:          return "IF";
         case ELSE:        return "ELSE";
         case WHILE:       return "WHILE";
+        case DO:          return "DO";
         case RETURN:      return "RETURN";
         case EQ:          return "EQ";
         case NEQ:         return "NEQ";

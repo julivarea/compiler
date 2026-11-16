@@ -20,6 +20,7 @@ static void generateCallStatementCode(NodeAST *node);
 static void generateReturnCode(NodeAST *node);
 static void generateIfElseCode(NodeAST *node);
 static void generateWhileCode(NodeAST *node);
+static void generateDoWhileCode(NodeAST *node);
 static void generateVariableDeclarationCode(NodeAST *node);
 static void generateBlockCode(NodeAST *node);
 static bool lastInstructionIsReturn(void);
@@ -130,6 +131,10 @@ static void generateStatementCode(NodeAST *node) {
             generateWhileCode(node);
             break;
 
+        case DO_WHILE_NODE:
+            generateDoWhileCode(node);
+            break;
+
         case VARIABLE_DECLARATION_NODE:
             generateVariableDeclarationCode(node);
             break;
@@ -213,6 +218,16 @@ static void generateWhileCode(NodeAST *node) {
 
     emit(TAC_GOTO, tacNone(), startOfWhile, tacNone());
     emit(TAC_LABEL, endOfWhile, tacNone(), tacNone());
+}
+
+static void generateDoWhileCode(NodeAST *node) {
+    TACOperand startOfDoWhile = newLabel();
+
+    emit(TAC_LABEL, startOfDoWhile, tacNone(), tacNone());
+    generateStatementCode(GET_WHILE_BLOCK(node));
+
+    TACOperand condition = generateExpressionCode(GET_CONDITION(node));
+    emit(TAC_IF_TRUE, tacNone(), condition, startOfDoWhile);
 }
 
 static void generateVariableDeclarationCode(NodeAST *node) {

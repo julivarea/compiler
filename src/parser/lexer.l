@@ -35,6 +35,7 @@ BIN         0[bB][01]+
 "if"                            { return IF; }
 "else"                          { return ELSE; }
 "while"                         { return WHILE; }
+"do"                            { return DO; }
 "for"                           { return FOR; }
 "return"                        { return RETURN; }
 

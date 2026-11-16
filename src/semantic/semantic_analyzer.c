@@ -14,6 +14,7 @@ static void analyzeAssignmentNode(NodeAST *node, Scope *currentScope);
 static void analyzeReturnNode(NodeAST *node, Scope *currentScope);
 static void analyzeIfElseNode(NodeAST *node, Scope *currentScope);
 static void analyzeWhileNode(NodeAST *node, Scope *currentScope);
+static void analyzeDoWhileNode(NodeAST *node, Scope *currentScope);
 static void analyzeBooleanCondition(NodeAST *node, Scope *currentScope, const char *statementName);
 
 static bool guaranteesReturn(NodeAST *node);
@@ -85,6 +86,10 @@ static void analyzeNodeSemantics(NodeAST *node, Scope *currentScope) {
 
         case WHILE_NODE:
             analyzeWhileNode(node, currentScope);
+            break;
+
+        case DO_WHILE_NODE:
+            analyzeDoWhileNode(node, currentScope);
             break;
 
         default:
@@ -208,6 +213,11 @@ static void analyzeIfElseNode(NodeAST *node, Scope *currentScope) {
 static void analyzeWhileNode(NodeAST *node, Scope *currentScope) {
     analyzeBooleanCondition(node, currentScope, "while");
     analyzeNodeSemantics(GET_WHILE_BLOCK(node), currentScope);
+}
+
+static void analyzeDoWhileNode(NodeAST *node, Scope *currentScope) {
+    analyzeNodeSemantics(GET_WHILE_BLOCK(node), currentScope);
+    analyzeBooleanCondition(node, currentScope, "do-while");
 }
 
 static void analyzeBooleanCondition(NodeAST *node, Scope *currentScope, const char *statementName) {
