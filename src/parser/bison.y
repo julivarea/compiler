@@ -45,6 +45,8 @@ extern NodeAST *astRoot;
 
 %token INC DEC
 
+%token FOR
+
 %token <strval> ID
 %token <intval> NUMBER BOOL_CONST
 %token <floatval> FLOAT_CONST
@@ -122,14 +124,23 @@ Statements
     ;
 
 Statement
-    : Assignment ';'                            { $$ = $1; }
-    | MethodCall ';'                            { $$ = $1; }
-    | RETURN Expression ';'                     { $$ = newReturnNode($2); }
-    | RETURN ';'                                { $$ = newReturnNode(NULL); }
-    | Block                                     { $$ = $1; }
-    | WHILE '(' Expression ')' Block            { $$ = newWhileNode($3, $5); }
-    | IfStatement                               { $$ = $1; }
-    | ';'                                       { $$ = NULL; }
+    : Assignment ';'                                                { $$ = $1; }
+    | MethodCall ';'                                                { $$ = $1; }
+    | RETURN Expression ';'                                         { $$ = newReturnNode($2); }
+    | RETURN ';'                                                    { $$ = newReturnNode(NULL); }
+    | Block                                                         { $$ = $1; }
+    | WHILE '(' Expression ')' Block                                { $$ = newWhileNode($3, $5); }
+    | FOR '(' Assignment ';' Expression ';' Assignment ')' Block    {
+                                                                        NodeArray *initialization = appendNode(NULL, $3); // Creamos el NodeArray de la inicialización del For
+                                                                        NodeArray *whileBodyItems = appendNode(appendNode(NULL, $9), $7); // Creamos el cuerpo del While: creamos el NodeArray del Block y le agregamos al final el Step
+                                                                        NodeAST *whileBody = newBlockNode(whileBodyItems);
+                                                                        NodeAST *whileNode = newWhileNode($5, whileBody);
+                                                                        NodeArray *forItems = appendNode(initialization, whileNode); // Creamos el NodeArray del For: agregamos la inicialización y el While
+                                                                        NodeAST *forStatement = newBlockNode(forItems);
+                                                                        $$ = forStatement;
+                                                                    }
+    | IfStatement                                                   { $$ = $1; }
+    | ';'                                                           { $$ = NULL; }
     ;
 
 IfStatement

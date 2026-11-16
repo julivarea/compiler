@@ -265,6 +265,7 @@ static const char *getTokenName(int token) {
         case NUMBER:      return "NUMBER";
         case BOOL_CONST:  return "BOOL_CONST";
         case FLOAT_CONST: return "FLOAT_CONST";
+        case FOR:         return "FOR";
         default:          return NULL;
     }
 }
