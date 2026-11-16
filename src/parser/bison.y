@@ -57,7 +57,7 @@ extern NodeAST *astRoot;
 %left '*' '/' '%'       /* multiplicación, división, resto */
 %precedence NOT UMINUS  /* negación lógica ! y menos unario */
 
-%type <node> Program Statement Expression MethodCall Block MethodDeclaration ParameterList Assignment
+%type <node> Program Statement Expression MethodCall Block MethodDeclaration ParameterList Assignment IfStatement
 %type <dataType> Type
 %type <array> VariableDeclaration IdentifierList ArgumentList VariableDeclarations Statements Parameters Declarations Declaration
 
@@ -128,9 +128,14 @@ Statement
     | RETURN ';'                                { $$ = newReturnNode(NULL); }
     | Block                                     { $$ = $1; }
     | WHILE '(' Expression ')' Block            { $$ = newWhileNode($3, $5); }
-    | IF '(' Expression ')' Block               { $$ = newIfElseNode($3, $5, NULL); }
-    | IF '(' Expression ')' Block ELSE Block    { $$ = newIfElseNode($3, $5, $7); }
+    | IfStatement                               { $$ = $1; }
     | ';'                                       { $$ = NULL; }
+    ;
+
+IfStatement
+    : IF '(' Expression ')' Block                  { $$ = newIfElseNode($3, $5, NULL); }
+    | IF '(' Expression ')' Block ELSE Block       { $$ = newIfElseNode($3, $5, $7); }
+    | IF '(' Expression ')' Block ELSE IfStatement { $$ = newIfElseNode($3, $5, newBlockNode(appendNode(NULL, $7))); }
     ;
 
 Assignment
