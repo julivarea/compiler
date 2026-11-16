@@ -22,6 +22,8 @@ ALPHA_NUM   {ALPHA}|{DIGIT}|"_"
 ID          {ALPHA}({ALPHA_NUM})*
 NUMBER      {DIGIT}+
 FLOAT       {DIGIT}+"."{DIGIT}+
+HEX         0[xX][0-9a-fA-F]+
+BIN         0[bB][01]+
 
 %%
 
@@ -39,6 +41,8 @@ FLOAT       {DIGIT}+"."{DIGIT}+
 "true"                          { yylval.intval = 1; return BOOL_CONST; }
 "false"                         { yylval.intval = 0; return BOOL_CONST; }
 {FLOAT}                         { yylval.floatval = atof(yytext); return FLOAT_CONST; }
+{HEX}                           { yylval.intval = (int)strtol(yytext+2, NULL, 16); return NUMBER;}
+{BIN}                           { yylval.intval = (int)strtol(yytext+2, NULL, 2); return NUMBER;}
 {NUMBER}                        { yylval.intval = atoi(yytext); return NUMBER; }
 
     /* IDs */

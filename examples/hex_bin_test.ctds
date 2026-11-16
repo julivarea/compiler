@@ -1,0 +1,8 @@
+/* Prueba de literales hexadecimales y binarios */
+int main() {
+    int hex, bin, res;
+    hex = 0x1A;      // 26 en decimal
+    bin = 0b1010;    // 10 en decimal
+    res = hex + bin; // 26 + 10 = 36
+    return res;
+}
