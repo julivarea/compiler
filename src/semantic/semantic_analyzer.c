@@ -84,6 +84,10 @@ static void analyzeNodeSemantics(NodeAST *node, Scope *currentScope) {
             break;
 
         case WHILE_NODE:
+        case DO_WHILE_NODE:
+            /*
+                Para el do-while, reciclamos el mismo método del while: ambos deben analizar semanticamente su condicion y su bloque interior
+            */
             analyzeWhileNode(node, currentScope);
             break;
 

@@ -36,9 +36,9 @@ extern NodeAST *astRoot;
     DataType dataType;
 }
 
-%token VOID INT FLOAT BOOLEAN IF ELSE WHILE RETURN
+%token VOID INT FLOAT BOOLEAN IF ELSE WHILE RETURN DO
 
-%token EQ AND OR NOT 
+%token EQ AND OR NOT GTE
 
 %token <strval> ID
 %token <intval> NUMBER BOOL_CONST
@@ -47,7 +47,7 @@ extern NodeAST *astRoot;
 %left OR                /* disyunción lógica || */
 %left AND               /* conjunción lógica && */
 %left EQ                /* igualdad == */
-%left '<' '>'           /* relacionales (menor, mayor) */
+%left '<' '>' GTE       /* relacionales (menor, mayor) */
 %left '+' '-'           /* suma y resta */
 %left '*' '/' '%'       /* multiplicación, división, resto */
 %precedence NOT UMINUS  /* negación lógica ! y menos unario */
@@ -117,15 +117,16 @@ Statements
     ;
 
 Statement
-    : Assignment ';'                            { $$ = $1; }
-    | MethodCall ';'                            { $$ = $1; }
-    | RETURN Expression ';'                     { $$ = newReturnNode($2); }
-    | RETURN ';'                                { $$ = newReturnNode(NULL); }
-    | Block                                     { $$ = $1; }
-    | WHILE '(' Expression ')' Block            { $$ = newWhileNode($3, $5); }
-    | IF '(' Expression ')' Block               { $$ = newIfElseNode($3, $5, NULL); }
-    | IF '(' Expression ')' Block ELSE Block    { $$ = newIfElseNode($3, $5, $7); }
-    | ';'                                       { $$ = NULL; }
+    : Assignment ';'                                { $$ = $1; }
+    | MethodCall ';'                                { $$ = $1; }
+    | RETURN Expression ';'                         { $$ = newReturnNode($2); }
+    | RETURN ';'                                    { $$ = newReturnNode(NULL); }
+    | Block                                         { $$ = $1; }
+    | WHILE '(' Expression ')' Block                { $$ = newWhileNode($3, $5); }
+    | DO Block '(' Expression ')' ';'               { $$ = newDoWhileNode($4, $2); } // Nuevo nodo do-while construido con la condición y el bloque
+    | IF '(' Expression ')' Block                   { $$ = newIfElseNode($3, $5, NULL); }
+    | IF '(' Expression ')' Block ELSE Block        { $$ = newIfElseNode($3, $5, $7); }
+    | ';'                                           { $$ = NULL; }
     ;
 
 Assignment
@@ -158,6 +159,7 @@ Expression
     | Expression '%' Expression                 { $$ = newOperatorNode(OP_MOD, $1, $3); }
     | Expression '<' Expression                 { $$ = newOperatorNode(OP_LT, $1, $3); }
     | Expression '>' Expression                 { $$ = newOperatorNode(OP_GT, $1, $3); }
+    | Expression GTE Expression                 { $$ = newOperatorNode(OP_NOT, newOperatorNode(OP_LT, $1, $3), NULL); }
     | Expression EQ Expression                  { $$ = newOperatorNode(OP_EQ, $1, $3); }
     | Expression AND Expression                 { $$ = newOperatorNode(OP_AND, $1, $3); }
     | Expression OR Expression                  { $$ = newOperatorNode(OP_OR, $1, $3); }

@@ -1,0 +1,10 @@
+// Incrementa x hasta llevarlo a 10
+
+int main() {
+    int x;
+    x = 0;
+    do {
+        x = x + 1;
+    } (x < 10);
+    return x;
+}
