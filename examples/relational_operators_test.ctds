@@ -1,0 +1,47 @@
+/* Prueba de operadores !=, <=, >= */
+int main() {
+    int ok;
+    ok = 0;
+
+    // 1. <= verdadero por menor (3 <= 5) -> +1
+    if (3 <= 5) {
+        ok = ok + 1;
+    }
+
+    // 2. <= verdadero por igual (5 <= 5) -> +2
+    if (5 <= 5) {
+        ok = ok + 2;
+    }
+
+    // 3. <= falso (6 <= 5) -> no debe entrar
+    if (6 <= 5) {
+        return 99;
+    }
+
+    // 4. >= verdadero por mayor (7 >= 4) -> +4
+    if (7 >= 4) {
+        ok = ok + 4;
+    }
+
+    // 5. >= verdadero por igual (4 >= 4) -> +8
+    if (4 >= 4) {
+        ok = ok + 8;
+    }
+
+    // 6. >= falso (3 >= 4) -> no debe entrar
+    if (3 >= 4) {
+        return 98;
+    }
+
+    // 7. != verdadero (int y boolean) -> +16
+    if (10 != 20 && true != false) {
+        ok = ok + 16;
+    }
+
+    // 8. != falso (10 != 10) -> no debe entrar
+    if (10 != 10) {
+        return 97;
+    }
+
+    return ok; // Esperado: 1 + 2 + 4 + 8 + 16 = 31
+}

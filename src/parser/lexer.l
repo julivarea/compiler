@@ -55,6 +55,9 @@ BIN         0[bB][01]+
 "+"|"-"|"*"|"/"|"%"             { return yytext[0]; }
 
     /* RELACIONALES */
+"!="                            { return NEQ; }
+"<="                            { return LEQ; }
+">="                            { return GEQ; }
 "=="                            { return EQ; }
 "<"|">"                         { return yytext[0]; }
 
