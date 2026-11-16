@@ -15,6 +15,7 @@ static void analyzeReturnNode(NodeAST *node, Scope *currentScope);
 static void analyzeIfElseNode(NodeAST *node, Scope *currentScope);
 static void analyzeWhileNode(NodeAST *node, Scope *currentScope);
 static void analyzeDoWhileNode(NodeAST *node, Scope *currentScope);
+static int loopDepth = 0;
 static void analyzeBooleanCondition(NodeAST *node, Scope *currentScope, const char *statementName);
 
 static bool guaranteesReturn(NodeAST *node);
@@ -24,6 +25,7 @@ Scope *analyzeSemantics(NodeAST *root, Scope *parent) {
     if (root == NULL) return NULL;
 
     bool isGlobalScope = (parent == NULL);
+    if (isGlobalScope) loopDepth = 0;
     int level = !isGlobalScope ? parent->level + 1 : 0;
     Symbol *function = !isGlobalScope ? parent->function : NULL;
 
@@ -90,6 +92,18 @@ static void analyzeNodeSemantics(NodeAST *node, Scope *currentScope) {
 
         case DO_WHILE_NODE:
             analyzeDoWhileNode(node, currentScope);
+            break;
+
+        case BREAK_NODE:
+            if (loopDepth <= 0) {
+                semanticError(node->line, "Sentencia 'break' fuera de un ciclo.");
+            }
+            break;
+
+        case CONTINUE_NODE:
+            if (loopDepth <= 0) {
+                semanticError(node->line, "Sentencia 'continue' fuera de un ciclo.");
+            }
             break;
 
         default:
@@ -212,11 +226,15 @@ static void analyzeIfElseNode(NodeAST *node, Scope *currentScope) {
 
 static void analyzeWhileNode(NodeAST *node, Scope *currentScope) {
     analyzeBooleanCondition(node, currentScope, "while");
+    loopDepth++;
     analyzeNodeSemantics(GET_WHILE_BLOCK(node), currentScope);
+    loopDepth--;
 }
 
 static void analyzeDoWhileNode(NodeAST *node, Scope *currentScope) {
+    loopDepth++;
     analyzeNodeSemantics(GET_WHILE_BLOCK(node), currentScope);
+    loopDepth--;
     analyzeBooleanCondition(node, currentScope, "do-while");
 }
 

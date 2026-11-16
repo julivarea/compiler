@@ -1,0 +1,28 @@
+/* Prueba de break y continue en while y do-while */
+int main() {
+    int i, acc;
+    i = 0;
+    acc = 0;
+
+    // Recorre i = 1..10, saltea el 3 con continue y corta en 6 con break
+    // Suma: 1 + 2 + 4 + 5 = 12
+    while (i < 10) {
+        i++;
+        if (i == 3) {
+            continue;
+        }
+        if (i == 6) {
+            break;
+        }
+        acc += i;
+    }
+
+    // Do-while con break inmediato: suma 20 y sale -> 12 + 20 = 32
+    do {
+        acc += 20;
+        break;
+        acc += 100;
+    } while (true);
+
+    return acc; // Esperado: 32
+}

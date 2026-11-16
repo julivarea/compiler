@@ -26,6 +26,8 @@ typedef enum NodeType {
     IF_ELSE_NODE,              /**< Sentencia condicional if o if-else. */
     WHILE_NODE,                /**< Sentencia de iteración while. */
     DO_WHILE_NODE,             /**< Sentencia de iteración do-while. */
+    BREAK_NODE,                /**< Sentencia break para salir de un ciclo. */
+    CONTINUE_NODE,             /**< Sentencia continue para saltar a la siguiente iteración. */
     OPERATOR_NODE,             /**< Expresión de operación unaria o binaria. */
     BLOCK_NODE,                /**< Bloque léxico de declaraciones y sentencias. */
     METHOD_CALL_NODE,          /**< Invocación a un método como sentencia o expresión. */
@@ -184,6 +186,8 @@ NodeAST *newReturnNode(NodeAST *expression);
  */
 NodeAST *newWhileNode(NodeAST *condition, NodeAST *body);
 NodeAST *newDoWhileNode(NodeAST *condition, NodeAST *body);
+NodeAST *newBreakNode(void);
+NodeAST *newContinueNode(void);
 
 /**
  * @brief Crea un nodo AST de sentencia condicional (IF_ELSE_NODE).

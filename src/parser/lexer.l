@@ -37,6 +37,8 @@ BIN         0[bB][01]+
 "while"                         { return WHILE; }
 "do"                            { return DO; }
 "for"                           { return FOR; }
+"break"                         { return BREAK; }
+"continue"                      { return CONTINUE; }
 "return"                        { return RETURN; }
 
     /* CONSTANTES y LITERALES */

@@ -45,7 +45,7 @@ extern NodeAST *astRoot;
 
 %token INC DEC
 
-%token FOR DO
+%token FOR DO BREAK CONTINUE
 
 %token <strval> ID
 %token <intval> NUMBER BOOL_CONST
@@ -131,6 +131,8 @@ Statement
     | Block                                                         { $$ = $1; }
     | WHILE '(' Expression ')' Block                                { $$ = newWhileNode($3, $5); }
     | DO Block WHILE '(' Expression ')' ';'                       { $$ = newDoWhileNode($5, $2); }
+    | BREAK ';'                                                     { $$ = newBreakNode(); }
+    | CONTINUE ';'                                                  { $$ = newContinueNode(); }
     | FOR '(' Assignment ';' Expression ';' Assignment ')' Block    {
                                                                         NodeArray *initialization = appendNode(NULL, $3); // Creamos el NodeArray de la inicialización del For
                                                                         NodeArray *whileBodyItems = appendNode(appendNode(NULL, $9), $7); // Creamos el cuerpo del While: creamos el NodeArray del Block y le agregamos al final el Step

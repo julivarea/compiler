@@ -114,6 +114,14 @@ NodeAST *newDoWhileNode(NodeAST *condition, NodeAST *body) {
     return newNode(DO_WHILE_NODE, NULL, condition, body, NULL);
 }
 
+NodeAST *newBreakNode(void) {
+    return newNode(BREAK_NODE, NULL, NULL, NULL, NULL);
+}
+
+NodeAST *newContinueNode(void) {
+    return newNode(CONTINUE_NODE, NULL, NULL, NULL, NULL);
+}
+
 NodeAST *newIfElseNode(NodeAST *condition, NodeAST *ifBlock, NodeAST *elseBlock) {
     return newNode(IF_ELSE_NODE, NULL, condition, ifBlock, elseBlock);
 }
@@ -273,6 +281,12 @@ static void describeNode(FILE *out, const NodeAST *node) {
             break;
         case DO_WHILE_NODE:
             fprintf(out, "Do-While\n");
+            break;
+        case BREAK_NODE:
+            fprintf(out, "Break\n");
+            break;
+        case CONTINUE_NODE:
+            fprintf(out, "Continue\n");
             break;
         case RETURN_NODE:
             fprintf(out, "Return\n");

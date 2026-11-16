@@ -12,6 +12,11 @@ static bool tacUnsupportedType = false;
 static int temporaryCount = 0;
 static int labelCount = 0;
 
+#define MAX_LOOP_NESTING 64
+static TACOperand breakLabelStack[MAX_LOOP_NESTING];
+static TACOperand continueLabelStack[MAX_LOOP_NESTING];
+static int loopStackDepth = 0;
+
 static NodeAST *findUnsupportedType(NodeAST *node);
 static void generateStatementCode(NodeAST *node);
 static void generateMethodDeclarationCode(NodeAST *node);
@@ -65,6 +70,7 @@ const TACList *generateIntermediateCode(NodeAST *root) {
     }
     temporaryCount = 0;
     labelCount = 0;
+    loopStackDepth = 0;
 
     generateBlockCode(root);
 
@@ -133,6 +139,18 @@ static void generateStatementCode(NodeAST *node) {
 
         case DO_WHILE_NODE:
             generateDoWhileCode(node);
+            break;
+
+        case BREAK_NODE:
+            if (loopStackDepth > 0) {
+                emit(TAC_GOTO, tacNone(), breakLabelStack[loopStackDepth - 1], tacNone());
+            }
+            break;
+
+        case CONTINUE_NODE:
+            if (loopStackDepth > 0) {
+                emit(TAC_GOTO, tacNone(), continueLabelStack[loopStackDepth - 1], tacNone());
+            }
             break;
 
         case VARIABLE_DECLARATION_NODE:
@@ -214,7 +232,11 @@ static void generateWhileCode(NodeAST *node) {
     TACOperand condition = generateExpressionCode(GET_CONDITION(node));
     emit(TAC_IF_FALSE, tacNone(), condition, endOfWhile);
 
+    continueLabelStack[loopStackDepth] = startOfWhile;
+    breakLabelStack[loopStackDepth] = endOfWhile;
+    loopStackDepth++;
     generateStatementCode(GET_WHILE_BLOCK(node));
+    loopStackDepth--;
 
     emit(TAC_GOTO, tacNone(), startOfWhile, tacNone());
     emit(TAC_LABEL, endOfWhile, tacNone(), tacNone());
@@ -222,12 +244,21 @@ static void generateWhileCode(NodeAST *node) {
 
 static void generateDoWhileCode(NodeAST *node) {
     TACOperand startOfDoWhile = newLabel();
+    TACOperand condOfDoWhile = newLabel();
+    TACOperand endOfDoWhile = newLabel();
 
     emit(TAC_LABEL, startOfDoWhile, tacNone(), tacNone());
-    generateStatementCode(GET_WHILE_BLOCK(node));
 
+    continueLabelStack[loopStackDepth] = condOfDoWhile;
+    breakLabelStack[loopStackDepth] = endOfDoWhile;
+    loopStackDepth++;
+    generateStatementCode(GET_WHILE_BLOCK(node));
+    loopStackDepth--;
+
+    emit(TAC_LABEL, condOfDoWhile, tacNone(), tacNone());
     TACOperand condition = generateExpressionCode(GET_CONDITION(node));
     emit(TAC_IF_TRUE, tacNone(), condition, startOfDoWhile);
+    emit(TAC_LABEL, endOfDoWhile, tacNone(), tacNone());
 }
 
 static void generateVariableDeclarationCode(NodeAST *node) {
